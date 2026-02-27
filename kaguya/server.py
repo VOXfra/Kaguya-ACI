@@ -24,6 +24,7 @@ import time
 from typing import Any, Dict
 from urllib import error as urlerror
 from urllib import request as urlrequest
+from urllib.parse import parse_qs
 
 from kaguya.cerveau import CerveauKaguya
 
@@ -205,9 +206,11 @@ HTML_PAGE = """<!doctype html>
 <p>Serveur Kaguya: <code>127.0.0.1:1235</code></p>
 <p>LM Studio attendu: <code>127.0.0.1:1234</code></p>
 <div id='chat' style='white-space:pre-wrap;border:1px solid #ccc;padding:8px;height:300px;overflow:auto'></div>
-<input id='msg' style='width:70%' placeholder='Écris un message... (/etat, /resume, /pause...)'/>
-<select id='mode'><option value='realtime'>realtime</option><option value='reflexion'>reflexion</option></select>
-<button id='send-btn' type='button'>Envoyer</button>
+<form id='chat-form'>
+<input id='msg' name='message' style='width:70%' placeholder='Écris un message... (/etat, /resume, /pause...)'/>
+<select id='mode' name='mode'><option value='realtime'>realtime</option><option value='reflexion'>reflexion</option></select>
+<button id='send-btn' type='submit'>Envoyer</button>
+</form>
 <script>
 function appendChatLine(text){
   const box=document.getElementById('chat');
@@ -259,15 +262,38 @@ async function sendMsg(){
   }
 }
 
-document.getElementById('send-btn').addEventListener('click', sendMsg);
-document.getElementById('msg').addEventListener('keydown', (ev) => {
-  if(ev.key === 'Enter'){
-    ev.preventDefault();
-    sendMsg();
-  }
+document.getElementById('chat-form').addEventListener('submit', (ev) => {
+  ev.preventDefault();
+  sendMsg();
 });
 </script>
 </body></html>"""
+
+
+def parse_chat_payload(raw: bytes, content_type: str) -> tuple[str, str]:
+    """Parse le payload `/chat` en acceptant JSON et formulaire URL-encodé.
+
+    Pourquoi:
+    - Le front principal envoie du JSON,
+    - mais un fallback `<form>` navigateur peut envoyer du `application/x-www-form-urlencoded`.
+    """
+    body = raw.decode("utf-8")
+
+    # Chemin nominal: JSON API.
+    if "application/json" in content_type or not content_type:
+        data = json.loads(body)
+        message = str(data.get("message", "")).strip()
+        mode = str(data.get("mode", "realtime")).strip() or "realtime"
+        return message, mode
+
+    # Fallback navigateur: formulaire URL-encodé.
+    if "application/x-www-form-urlencoded" in content_type:
+        form = parse_qs(body, keep_blank_values=True)
+        message = (form.get("message", [""])[0] or "").strip()
+        mode = (form.get("mode", ["realtime"])[0] or "realtime").strip()
+        return message, mode
+
+    raise ValueError(f"unsupported_content_type:{content_type}")
 
 
 def make_handler(service: ChatService):
@@ -300,12 +326,17 @@ def make_handler(service: ChatService):
                 return
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length) if length else b"{}"
+            content_type = str(self.headers.get("Content-Type", "")).lower()
             try:
-                data = json.loads(raw.decode("utf-8"))
-                message = str(data.get("message", "")).strip()
-                mode = str(data.get("mode", "realtime"))
-            except Exception:
+                message, mode = parse_chat_payload(raw, content_type)
+            except json.JSONDecodeError:
                 self._send_json({"error": "invalid_json"}, 400)
+                return
+            except ValueError as e:
+                self._send_json({"error": str(e)}, 415)
+                return
+            except Exception:
+                self._send_json({"error": "invalid_payload"}, 400)
                 return
             if not message:
                 self._send_json({"error": "message_required"}, 400)

@@ -21,9 +21,21 @@ source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
+### Windows PowerShell
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
+
 ## Vérification
 
 ```bash
+pytest -q
+```
+
+```powershell
 pytest -q
 ```
 
@@ -34,6 +46,10 @@ pytest -q
 1. Démarrer le serveur:
 
 ```bash
+python -m kaguya.server --port 1235 --start-lmstudio
+```
+
+```powershell
 python -m kaguya.server --port 1235 --start-lmstudio
 ```
 
@@ -54,6 +70,8 @@ Vous pouvez utiliser des commandes optionnelles préfixées par `/` dans le chat
 Le reste du temps, écrivez normalement (conversation classique).
 
 > Note: LM Studio utilise souvent `127.0.0.1:1234`. Kaguya web est donc sur `127.0.0.1:1235` par défaut pour éviter les conflits.
+
+> Note PowerShell: utilisez des commandes séparées ligne par ligne (ou `;`). Les opérateurs Bash comme `&&`, `||`, `rm -rf`, `2>/dev/null` et les heredocs `<<` ne sont pas valides tels quels dans PowerShell.
 
 ### Option B — Terminal interactif (sans Python)
 

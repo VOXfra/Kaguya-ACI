@@ -4,7 +4,7 @@ from pathlib import Path
 
 from kaguya.cerveau import CerveauKaguya, SIM_MIN_PER_TICK, SNAPSHOT_VERSION
 from kaguya.llm import ContextPacket, ModelRegistry, ModelRouter, quick_eval_harness
-from kaguya.server import ChatService, maybe_start_lmstudio, lmstudio_is_ready
+from kaguya.server import ChatService, maybe_start_lmstudio, lmstudio_is_ready, parse_chat_payload
 from kaguya.cli import run_cli_once
 
 
@@ -224,6 +224,29 @@ def test_chat_service_writes_usage_log_file(tmp_path):
     assert "bonjour" in content
     assert "reply" in content
 
+
+
+
+def test_parse_chat_payload_accepts_json():
+    raw = b'{"message":"bonjour","mode":"realtime"}'
+    msg, mode = parse_chat_payload(raw, "application/json")
+    assert msg == "bonjour"
+    assert mode == "realtime"
+
+
+def test_parse_chat_payload_accepts_form_urlencoded():
+    raw = b'message=salut+toi&mode=reflexion'
+    msg, mode = parse_chat_payload(raw, "application/x-www-form-urlencoded")
+    assert msg == "salut toi"
+    assert mode == "reflexion"
+
+
+def test_parse_chat_payload_rejects_unsupported_content_type():
+    try:
+        parse_chat_payload(b'abc', "text/plain")
+        assert False
+    except ValueError as e:
+        assert "unsupported_content_type" in str(e)
 
 def test_lmstudio_ready_probe_returns_bool():
     assert isinstance(lmstudio_is_ready(), bool)

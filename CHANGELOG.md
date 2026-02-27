@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-02-27 — Compatibilité envoi chat (formulaire) + documentation PowerShell
+
+### Pourquoi
+- Certains environnements côté utilisateur (notamment PowerShell) ne reprennent pas les commandes Bash telles quelles (`&&`, heredoc, redirections POSIX), ce qui empêchait de reproduire facilement les validations proposées.
+- Si le JavaScript front échoue ou est limité, le bouton **Envoyer** doit rester exploitable via un comportement formulaire standard.
+
+### Quoi
+- `kaguya/server.py` :
+  - ajout de `parse_chat_payload()` qui accepte **JSON** et **application/x-www-form-urlencoded**,
+  - endpoint `/chat` mis à jour pour gérer explicitement ces deux formats et renvoyer `415` sur type non supporté,
+  - UI web convertie avec `<form id='chat-form'>` + `submit` (progressive enhancement) pour rendre l'envoi plus robuste.
+- `tests/test_cerveau.py` :
+  - ajout de tests parser payload (`json`, `form-urlencoded`, `content-type` non supporté).
+- `README.md` :
+  - ajout de blocs de commandes Windows PowerShell (installation, tests, serveur),
+  - note explicite sur l'incompatibilité des opérateurs Bash dans PowerShell.
+
+### Comment
+1. Ajout d'un parseur de payload unique côté serveur, réutilisé par `/chat`.
+2. Alignement de l'UI sur un submit de formulaire (fallback natif navigateur).
+3. Documentation des commandes compatibles PowerShell + validation via tests.
+
+### Passages modifiés (état avant modification)
+- Dans `kaguya/server.py`, **avant** `/chat` n'acceptait que du JSON et rejetait les soumissions formulaire.
+- Dans `README.md`, **avant** les commandes étaient présentées en style Bash uniquement, sans variante PowerShell.
+
 ## 2026-02-27 — Bouton Envoyer fiabilisé + log de chaque utilisation
 
 ### Pourquoi
