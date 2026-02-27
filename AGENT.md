@@ -15,3 +15,5 @@
 12. Le projet doit pouvoir démarrer un serveur de discussion local sur `http://127.0.0.1:1235`.
 13. L'expérience utilisateur doit privilégier des commandes prêtes à l'emploi (serveur/CLI) sans demander de code Python manuel.
 14. Si LM Studio occupe 127.0.0.1:1234, Kaguya web doit utiliser 127.0.0.1:1235 par défaut.
+15. Le serveur Kaguya doit pouvoir tenter de démarrer LM Studio automatiquement (`--start-lmstudio`) tout en gardant un fallback local.
+16. Dans le chat web, les commandes de pilotage doivent être optionnelles et préfixées par `/` (ex: `/etat`) pour ne pas polluer la conversation normale.

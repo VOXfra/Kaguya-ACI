@@ -1,5 +1,57 @@
 # Changelog
 
+## 2026-02-27 — Commandes slash optionnelles dans le chat web
+
+### Pourquoi
+- Éviter de mélanger commandes techniques et discussion naturelle dans l'interface web.
+- Permettre un pilotage explicite, ponctuel et lisible via une syntaxe dédiée.
+
+### Quoi
+- `kaguya/server.py` : ajout d'un parseur de commandes slash (`/etat`, `/resume`, etc.) côté `ChatService`.
+- Les messages sans slash restent une conversation classique (flux LLM normal).
+- Mise à jour du placeholder UI et de `README.md` pour documenter la syntaxe `/...`.
+- Ajout de tests dans `tests/test_cerveau.py` :
+  - slash command optionnelle,
+  - conversation standard inchangée.
+- Mise à jour de `AGENT.md` pour imposer la convention slash.
+
+### Comment
+1. Exécution baseline des tests.
+2. Ajout d'un branchement précoce slash côté serveur.
+3. Ajout de tests et validation finale.
+
+### Passages modifiés (état avant modification)
+- Dans `kaguya/server.py`, **avant** toutes les entrées passaient directement en mode conversationnel.
+- Dans `README.md`, **avant** la syntaxe `/etat` n'était pas décrite.
+
+## 2026-02-27 — Démarrage conversationnel fiable avec LM Studio (auto-start + fallback)
+
+### Pourquoi
+- La page web s'ouvrait mais l'expérience conversationnelle pouvait sembler inactive si LM Studio n'était pas démarré.
+- Il fallait permettre au serveur Kaguya de tenter le démarrage LM Studio automatiquement.
+
+### Quoi
+- `kaguya/server.py` :
+  - ajout de `maybe_start_lmstudio()` et `lmstudio_is_ready()`,
+  - nouveaux flags `--start-lmstudio` et `--lmstudio-cmd`,
+  - message de statut explicite au boot,
+  - maintien d'un fallback local si LM Studio reste indisponible,
+  - correction de l'affichage HTML (Kaguya 1235, LM Studio 1234).
+- `kaguya/llm.py` : timeout LM Studio ajusté pour réduire les faux fallback trop agressifs.
+- `README.md` : instructions explicites pour auto-démarrage LM Studio.
+- `tests/test_cerveau.py` : test de statut de démarrage LM Studio côté serveur.
+- `AGENT.md` : règle d'exigence auto-start LM Studio.
+
+### Comment
+1. Exécution des tests baseline.
+2. Ajout du gestionnaire de cycle LM Studio dans le serveur.
+3. Ajustement timeout LLM et documentation utilisateur.
+4. Validation finale par tests + vérification runtime serveur.
+
+### Passages modifiés (état avant modification)
+- Dans `kaguya/server.py`, **avant** il n'existait pas de flags `--start-lmstudio/--lmstudio-cmd`.
+- Dans `kaguya/server.py`, **avant** la page indiquait un port ambigu pour la discussion.
+
 ## 2026-02-27 — Compatibilité LM Studio + séparation des ports discussion
 
 ### Pourquoi

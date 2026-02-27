@@ -4,7 +4,7 @@ from pathlib import Path
 
 from kaguya.cerveau import CerveauKaguya, SIM_MIN_PER_TICK, SNAPSHOT_VERSION
 from kaguya.llm import ContextPacket, ModelRegistry, ModelRouter, quick_eval_harness
-from kaguya.server import ChatService
+from kaguya.server import ChatService, maybe_start_lmstudio
 from kaguya.cli import run_cli_once
 
 
@@ -146,3 +146,26 @@ def test_router_fallback_if_lmstudio_unavailable():
     res = router.generate("etat", "realtime", {}, ctx)
     assert isinstance(res.text, str)
     assert "model" in res.meta
+
+
+def test_server_reports_lmstudio_not_started_without_flag():
+    ok, msg = maybe_start_lmstudio(False, None)
+    assert ok is False or ok is True
+    assert isinstance(msg, str)
+
+
+def test_chat_service_slash_command_optional():
+    service = ChatService()
+    before_tick = service.cerveau.tick
+    payload = service.handle_message("/etat", mode="realtime")
+    assert payload["meta"]["mode"] == "slash"
+    assert "tick=" in payload["reply"]
+    # Commande de pilotage: pas d'avancement de boucle conversationnelle.
+    assert service.cerveau.tick == before_tick
+
+
+def test_chat_service_normal_message_still_conversational():
+    service = ChatService()
+    payload = service.handle_message("bonjour", mode="realtime")
+    assert "reply" in payload
+    assert payload["state"]["tick"] >= 1

@@ -128,7 +128,7 @@ class LMStudioEngine:
         )
 
         try:
-            with urlrequest.urlopen(req, timeout=0.35) as resp:
+            with urlrequest.urlopen(req, timeout=2.0) as resp:
                 body = resp.read().decode("utf-8")
                 data = json.loads(body)
         except (urlerror.URLError, TimeoutError, json.JSONDecodeError) as e:
