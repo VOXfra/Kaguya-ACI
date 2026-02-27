@@ -1,201 +1,159 @@
 # Kaguya
 
-Kaguya est un **moteur décisionnel local** (hors-ligne) pensé comme un agent cognitif évolutif.
+Kaguya est un **moteur décisionnel autonome local** orienté simulation continue.
 
-Ce dépôt fournit une première base exécutable du « cerveau » de Kaguya :
-- un **état interne dynamique**,
-- des **instincts prioritaires**,
-- une **mémoire court et long terme**,
-- une **boucle de vie** (observer → agir → apprendre → journaliser),
-- un **journal de bord lisible**.
-
-> ⚠️ Politique actuelle : exécution **100% locale**, sans API externe.
+Cette version implémente un cerveau centré sur un **temps interne en ticks** :
+- l'agent vit à son propre rythme (`tick`, `sim_minutes`, `sim_day_phase`),
+- l'heure du PC ne fait qu'influencer légèrement la récupération (`pc_day_phase`),
+- aucune API externe n'est utilisée.
 
 ---
 
-## Ce qu’est Kaguya
+## Vision rapide
 
-Kaguya n’est pas un simple chatbot :
-- elle maintient un état interne (énergie, clarté, curiosité, stabilité, tolérance au risque),
-- elle choisit ses actions selon des priorités (instinct de préservation, progression, apprentissage),
-- elle met à jour sa mémoire selon les résultats,
-- elle conserve un journal pour expliquer ce qu’elle fait, pourquoi et ce qu’elle retient.
+Kaguya maintient un état interne, choisit des actions selon ses objectifs et son historique, puis apprend à chaque cycle.
 
----
-
-## Prérequis
-
-- Python 3.10+
-- pip
+Le cycle standard :
+1. avancer d'un tick,
+2. récupérer passivement selon la phase simulée,
+3. filtrer les actions (gating),
+4. scorer et choisir une action,
+5. exécuter l'action,
+6. mettre à jour la mémoire long terme,
+7. produire un journal humain + un journal debug.
 
 ---
 
 ## Installation
 
-### 1) Cloner le dépôt
-
-```bash
-git clone <url-du-repo>
-cd Kaguya-ACI
-```
-
-### 2) (Recommandé) créer un environnement virtuel
-
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-```
-
-### 3) Installer les dépendances
-
-```bash
 python -m pip install -r requirements.txt
 ```
 
 ---
 
-## Vérifier que tout fonctionne
-
-Lancer la suite de tests :
+## Vérification
 
 ```bash
 pytest -q
 ```
 
-Si tout est correct, vous verrez les tests passer.
-
 ---
 
 ## Utilisation pas à pas
 
-### Étape 1 — Définir les actions du monde simulé
-
-Chaque action possède :
-- un coût énergétique,
-- un risque d’échec,
-- un gain de connaissance,
-- un gain de compétence.
-
-### Étape 2 — Instancier le cerveau de Kaguya
-
-On peut fixer une graine (`seed`) pour rendre les simulations reproductibles.
-
-### Étape 3 — Lancer une ou plusieurs boucles de vie
-
-À chaque cycle, Kaguya :
-1. vérifie la contrainte hors-ligne,
-2. choisit une action,
-3. exécute l’action dans le monde simulé,
-4. met à jour son état,
-5. écrit un événement mémoire,
-6. consolide la mémoire long terme,
-7. ajoute une entrée de journal.
-
-### Exemple minimal
+### 1) Instancier le cerveau
 
 ```python
-from kaguya.cerveau import ActionMonde, MondeSimule, CerveauKaguya
-
-monde = MondeSimule(actions=[
-    ActionMonde(nom="explorer", cout_energie=15.0, risque=0.20, gain_connaissance=8.0, gain_competence=3.0),
-    ActionMonde(nom="se_reposer", cout_energie=-20.0, risque=0.05, gain_connaissance=1.0, gain_competence=0.0),
-    ActionMonde(nom="s_entrainer", cout_energie=10.0, risque=0.10, gain_connaissance=2.0, gain_competence=7.0),
-])
+from kaguya.cerveau import CerveauKaguya
 
 cerveau = CerveauKaguya(seed=42)
+```
 
-for _ in range(3):
-    entree = cerveau.boucle_de_vie(monde)
-    print(entree)
+### 2) Lancer des ticks de vie
 
-print("État final:", cerveau.etat)
-print("Mémoire court terme:", cerveau.memoire.court_terme)
-print("Mémoire long terme:", cerveau.memoire.long_terme)
+```python
+for _ in range(10):
+    phrase = cerveau.boucle_de_vie()
+    print(phrase)
+```
+
+### 3) Observer les journaux
+
+```python
+print(cerveau.journal_humain[-1])
+print(cerveau.journal_debug[-1])
+```
+
+### 4) Lire l'état interne
+
+```python
+print(cerveau.etat)
+print(cerveau.tick, cerveau.sim_minutes, cerveau.sim_day_phase, cerveau.pc_day_phase)
 ```
 
 ---
 
 ## Architecture du cerveau
 
-Le fichier principal est `kaguya/cerveau.py`.
+Fichier principal : `kaguya/cerveau.py`.
 
-Composants :
+### Temps interne (règle d'or)
+- `tick: int`
+- `tick_seconds: float`
+- `sim_minutes: float`
+- `sim_day_minutes: float`
+- `sim_day_phase: str` (`night/morning/day/evening`)
+- `pc_day_phase: str` (profil faible)
+- `last_action_tick: dict[str, int]`
 
-- `ContrainteExecutionLocale`
-  - impose le mode hors-ligne strict,
-  - bloque toute activation d’API externe.
+Constante : `SIM_MIN_PER_TICK = 5`.
 
-- `EtatInterne`
-  - énergie,
-  - clarté,
-  - tolérance au risque,
-  - curiosité,
-  - stabilité.
+### États internes [0..1]
+- `energy`
+- `clarity`
+- `stability`
+- `curiosity`
+- `risk_tolerance`
+- `fatigue`
+- `stress`
 
-- `ActionMonde`
-  - structure d’une action disponible dans l’environnement.
+### Récupération passive
+Par tick, selon la phase simulée :
+- nuit : récupération plus forte,
+- autres phases : récupération plus modérée,
+- bonus PC nuit : +10% max.
 
-- `MondeSimule`
-  - exécute une action,
-  - calcule succès/échec et deltas d’état.
+### Actions simulées fixes (7)
+- `rest`
+- `organize`
+- `practice`
+- `explore`
+- `reflect`
+- `idle`
+- `challenge`
 
-- `Memoire`
-  - `court_terme` : événements récents,
-  - `long_terme` : résumés consolidés des expériences.
+Chaque action possède un profil fixe :
+- `base_risk`, `energy_cost`, `clarity_cost`,
+- `stability_gain`, `knowledge_gain`,
+- `fatigue_gain`, `stress_on_fail`.
 
-- `CerveauKaguya`
-  - choix d’action via instincts + scoring adaptatif,
-  - boucle de vie complète,
-  - journalisation explicative.
+### Objectifs actifs (4)
+- `Recover`
+- `Stabilize`
+- `Explore`
+- `Progress`
+
+Ces objectifs contribuent au score de décision selon priorité + fit(action).
+
+### Mémoire long terme par action
+- `n_total`, `n_success`, `n_fail`, `last_tick`
+- `ema_reward`, `ema_cost`
+- `recent_fail_streak`, `recent_success_streak`
+- `avoid_until_tick`
+
+EMA avec `alpha = 0.15`.
+
+### Gating + Scoring
+- gating avant score (avoid, énergie critique, stress/stabilité),
+- score unique : reward-cost + objectifs + mémoire + diversité + instinct risque + micro-bruit.
 
 ---
 
 ## Journal de bord
 
-Le journal (`cerveau.journal`) contient des entrées lisibles de type :
-- **Action** choisie,
-- **Pourquoi** (raison principale),
-- **Comment** (paramètres de simulation),
-- **Résultat** (succès/échec),
-- **Rétention** (valeur d’expérience retenue).
-
-Objectif : rendre les décisions observables et auditables.
+Deux canaux :
+- `journal_humain` : une phrase intentionnelle concise,
+- `journal_debug` : valeurs numériques, objectifs actifs, scores et transitions d'état.
 
 ---
 
-## Fonctionnement sans Internet / API externe
+## Local / hors-ligne
 
-Le moteur actuel :
-- n’appelle aucune API externe,
-- ne dépend d’aucun service réseau pour décider,
-- fonctionne sur simulation locale pure.
-
-La contrainte est validée à chaque cycle via `ContrainteExecutionLocale.verifier()`.
-
----
-
-## Structure du projet
-
-```text
-kaguya/
-  __init__.py
-  cerveau.py
-tests/
-  test_cerveau.py
-requirements.txt
-pyproject.toml
-CHANGELOG.md
-AGENT.md
-README.md
-```
-
----
-
-## Feuille de route possible
-
-- enrichir les instincts (intégrité, stabilité long terme, gestion de charge),
-- améliorer la mémoire (résumés sémantiques, pondération temporelle),
-- ajouter des scénarios de simulation plus réalistes,
-- exporter le journal vers des formats exploitables (JSON/CSV),
-- ajouter une CLI locale pour piloter les simulations.
+- Exécution strictement locale.
+- Pas d'appel réseau.
+- Pas d'API externe.
+- Validation via `ContrainteExecutionLocale.verifier()` à chaque tick.
 

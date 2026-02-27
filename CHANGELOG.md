@@ -1,5 +1,43 @@
 # Changelog
 
+## 2026-02-27 — Refonte tick interne + objectifs + scoring complet
+
+### Pourquoi
+- Aligner le cerveau avec la règle d'or : le temps interne tick pilote l'agent.
+- Ajouter les mécanismes demandés : fatigue/stress, récupération passive, objectifs actifs, gating, scoring unique et mémoire LT enrichie.
+- Produire un double journal (humain + debug) et mettre la documentation à niveau.
+
+### Quoi
+- Refonte de `kaguya/cerveau.py` avec :
+  - temps interne (`tick`, `tick_seconds`, `sim_minutes`, `sim_day_minutes`, `sim_day_phase`, `pc_day_phase`),
+  - états internes normalisés `[0..1]` incluant `fatigue` et `stress`,
+  - table fixe des 7 actions (`rest`, `organize`, `practice`, `explore`, `reflect`, `idle`, `challenge`),
+  - objectifs actifs (`Recover`, `Stabilize`, `Explore`, `Progress`),
+  - mémoire long terme par action (EMA, streaks, avoid_until_tick),
+  - gating avant décision,
+  - formule de scoring unique,
+  - journaux `journal_humain` et `journal_debug`.
+- Mise à jour complète de `tests/test_cerveau.py` pour valider la nouvelle architecture.
+- Mise à jour de `README.md` (guide pas à pas orienté tick interne).
+- Mise à jour de `AGENT.md` pour expliciter la gouvernance temps interne + offline.
+
+### Comment
+1. Exécution des tests avant modification.
+2. Refonte incrémentale du moteur autour du tick interne.
+3. Réécriture des tests pour couvrir les nouvelles règles.
+4. Validation finale de l'ensemble par `pytest -q`.
+
+### Passages modifiés (état avant modification)
+- Dans `kaguya/cerveau.py`, l'état interne **avant** utilisait les échelles 0..100 et sans `fatigue/stress` :
+  - `energie: float = 70.0`
+  - `clarte: float = 65.0`
+  - `tolerance_risque: float = 45.0`
+- Dans `kaguya/cerveau.py`, la boucle **avant** ne pilotait pas le temps interne tick :
+  - `def boucle_de_vie(self) -> str:`
+  - `self.contrainte_locale.verifier()`
+  - `action = self.choisir_action()`
+- Dans `tests/test_cerveau.py`, les tests **avant** validaient l'ancienne API (sans tick/scoring/objectifs complets).
+
 ## 2026-02-27 — Documentation complète avec README pas à pas
 
 ### Pourquoi

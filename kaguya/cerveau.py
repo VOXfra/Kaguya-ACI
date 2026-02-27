@@ -1,40 +1,35 @@
-"""Moteur décisionnel simplifié de Kaguya.
+"""Cerveau décisionnel de Kaguya (version tick interne).
 
-Ce module implémente :
-- un état interne dynamique,
-- des instincts prioritaires,
-- une mémoire court et long terme,
-- une boucle de vie capable d'observer, décider, agir et apprendre,
-- un journal de bord lisible en français,
-- une contrainte explicite d'exécution 100% locale (hors-ligne strict).
+Principes clés :
+- le temps interne pilote l'agent (tick + temps simulé),
+- l'horloge PC ne sert qu'à un profil faible (pc_day_phase),
+- fonctionnement 100% local/hors-ligne sans API externe,
+- objectifs actifs + gating + scoring stable,
+- mémoire long terme par action avec EMA et mécanisme d'évitement,
+- double journal : humain (court) + debug (numérique).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 import random
-from typing import Dict, List
+from typing import Callable, Dict, List
+import time
+
+SIM_MIN_PER_TICK: float = 5.0
+EMA_ALPHA: float = 0.15
 
 
 @dataclass
 class ContrainteExecutionLocale:
-    """Définit la politique d'exécution locale de Kaguya.
-
-    Cette structure sert de garde-fou explicite :
-    - aucune API externe,
-    - aucun accès réseau,
-    - exécution entièrement locale.
-    """
+    """Politique stricte : Kaguya reste locale/hors-ligne."""
 
     hors_ligne_strict: bool = True
     api_externe_autorisee: bool = False
 
     def verifier(self) -> None:
-        """Valide que la politique locale stricte est respectée.
-
-        Si un futur changement active le réseau ou les API externes,
-        l'erreur est immédiate pour protéger l'architecture demandée.
-        """
+        """Bloque explicitement les modes non autorisés."""
         if not self.hors_ligne_strict:
             raise RuntimeError("Le mode hors-ligne strict est obligatoire pour Kaguya.")
         if self.api_externe_autorisee:
@@ -43,209 +38,451 @@ class ContrainteExecutionLocale:
 
 @dataclass
 class EtatInterne:
-    """Représente l'état interne vivant de Kaguya.
+    """État interne minimal borné dans [0..1]."""
 
-    Chaque valeur est bornée entre 0 et 100 pour rester lisible,
-    stable et facilement interprétable par les règles d'instinct.
-    """
-
-    energie: float = 70.0
-    clarte: float = 65.0
-    tolerance_risque: float = 45.0
-    curiosite: float = 60.0
-    stabilite: float = 70.0
+    energy: float = 0.70
+    clarity: float = 0.65
+    stability: float = 0.70
+    curiosity: float = 0.60
+    risk_tolerance: float = 0.45
+    fatigue: float = 0.25
+    stress: float = 0.25
 
     def borner(self) -> None:
-        """Contraint toutes les métriques de l'état interne à [0, 100]."""
-        self.energie = max(0.0, min(100.0, self.energie))
-        self.clarte = max(0.0, min(100.0, self.clarte))
-        self.tolerance_risque = max(0.0, min(100.0, self.tolerance_risque))
-        self.curiosite = max(0.0, min(100.0, self.curiosite))
-        self.stabilite = max(0.0, min(100.0, self.stabilite))
+        """Maintient toutes les dimensions dans [0..1]."""
+        self.energy = max(0.0, min(1.0, self.energy))
+        self.clarity = max(0.0, min(1.0, self.clarity))
+        self.stability = max(0.0, min(1.0, self.stability))
+        self.curiosity = max(0.0, min(1.0, self.curiosity))
+        self.risk_tolerance = max(0.0, min(1.0, self.risk_tolerance))
+        self.fatigue = max(0.0, min(1.0, self.fatigue))
+        self.stress = max(0.0, min(1.0, self.stress))
 
 
 @dataclass
-class ActionMonde:
-    """Décrit une action disponible dans le monde simulé."""
+class MemoireAction:
+    """Mémoire long terme par action (obligatoire)."""
 
-    nom: str
-    cout_energie: float
-    risque: float
-    gain_connaissance: float
-    gain_competence: float
+    n_total: int = 0
+    n_success: int = 0
+    n_fail: int = 0
+    last_tick: int = 0
+    ema_reward: float = 0.0
+    ema_cost: float = 0.0
+    recent_fail_streak: int = 0
+    recent_success_streak: int = 0
+    avoid_until_tick: int = 0
 
 
 @dataclass
 class Memoire:
-    """Stocke les événements récents et les résumés d'expériences."""
+    """Mémoire globale : événements récents + mémoire actionnelle LT."""
 
     court_terme: List[Dict[str, float | str | bool]] = field(default_factory=list)
-    long_terme: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    long_terme: Dict[str, MemoireAction] = field(default_factory=dict)
+
+    def init_actions(self, noms_actions: List[str]) -> None:
+        """Assure l'initialisation mémoire pour chaque action fixe."""
+        for nom in noms_actions:
+            if nom not in self.long_terme:
+                self.long_terme[nom] = MemoireAction()
 
     def enregistrer_evenement(self, evenement: Dict[str, float | str | bool]) -> None:
-        """Ajoute un événement en mémoire court terme avec fenêtre glissante.
-
-        On garde volontairement peu d'éléments récents pour simuler une mémoire
-        active, focalisée sur le présent.
-        """
+        """Conserve une fenêtre glissante récente."""
         self.court_terme.append(evenement)
-        if len(self.court_terme) > 10:
+        if len(self.court_terme) > 30:
             self.court_terme.pop(0)
 
-    def consolider(self, nom_action: str, succes: bool, score_valeur: float) -> None:
-        """Met à jour la mémoire long terme sous forme de résumé statistique."""
-        if nom_action not in self.long_terme:
-            self.long_terme[nom_action] = {
-                "essais": 0.0,
-                "succes": 0.0,
-                "valeur_cumulee": 0.0,
-            }
 
-        resume = self.long_terme[nom_action]
-        resume["essais"] += 1.0
-        if succes:
-            resume["succes"] += 1.0
-        resume["valeur_cumulee"] += score_valeur
+@dataclass
+class ActionProfile:
+    """Profil fixe d'action du monde simulé."""
+
+    base_risk: float
+    energy_cost: float
+    clarity_cost: float
+    stability_gain: float
+    knowledge_gain: float
+    fatigue_gain: float
+    stress_on_fail: float
 
 
 @dataclass
 class MondeSimule:
-    """Monde minimaliste fournissant la liste des actions possibles."""
+    """Monde simulé avec 7 actions fixes."""
 
-    actions: List[ActionMonde]
+    action_profiles: Dict[str, ActionProfile]
 
-    def executer(self, action: ActionMonde, aleatoire: random.Random) -> Dict[str, float | bool]:
-        """Exécute une action et renvoie le résultat simulé.
+    @classmethod
+    def standard(cls) -> "MondeSimule":
+        """Construit la table obligatoire de 7 actions fixes."""
+        return cls(
+            action_profiles={
+                "rest": ActionProfile(0.02, -0.10, -0.04, 0.05, 0.00, -0.10, 0.04),
+                "organize": ActionProfile(0.08, 0.08, 0.05, 0.10, 0.03, 0.04, 0.06),
+                "practice": ActionProfile(0.14, 0.12, 0.09, 0.05, 0.12, 0.08, 0.09),
+                "explore": ActionProfile(0.22, 0.16, 0.10, 0.03, 0.18, 0.09, 0.12),
+                "reflect": ActionProfile(0.05, 0.05, -0.03, 0.08, 0.09, -0.02, 0.05),
+                "idle": ActionProfile(0.01, -0.03, -0.02, 0.02, 0.00, -0.05, 0.03),
+                "challenge": ActionProfile(0.35, 0.20, 0.16, 0.07, 0.20, 0.12, 0.18),
+            }
+        )
 
-        Le succès dépend du risque : plus le risque est haut, plus l'échec
-        a de chances d'apparaître.
-        """
-        succes = aleatoire.random() > action.risque
-        multiplicateur = 1.0 if succes else 0.25
-        return {
-            "succes": succes,
-            "energie_delta": -action.cout_energie,
-            "clarte_delta": (action.gain_connaissance * 0.2) * multiplicateur - (action.risque * 10),
-            "stabilite_delta": (2.0 if succes else -5.0) - (action.risque * 4),
-            "curiosite_delta": action.gain_connaissance * 0.1,
-            "tolerance_risque_delta": 1.0 if succes else -1.5,
-            "gain_connaissance_reel": action.gain_connaissance * multiplicateur,
-            "gain_competence_reel": action.gain_competence * multiplicateur,
-        }
+    @property
+    def actions(self) -> List[str]:
+        """Expose les actions disponibles."""
+        return list(self.action_profiles.keys())
+
+
+@dataclass
+class ObjectifActif:
+    """Structure d'objectif actif demandée."""
+
+    name: str
+    priority: float
+    is_active: Callable[[EtatInterne, bool, bool], bool]
+    fit: Callable[[str], float]
 
 
 class CerveauKaguya:
-    """Cerveau décisionnel principal de Kaguya.
-
-    Le moteur applique des instincts (priorités), choisit une action,
-    intègre le retour du monde, puis produit une entrée de journal.
-    """
+    """Moteur de décision principal basé sur ticks internes."""
 
     def __init__(self, seed: int | None = None) -> None:
-        # Générateur pseudo-aléatoire pour des simulations reproductibles.
         self._rng = random.Random(seed)
-        # Politique de sécurité : Kaguya doit rester totalement locale.
+        self._last_tick_monotonic = time.monotonic()
+
         self.contrainte_locale = ContrainteExecutionLocale()
-        # État interne dynamique initial.
         self.etat = EtatInterne()
-        # Mémoire court/long terme.
+
+        # Temps interne : c'est lui qui pilote, jamais l'heure PC directement.
+        self.tick: int = 0
+        self.tick_seconds: float = 0.0
+        self.sim_minutes: float = 0.0
+        self.sim_day_minutes: float = 0.0
+        self.sim_day_phase: str = "night"
+        self.pc_day_phase: str = self._compute_pc_day_phase()
+
         self.memoire = Memoire()
-        # Journal de bord textuel (historique lisible).
-        self.journal: List[str] = []
+        self.journal_humain: List[str] = []
+        self.journal_debug: List[Dict[str, object]] = []
 
-    def choisir_action(self, monde: MondeSimule) -> ActionMonde:
-        """Choisit une action selon les instincts et l'état courant.
+        self.monde = MondeSimule.standard()
+        self.memoire.init_actions(self.monde.actions)
+        self.last_action_tick: Dict[str, int] = {action: 0 for action in self.monde.actions}
 
-        Priorité principale : si l'énergie est basse, se reposer devient dominant.
-        Sinon, on maximise un score orienté curiosité + prudence adaptative.
+        self.objectifs = self._build_objectifs()
+
+    def _compute_pc_day_phase(self) -> str:
+        """Phase PC simple (jour/nuit) avec impact limité."""
+        hour = datetime.now().hour
+        return "night" if (hour < 6 or hour >= 22) else "day"
+
+    def _compute_sim_day_phase(self) -> str:
+        """Phase simulée basée uniquement sur sim_day_minutes."""
+        m = self.sim_day_minutes
+        if 0 <= m < 360:
+            return "night"
+        if 360 <= m < 720:
+            return "morning"
+        if 720 <= m < 1080:
+            return "day"
+        return "evening"
+
+    def _tick_time_update(self) -> None:
+        """Fait avancer le temps interne d'un tick."""
+        now = time.monotonic()
+        self.tick_seconds = now - self._last_tick_monotonic
+        self._last_tick_monotonic = now
+
+        self.tick += 1
+        self.sim_minutes += SIM_MIN_PER_TICK
+        self.sim_day_minutes = self.sim_minutes % 1440.0
+        self.sim_day_phase = self._compute_sim_day_phase()
+        self.pc_day_phase = self._compute_pc_day_phase()
+
+    def _passive_recovery(self) -> None:
+        """Applique la récupération passive par tick selon phase simulée.
+
+        L'influence PC est limitée à +/-10% (ici +10% la nuit).
         """
-        # Instinct de préservation énergétique : si trop bas, recherche de repos.
-        if self.etat.energie < 25.0:
-            for action in monde.actions:
-                if "repos" in action.nom:
-                    return action
+        if self.sim_day_phase == "night":
+            e, c, f, s = 0.030, 0.020, -0.025, -0.012
+        else:
+            e, c, f, s = 0.012, 0.008, -0.010, -0.006
 
-        meilleure_action = monde.actions[0]
-        meilleur_score = float("-inf")
+        # Micro-influence horaire réelle, bornée à +10%.
+        boost = 1.10 if self.pc_day_phase == "night" else 1.0
+        e, c, f, s = e * boost, c * boost, f * boost, s * boost
 
-        for action in monde.actions:
-            # Score utilité : combinaison simple entre gains et coûts.
-            score = (
-                action.gain_connaissance * (self.etat.curiosite / 100.0)
-                + action.gain_competence * 0.7
-                - action.cout_energie * (1.0 if self.etat.energie < 40 else 0.5)
-                - (action.risque * (100.0 - self.etat.tolerance_risque) / 50.0)
-            )
-
-            # On tient compte de l'expérience passée (mémoire long terme).
-            if action.nom in self.memoire.long_terme:
-                resume = self.memoire.long_terme[action.nom]
-                taux_succes = resume["succes"] / max(1.0, resume["essais"])
-                score += taux_succes * 2.0
-
-            if score > meilleur_score:
-                meilleur_score = score
-                meilleure_action = action
-
-        return meilleure_action
-
-    def _appliquer_resultat(self, resultat: Dict[str, float | bool]) -> None:
-        """Met à jour l'état interne en appliquant les deltas du résultat."""
-        self.etat.energie += float(resultat["energie_delta"])
-        self.etat.clarte += float(resultat["clarte_delta"])
-        self.etat.stabilite += float(resultat["stabilite_delta"])
-        self.etat.curiosite += float(resultat["curiosite_delta"])
-        self.etat.tolerance_risque += float(resultat["tolerance_risque_delta"])
+        self.etat.energy += e
+        self.etat.clarity += c
+        self.etat.fatigue += f
+        self.etat.stress += s
         self.etat.borner()
 
-    def boucle_de_vie(self, monde: MondeSimule) -> str:
-        """Réalise un cycle complet : observer -> agir -> apprendre -> journaliser."""
-        # Vérification systématique des contraintes hors-ligne avant tout cycle.
+    def _build_objectifs(self) -> List[ObjectifActif]:
+        """Construit les 4 objectifs actifs exacts demandés."""
+
+        def fit_from(mapping: Dict[str, float]) -> Callable[[str], float]:
+            return lambda action: mapping.get(action, 0.0)
+
+        return [
+            ObjectifActif(
+                name="Recover",
+                priority=1.0,
+                is_active=lambda s, _r, _st: s.energy < 0.35 or s.clarity < 0.35 or s.fatigue > 0.70,
+                fit=fit_from({"rest": 1.0, "idle": 0.5, "reflect": 0.3}),
+            ),
+            ObjectifActif(
+                name="Stabilize",
+                priority=0.9,
+                is_active=lambda s, _r, _st: s.stability < 0.45 or s.stress > 0.65,
+                fit=fit_from({"organize": 1.0, "reflect": 0.6, "rest": 0.4}),
+            ),
+            ObjectifActif(
+                name="Explore",
+                priority=0.6,
+                is_active=lambda s, _r, _st: s.curiosity > 0.60 and s.energy > 0.50 and s.stability > 0.55 and s.stress < 0.70,
+                fit=fit_from({"explore": 1.0, "challenge": 0.3}),
+            ),
+            ObjectifActif(
+                name="Progress",
+                priority=0.5,
+                is_active=lambda _s, recover_active, stabilize_active: not (recover_active or stabilize_active),
+                fit=fit_from({"practice": 1.0, "reflect": 0.4, "organize": 0.2}),
+            ),
+        ]
+
+    def _active_objectifs(self) -> List[ObjectifActif]:
+        """Évalue les objectifs actifs avec dépendance Recover/Stabilize pour Progress."""
+        recover = self.objectifs[0]
+        stabilize = self.objectifs[1]
+        recover_active = recover.is_active(self.etat, False, False)
+        stabilize_active = stabilize.is_active(self.etat, recover_active, False)
+
+        actifs: List[ObjectifActif] = []
+        for obj in self.objectifs:
+            if obj.is_active(self.etat, recover_active, stabilize_active):
+                actifs.append(obj)
+        return actifs
+
+    def _gated_actions(self) -> List[str]:
+        """Applique le filtre de gating avant scoring."""
+        candidates: List[str] = []
+        for action in self.monde.actions:
+            mem = self.memoire.long_terme[action]
+            # Gating d'évitement mémoire.
+            if mem.avoid_until_tick > self.tick:
+                continue
+            candidates.append(action)
+
+        # Énergie critique : actions autorisées rest/idle/reflect uniquement.
+        if self.etat.energy < 0.20:
+            allowed = {"rest", "idle", "reflect"}
+            candidates = [a for a in candidates if a in allowed]
+
+        filtered: List[str] = []
+        for action in candidates:
+            # Stabilité basse : challenge interdit et explore réduit (filtrage strict demandé).
+            if self.etat.stability < 0.30 and action == "challenge":
+                continue
+            # Stress très haut : challenge interdit.
+            if self.etat.stress > 0.85 and action == "challenge":
+                continue
+            filtered.append(action)
+
+        return filtered or ["rest"]
+
+    def _score_action(self, action: str, actifs: List[ObjectifActif]) -> float:
+        """Applique la formule unique de scoring demandée."""
+        p = self.monde.action_profiles[action]
+        mem = self.memoire.long_terme[action]
+
+        # Reward/Cost observables.
+        reward = p.knowledge_gain + p.stability_gain
+        cost = p.energy_cost + p.clarity_cost + p.fatigue_gain * 0.6
+
+        score = reward - cost
+
+        # Objectifs.
+        for obj in actifs:
+            score += obj.priority * obj.fit(action)
+
+        # Mémoire.
+        score += 0.60 * mem.ema_reward
+        score -= 0.60 * mem.ema_cost
+        score -= 0.80 * mem.recent_fail_streak
+        score += 0.25 * mem.recent_success_streak
+
+        # Récence / diversité.
+        gap = min(1.0, (self.tick - self.last_action_tick[action]) / 50.0)
+        score += 0.20 * gap
+
+        # Instinct risque.
+        risk = p.base_risk + self.etat.stress * 0.25 - self.etat.stability * 0.15
+        score -= (1.0 - self.etat.risk_tolerance) * 0.60 * risk
+
+        # Pénalités spécifiques demandées côté gating souple.
+        if self.etat.stability < 0.30 and action == "explore":
+            score -= 0.20
+        if self.etat.stress > 0.85 and action == "explore":
+            score -= 0.30
+
+        # Micro bruit.
+        score += self._rng.uniform(-0.05, 0.05)
+        return score
+
+    def choisir_action(self) -> str:
+        """Sélectionne l'action de score maximal après gating."""
+        actifs = self._active_objectifs()
+        candidates = self._gated_actions()
+        scores = {a: self._score_action(a, actifs) for a in candidates}
+        action = max(scores, key=scores.get)
+
+        # Journal debug de décision (numérique).
+        self.journal_debug.append(
+            {
+                "tick": self.tick,
+                "sim_day_phase": self.sim_day_phase,
+                "pc_day_phase": self.pc_day_phase,
+                "active_objectifs": [o.name for o in actifs],
+                "candidates": candidates,
+                "scores": scores,
+                "chosen": action,
+            }
+        )
+        return action
+
+    def _executer_action(self, action: str) -> Dict[str, float | bool]:
+        """Simule le résultat de l'action et renvoie reward/cost observés."""
+        p = self.monde.action_profiles[action]
+
+        # Risque effectif simple et stable.
+        risk_effective = max(0.0, min(1.0, p.base_risk + self.etat.stress * 0.20 - self.etat.stability * 0.10))
+        succes = self._rng.random() > risk_effective
+
+        # Application de l'action sur l'état.
+        self.etat.energy -= p.energy_cost
+        self.etat.clarity -= p.clarity_cost
+        self.etat.stability += p.stability_gain * (1.0 if succes else 0.4)
+        self.etat.curiosity += p.knowledge_gain * 0.05
+        self.etat.fatigue += p.fatigue_gain
+
+        if succes:
+            self.etat.stress -= 0.02
+            observed_reward = p.knowledge_gain + p.stability_gain
+        else:
+            self.etat.stress += p.stress_on_fail
+            observed_reward = (p.knowledge_gain + p.stability_gain) * 0.25
+
+        observed_cost = p.energy_cost + p.clarity_cost + p.fatigue_gain * 0.6
+
+        self.etat.borner()
+
+        return {
+            "success": succes,
+            "observed_reward": observed_reward,
+            "observed_cost": observed_cost,
+            "risk_effective": risk_effective,
+        }
+
+    def _update_memoire_long_terme(self, action: str, resultat: Dict[str, float | bool]) -> None:
+        """Met à jour la mémoire LT selon la règle obligatoire."""
+        mem = self.memoire.long_terme[action]
+        succes = bool(resultat["success"])
+
+        mem.n_total += 1
+        mem.last_tick = self.tick
+
+        if succes:
+            mem.n_success += 1
+            mem.recent_success_streak += 1
+            mem.recent_fail_streak = 0
+        else:
+            mem.n_fail += 1
+            mem.recent_fail_streak += 1
+            mem.recent_success_streak = 0
+            if self.etat.stress > 0.75:
+                mem.avoid_until_tick = self.tick + 40
+
+        # EMA reward/cost.
+        observed_reward = float(resultat["observed_reward"])
+        observed_cost = float(resultat["observed_cost"])
+        mem.ema_reward = (1.0 - EMA_ALPHA) * mem.ema_reward + EMA_ALPHA * observed_reward
+        mem.ema_cost = (1.0 - EMA_ALPHA) * mem.ema_cost + EMA_ALPHA * observed_cost
+
+    def _state_snapshot(self) -> Dict[str, float | int | str]:
+        """Capture l'état avant décision pour audit."""
+        return {
+            "tick": self.tick,
+            "sim_minutes": self.sim_minutes,
+            "sim_day_minutes": self.sim_day_minutes,
+            "sim_day_phase": self.sim_day_phase,
+            "pc_day_phase": self.pc_day_phase,
+            "energy": self.etat.energy,
+            "clarity": self.etat.clarity,
+            "stability": self.etat.stability,
+            "curiosity": self.etat.curiosity,
+            "risk_tolerance": self.etat.risk_tolerance,
+            "fatigue": self.etat.fatigue,
+            "stress": self.etat.stress,
+        }
+
+    def _human_log(self, action: str, success: bool) -> str:
+        """Produit un log humain (1 phrase max)."""
+        if action == "rest":
+            base = "Je récupère pour préserver ma clarté et mon énergie"
+        elif action in {"explore", "challenge"}:
+            base = "Je tente une progression mesurée malgré l'incertitude"
+        elif action in {"organize", "reflect"}:
+            base = "Je stabilise mon fonctionnement pour rester cohérente"
+        else:
+            base = "Je maintiens un rythme prudent et durable"
+        suffix = " (succès)." if success else " (échec, j'ajuste)."
+        return base + suffix
+
+    def boucle_de_vie(self) -> str:
+        """Cycle complet : temps -> récupération -> décision -> action -> apprentissage."""
         self.contrainte_locale.verifier()
 
-        # Étape 1 : choisir l'action la plus cohérente avec l'état interne.
-        action = self.choisir_action(monde)
+        self._tick_time_update()
+        self._passive_recovery()
 
-        # Étape 2 : exécuter l'action dans le monde simulé.
-        resultat = monde.executer(action, self._rng)
+        state_before = self._state_snapshot()
+        action = self.choisir_action()
+        resultat = self._executer_action(action)
 
-        # Étape 3 : mise à jour physiologique/cognitive.
-        self._appliquer_resultat(resultat)
+        self.last_action_tick[action] = self.tick
+        self._update_memoire_long_terme(action, resultat)
 
-        # Étape 4 : calcul d'une valeur globale de l'expérience.
-        score_valeur = float(resultat["gain_connaissance_reel"]) + float(resultat["gain_competence_reel"]) - max(0.0, action.cout_energie * 0.3)
-
-        # Étape 5 : archivage mémoire court terme.
         evenement = {
-            "action": action.nom,
-            "succes": bool(resultat["succes"]),
-            "valeur": score_valeur,
-            "energie": self.etat.energie,
-            "clarte": self.etat.clarte,
+            "tick": self.tick,
+            "action": action,
+            "success": bool(resultat["success"]),
+            "reward": float(resultat["observed_reward"]),
+            "cost": float(resultat["observed_cost"]),
+            "stress": self.etat.stress,
+            "fatigue": self.etat.fatigue,
         }
         self.memoire.enregistrer_evenement(evenement)
 
-        # Étape 6 : consolidation long terme (apprentissage).
-        self.memoire.consolider(action.nom, bool(resultat["succes"]), score_valeur)
+        human = self._human_log(action, bool(resultat["success"]))
+        self.journal_humain.append(human)
 
-        # Étape 7 : génération du journal lisible en français.
-        raison = self._raison_decision(action)
-        entree = (
-            f"Action: {action.nom} | "
-            f"Pourquoi: {raison} | "
-            f"Comment: simulation locale hors-ligne avec risque={action.risque:.2f}, coût_énergie={action.cout_energie:.1f} | "
-            f"Résultat: {'succès' if resultat['succes'] else 'échec'} | "
-            f"Rétention: expérience évaluée à {score_valeur:.2f}"
+        # Complément debug du tick (état avant + résultat).
+        self.journal_debug.append(
+            {
+                "tick": self.tick,
+                "state_before": state_before,
+                "action_result": {
+                    "action": action,
+                    "success": bool(resultat["success"]),
+                    "risk_effective": float(resultat["risk_effective"]),
+                    "reward": float(resultat["observed_reward"]),
+                    "cost": float(resultat["observed_cost"]),
+                },
+                "state_after": self._state_snapshot(),
+            }
         )
-        self.journal.append(entree)
-        return entree
 
-    def _raison_decision(self, action: ActionMonde) -> str:
-        """Explique brièvement la raison principale du choix d'action."""
-        if "repos" in action.nom and self.etat.energie <= 35.0:
-            return "priorité à la préservation énergétique"
-        if action.risque > 0.4 and self.etat.tolerance_risque < 50:
-            return "prise de risque calculée pour apprendre"
-        if action.gain_connaissance >= action.gain_competence:
-            return "curiosité dominante orientée connaissance"
-        return "équilibre entre progression et stabilité"
+        return human
