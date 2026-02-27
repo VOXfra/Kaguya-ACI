@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-02-27 — Bouton Envoyer fiabilisé + log de chaque utilisation
+
+### Pourquoi
+- Le bouton **Envoyer** pouvait sembler inactif si la réponse backend n'était pas un JSON valide ou si l'appel échouait silencieusement.
+- Besoin métier : générer une trace fichier après chaque utilisation du chat.
+
+### Quoi
+- `kaguya/server.py` :
+  - UI web renforcée : bouton dédié `id=send-btn`, disable pendant envoi, endpoint absolu (`window.location.origin`), parsing JSON protégé et messages d'erreur explicites,
+  - affichage du chemin du fichier log renvoyé par l'API,
+  - `ChatService` écrit désormais un fichier JSON par message dans `logs/chat_usage/` et ajoute `meta.log_file` dans la réponse.
+- `tests/test_cerveau.py` :
+  - ajout du test `test_chat_service_writes_usage_log_file` pour vérifier la création du fichier log et son contenu minimal.
+- `.gitignore` :
+  - ajout de `logs/` pour éviter de versionner les traces d'usage locales.
+
+### Comment
+1. Durcissement du JavaScript front pour éviter les échecs silencieux.
+2. Journalisation côté serveur à chaque `handle_message`.
+3. Validation via tests unitaires + smoke API.
+
+### Passages modifiés (état avant modification)
+- Dans `kaguya/server.py`, **avant** l'UI faisait `res.json()` directement et pouvait échouer sans diagnostic lisible en cas de réponse non conforme.
+- Dans `kaguya/server.py`, **avant** aucune trace fichier n'était créée automatiquement après un envoi utilisateur.
+
 ## 2026-02-27 — Reconnexion LM Studio après démarrage manuel + bouton Envoyer robuste
 
 ### Pourquoi

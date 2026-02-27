@@ -11,10 +11,12 @@ Notes:
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime
 import argparse
 import json
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 import os
 import shlex
 import subprocess
@@ -89,6 +91,24 @@ class ChatService:
     def __init__(self) -> None:
         self.cerveau = CerveauKaguya(seed=42)
         self.history: list[dict[str, Any]] = []
+        self.logs_dir = Path("logs/chat_usage")
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+
+    def _write_usage_log(self, message: str, mode: str, payload: Dict[str, Any]) -> str:
+        """Persist chaque utilisation du chat dans un fichier JSON dédié."""
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+        log_path = self.logs_dir / f"usage-{ts}.json"
+        log_payload = {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "message": message,
+            "mode": mode,
+            "reply": payload.get("reply", ""),
+            "meta": payload.get("meta", {}),
+            "commands": payload.get("commands", []),
+            "tick": payload.get("state", {}).get("tick"),
+        }
+        log_path.write_text(json.dumps(log_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        return str(log_path)
 
     def state_payload(self) -> Dict[str, Any]:
         """Retourne un état lisible pour inspection côté UI/API."""
@@ -154,6 +174,8 @@ class ChatService:
         slash_payload = self._run_slash_command(message)
         if slash_payload is not None:
             self.history.append({"user": message, "assistant": slash_payload["reply"], "tick": self.cerveau.tick})
+            log_path = self._write_usage_log(message, mode, slash_payload)
+            slash_payload.setdefault("meta", {})["log_file"] = log_path
             return slash_payload
 
         tick_log = self.cerveau.boucle_de_vie()
@@ -170,6 +192,8 @@ class ChatService:
             "state": self.state_payload(),
         }
         self.history.append({"user": message, "assistant": payload["reply"], "tick": self.cerveau.tick})
+        log_path = self._write_usage_log(message, mode, payload)
+        payload.setdefault("meta", {})["log_file"] = log_path
         return payload
 
 
@@ -183,7 +207,7 @@ HTML_PAGE = """<!doctype html>
 <div id='chat' style='white-space:pre-wrap;border:1px solid #ccc;padding:8px;height:300px;overflow:auto'></div>
 <input id='msg' style='width:70%' placeholder='Écris un message... (/etat, /resume, /pause...)'/>
 <select id='mode'><option value='realtime'>realtime</option><option value='reflexion'>reflexion</option></select>
-<button onclick='sendMsg()'>Envoyer</button>
+<button id='send-btn' type='button'>Envoyer</button>
 <script>
 function appendChatLine(text){
   const box=document.getElementById('chat');
@@ -193,6 +217,7 @@ function appendChatLine(text){
 
 async function sendMsg(){
   const input=document.getElementById('msg');
+  const sendBtn=document.getElementById('send-btn');
   const m=input.value.trim();
   const mode=document.getElementById('mode').value;
   if(!m){
@@ -201,21 +226,40 @@ async function sendMsg(){
   }
 
   appendChatLine('Toi: '+m);
+  sendBtn.disabled = true;
   try{
-    const res=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m,mode})});
-    const data=await res.json();
+    const endpoint = new URL('/chat', window.location.origin).toString();
+    const res = await fetch(endpoint, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({message:m,mode})
+    });
+    const raw = await res.text();
+    let data = {};
+    try{
+      data = JSON.parse(raw);
+    }catch(parseErr){
+      appendChatLine('Kaguya: [erreur parsing JSON] '+String(parseErr));
+      return;
+    }
+
     if(!res.ok){
       appendChatLine('Kaguya: [erreur HTTP '+res.status+'] '+(data.error || 'réponse invalide'));
       return;
     }
+
     const err = data.meta && data.meta.error ? ' [fallback='+data.meta.error+']' : '';
-    appendChatLine('Kaguya: '+(data.reply || '[réponse vide]')+err);
+    const logFile = data.meta && data.meta.log_file ? ' [log='+data.meta.log_file+']' : '';
+    appendChatLine('Kaguya: '+(data.reply || '[réponse vide]')+err+logFile);
     input.value='';
   }catch(e){
     appendChatLine('Kaguya: [erreur réseau] '+String(e));
+  } finally {
+    sendBtn.disabled = false;
   }
 }
 
+document.getElementById('send-btn').addEventListener('click', sendMsg);
 document.getElementById('msg').addEventListener('keydown', (ev) => {
   if(ev.key === 'Enter'){
     ev.preventDefault();

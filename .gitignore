@@ -4,3 +4,5 @@ __pycache__/
 
 kaguya_snapshot.json
 kaguya_snapshot.json.bak
+
+logs/

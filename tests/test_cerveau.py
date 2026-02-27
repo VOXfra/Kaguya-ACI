@@ -207,5 +207,23 @@ def test_chat_service_normal_message_still_conversational():
     assert payload["state"]["tick"] >= 1
 
 
+
+
+def test_chat_service_writes_usage_log_file(tmp_path):
+    service = ChatService()
+    service.logs_dir = tmp_path / "chat_usage"
+    service.logs_dir.mkdir(parents=True, exist_ok=True)
+
+    payload = service.handle_message("bonjour", mode="realtime")
+    log_file = payload["meta"].get("log_file")
+    assert isinstance(log_file, str)
+
+    p = Path(log_file)
+    assert p.exists()
+    content = p.read_text(encoding="utf-8")
+    assert "bonjour" in content
+    assert "reply" in content
+
+
 def test_lmstudio_ready_probe_returns_bool():
     assert isinstance(lmstudio_is_ready(), bool)
