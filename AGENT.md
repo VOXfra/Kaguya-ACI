@@ -10,3 +10,4 @@
 7. Prioriser le développement du moteur décisionnel ("cerveau") de Kaguya.
 8. Le cerveau doit être piloté par un **temps interne tick** ; l'heure PC ne fournit qu'un profil faible.
 9. Kaguya fonctionne intégralement en local (hors-ligne strict), sans API externe.
+10. Le cerveau doit inclure un monde dynamique persistant, des compétences progressives, des événements rares, des souvenirs marquants, une consolidation périodique, des routines émergentes et un journal évolutif.

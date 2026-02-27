@@ -1,4 +1,4 @@
-"""Tests du moteur décisionnel de Kaguya (version tick interne)."""
+"""Tests du moteur décisionnel de Kaguya (monde dynamique + progression)."""
 
 from pathlib import Path
 
@@ -7,7 +7,6 @@ from kaguya.cerveau import CerveauKaguya, SIM_MIN_PER_TICK
 
 def test_temps_interne_progresse_par_tick():
     cerveau = CerveauKaguya(seed=7)
-
     cerveau.boucle_de_vie()
 
     assert cerveau.tick == 1
@@ -16,20 +15,13 @@ def test_temps_interne_progresse_par_tick():
     assert cerveau.sim_day_phase in {"night", "morning", "day", "evening"}
 
 
-def test_recovery_night_booste_energie_et_reduit_fatigue():
+def test_monde_evolue_au_tick():
     cerveau = CerveauKaguya(seed=1)
-    cerveau.sim_minutes = 0.0
-    cerveau.sim_day_minutes = 0.0
-    cerveau.sim_day_phase = "night"
-    cerveau.pc_day_phase = "night"
+    avant = cerveau.etat_monde.nouveaute
 
-    before_energy = cerveau.etat.energy
-    before_fatigue = cerveau.etat.fatigue
+    cerveau.boucle_de_vie()
 
-    cerveau._passive_recovery()
-
-    assert cerveau.etat.energy > before_energy
-    assert cerveau.etat.fatigue < before_fatigue
+    assert cerveau.etat_monde.nouveaute != avant
 
 
 def test_actions_fixes_sont_presentes():
@@ -70,14 +62,33 @@ def test_memoire_long_terme_met_a_jour_ema_et_compteurs():
     assert any((m.ema_reward != 0.0 or m.ema_cost != 0.0) for m in mem.values())
 
 
-def test_double_journal_est_produit():
+def test_competences_progressent_avec_iterations():
     cerveau = CerveauKaguya(seed=6)
 
-    human = cerveau.boucle_de_vie()
+    for _ in range(80):
+        cerveau.boucle_de_vie()
 
-    assert isinstance(human, str)
-    assert len(cerveau.journal_humain) == 1
+    assert any(skill.niveau > 1 for skill in cerveau.competences.values())
+
+
+def test_double_journal_et_journal_evolutif():
+    cerveau = CerveauKaguya(seed=8)
+
+    for _ in range(290):
+        cerveau.boucle_de_vie()
+
+    assert len(cerveau.journal_humain) >= 1
     assert len(cerveau.journal_debug) >= 2
+    assert len(cerveau.journal_evolutif) >= 1
+
+
+def test_souvenirs_marquants_peuvent_apparaitre():
+    cerveau = CerveauKaguya(seed=9)
+
+    for _ in range(220):
+        cerveau.boucle_de_vie()
+
+    assert len(cerveau.memoire.souvenirs_marquants) >= 1
 
 
 def test_contrainte_hors_ligne_stricte_est_active():

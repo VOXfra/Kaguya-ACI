@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026-02-27 — Monde dynamique, skills, événements rares et évolution long terme
+
+### Pourquoi
+- Passer d'un moteur de choix d'action à un système qui vit dans un environnement persistant.
+- Ajouter une continuité structurelle : progression de compétences, souvenirs marquants, routines et consolidation identitaire.
+- Répondre aux attentes d'évolution organique et de réduction du caractère aléatoire sur le long terme.
+
+### Quoi
+- Refonte de `kaguya/cerveau.py` avec un monde autonome `EtatMonde` (bruit/instabilité, opportunités, danger, nouveauté, stabilité globale).
+- Ajout de la progression par compétences (`Competence`) liée à chaque action, avec effets sur risque/coût/récompense/stress.
+- Ajout d'un système d'événements rares : `discovery`, `near_failure`, `success_major`, `stress_spike`, `opportunity_exceptionnelle`.
+- Ajout des souvenirs marquants (`SouvenirMarquant`) avec influence sur le scoring futur.
+- Ajout d'une consolidation périodique (`CONSOLIDATION_EVERY_TICKS`) et purge des souvenirs mineurs.
+- Ajout des routines émergentes par phase simulée et bonus associé.
+- Ajout d'un journal évolutif quotidien (`journal_evolutif`).
+- Mise à jour des tests, du README et du AGENT.
+
+### Comment
+1. Exécution de la suite de tests en baseline avant la refonte.
+2. Implémentation incrémentale : monde, compétences, événements, mémoire marquante, consolidation, routines, résumé périodique.
+3. Mise à jour des tests et documentation pour couvrir les nouveaux mécanismes.
+4. Validation finale complète avec `pytest -q`.
+
+### Passages modifiés (état avant modification)
+- Dans `kaguya/cerveau.py`, **avant** il n'existait pas de structure monde persistante :
+  - pas de classe `EtatMonde`
+  - pas de `_evolve_world()`
+- Dans `kaguya/cerveau.py`, **avant** il n'existait pas de compétences :
+  - pas de `Competence`
+  - pas de `_update_competence()`
+- Dans `kaguya/cerveau.py`, **avant** il n'existait pas de souvenirs marquants et événements rares :
+  - pas de `SouvenirMarquant`
+  - pas de `_roll_rare_event()`
+- Dans `kaguya/cerveau.py`, **avant** il n'existait pas de `journal_evolutif` ni de résumé journalier.
+
 ## 2026-02-27 — Refonte tick interne + objectifs + scoring complet
 
 ### Pourquoi

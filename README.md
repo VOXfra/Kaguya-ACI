@@ -1,26 +1,15 @@
 # Kaguya
 
-Kaguya est un **moteur décisionnel autonome local** orienté simulation continue.
+Kaguya est un moteur décisionnel autonome local, construit comme un système vivant sur un **temps interne**.
 
-Cette version implémente un cerveau centré sur un **temps interne en ticks** :
-- l'agent vit à son propre rythme (`tick`, `sim_minutes`, `sim_day_phase`),
-- l'heure du PC ne fait qu'influencer légèrement la récupération (`pc_day_phase`),
-- aucune API externe n'est utilisée.
-
----
-
-## Vision rapide
-
-Kaguya maintient un état interne, choisit des actions selon ses objectifs et son historique, puis apprend à chaque cycle.
-
-Le cycle standard :
-1. avancer d'un tick,
-2. récupérer passivement selon la phase simulée,
-3. filtrer les actions (gating),
-4. scorer et choisir une action,
-5. exécuter l'action,
-6. mettre à jour la mémoire long terme,
-7. produire un journal humain + un journal debug.
+Cette version ajoute 7 briques majeures :
+1. monde dynamique persistant,
+2. progression par compétences,
+3. événements rares,
+4. souvenirs marquants,
+5. consolidation périodique,
+6. routines émergentes,
+7. résumé évolutif par journée simulée.
 
 ---
 
@@ -44,18 +33,17 @@ pytest -q
 
 ## Utilisation pas à pas
 
-### 1) Instancier le cerveau
+### 1) Créer le cerveau
 
 ```python
 from kaguya.cerveau import CerveauKaguya
-
 cerveau = CerveauKaguya(seed=42)
 ```
 
 ### 2) Lancer des ticks de vie
 
 ```python
-for _ in range(10):
+for _ in range(50):
     phrase = cerveau.boucle_de_vie()
     print(phrase)
 ```
@@ -65,88 +53,77 @@ for _ in range(10):
 ```python
 print(cerveau.journal_humain[-1])
 print(cerveau.journal_debug[-1])
+print(cerveau.journal_evolutif[-1] if cerveau.journal_evolutif else "pas encore de journée complète")
 ```
 
-### 4) Lire l'état interne
+### 4) Observer monde + compétences + souvenirs
 
 ```python
-print(cerveau.etat)
-print(cerveau.tick, cerveau.sim_minutes, cerveau.sim_day_phase, cerveau.pc_day_phase)
+print(cerveau.etat_monde)
+print({k: v.niveau for k, v in cerveau.competences.items()})
+print(len(cerveau.memoire.souvenirs_marquants))
 ```
 
 ---
 
 ## Architecture du cerveau
 
-Fichier principal : `kaguya/cerveau.py`.
-
 ### Temps interne (règle d'or)
-- `tick: int`
-- `tick_seconds: float`
-- `sim_minutes: float`
-- `sim_day_minutes: float`
-- `sim_day_phase: str` (`night/morning/day/evening`)
-- `pc_day_phase: str` (profil faible)
-- `last_action_tick: dict[str, int]`
+- `tick`, `tick_seconds`, `sim_minutes`, `sim_day_minutes`, `sim_day_phase`.
+- L'horloge PC (`pc_day_phase`) est un simple profil faible.
 
-Constante : `SIM_MIN_PER_TICK = 5`.
+### État interne
+- `energy`, `clarity`, `stability`, `curiosity`, `risk_tolerance`, `fatigue`, `stress` (toutes bornées [0..1]).
 
-### États internes [0..1]
-- `energy`
-- `clarity`
-- `stability`
-- `curiosity`
-- `risk_tolerance`
-- `fatigue`
-- `stress`
+### Monde évolutif autonome
+- `bruit_instabilite`, `opportunites`, `danger`, `nouveaute`, `stabilite_globale`.
+- Le monde évolue à chaque tick, même sans action ciblée.
+- Les actions peuvent modifier durablement son état.
 
-### Récupération passive
-Par tick, selon la phase simulée :
-- nuit : récupération plus forte,
-- autres phases : récupération plus modérée,
-- bonus PC nuit : +10% max.
+### Compétences (skills)
+Chaque action possède une compétence :
+- `niveau`, `experience`, `seuil`.
+- Effets de progression :
+  - réduction de risque,
+  - réduction du coût énergétique,
+  - légère hausse de récompense,
+  - meilleure régulation du stress.
 
-### Actions simulées fixes (7)
-- `rest`
-- `organize`
-- `practice`
-- `explore`
-- `reflect`
-- `idle`
-- `challenge`
+### Événements rares
+Types gérés :
+- `discovery`
+- `near_failure`
+- `success_major`
+- `stress_spike`
+- `opportunity_exceptionnelle`
 
-Chaque action possède un profil fixe :
-- `base_risk`, `energy_cost`, `clarity_cost`,
-- `stability_gain`, `knowledge_gain`,
-- `fatigue_gain`, `stress_on_fail`.
+Probabilité faible, modulée par l'instabilité du monde.
 
-### Objectifs actifs (4)
-- `Recover`
-- `Stabilize`
-- `Explore`
-- `Progress`
+### Souvenirs marquants
+Chaque souvenir contient :
+- type,
+- gravité,
+- action,
+- tick,
+- état interne au moment.
 
-Ces objectifs contribuent au score de décision selon priorité + fit(action).
+Influence : biais de scoring pour actions similaires + modulation temporaire de risque/curiosité.
 
-### Mémoire long terme par action
-- `n_total`, `n_success`, `n_fail`, `last_tick`
-- `ema_reward`, `ema_cost`
-- `recent_fail_streak`, `recent_success_streak`
-- `avoid_until_tick`
+### Consolidation périodique
+Tous les `CONSOLIDATION_EVERY_TICKS` ticks :
+- détection actions dominantes/évitées,
+- ajustements légers de `risk_tolerance`, `curiosity`, `stability`,
+- purge des souvenirs mineurs.
 
-EMA avec `alpha = 0.15`.
+### Routines émergentes
+La répétition action+phase augmente un compteur de routine, qui donne un léger bonus de stabilité/scoring.
 
-### Gating + Scoring
-- gating avant score (avoid, énergie critique, stress/stabilité),
-- score unique : reward-cost + objectifs + mémoire + diversité + instinct risque + micro-bruit.
-
----
-
-## Journal de bord
-
-Deux canaux :
-- `journal_humain` : une phrase intentionnelle concise,
-- `journal_debug` : valeurs numériques, objectifs actifs, scores et transitions d'état.
+### Journal évolutif
+À chaque journée simulée complète (288 ticks), création d'un résumé :
+- actions dominantes,
+- événements marquants,
+- niveaux de compétences,
+- variation d'état interne.
 
 ---
 
@@ -155,5 +132,4 @@ Deux canaux :
 - Exécution strictement locale.
 - Pas d'appel réseau.
 - Pas d'API externe.
-- Validation via `ContrainteExecutionLocale.verifier()` à chaque tick.
-
+- Vérification systématique via `ContrainteExecutionLocale.verifier()`.
