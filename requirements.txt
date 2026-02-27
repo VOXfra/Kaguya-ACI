@@ -1,0 +1,2 @@
+# Dépendances nécessaires pour exécuter et tester Kaguya en local (hors-ligne).
+pytest==9.0.2
