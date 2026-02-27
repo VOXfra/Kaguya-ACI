@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-02-27 — Compatibilité LM Studio + séparation des ports discussion
+
+### Pourquoi
+- L'utilisateur utilise LM Studio sur `127.0.0.1:1234`, ce qui entrait en conflit avec le serveur web Kaguya.
+- Il fallait permettre une discussion directe sans collision de port et sans retouche manuelle du code.
+
+### Quoi
+- `kaguya/llm.py` : ajout/renforcement de l'engine `LMStudioEngine` (API OpenAI-compatible locale).
+- `ModelRegistry` inclut désormais `lmstudio-active` et le router tente LM Studio puis fallback rapide local en cas d'indisponibilité.
+- `kaguya/server.py` : port par défaut déplacé vers `127.0.0.1:1235` + paramètres CLI `--host/--port`.
+- `README.md` : instructions explicites LM Studio (1234) + Kaguya web (1235).
+- `AGENT.md` : règle explicite de séparation de ports.
+- `tests/test_cerveau.py` : tests supplémentaires registry LM Studio + fallback router.
+
+### Comment
+1. Exécution baseline de la suite de tests.
+2. Ajout de l'intégration LM Studio dans la couche LLM et ajustement du router/fallback.
+3. Réglage du serveur web Kaguya sur port non conflictuel.
+4. Mise à jour docs/règles/tests puis validation finale.
+
+### Passages modifiés (état avant modification)
+- Dans `kaguya/server.py`, **avant** le port par défaut était `127.0.0.1:1234`.
+- Dans `kaguya/llm.py`, **avant** il n'existait pas de modèle registry `lmstudio-active` avec engine dédié.
+
 ## 2026-02-27 — Simplification de lancement: zéro code manuel pour l'utilisateur
 
 ### Pourquoi

@@ -34,14 +34,16 @@ pytest -q
 1. Démarrer le serveur:
 
 ```bash
-python -m kaguya.server
+python -m kaguya.server --port 1235
 ```
 
 2. Ouvrir dans le navigateur:
 
-- http://127.0.0.1:1234
+- http://127.0.0.1:1235
 
 3. Discuter directement dans l’interface.
+
+> Note: LM Studio utilise souvent `127.0.0.1:1234`. Kaguya web est donc sur `127.0.0.1:1235` par défaut pour éviter les conflits.
 
 ### Option B — Terminal interactif (sans Python)
 

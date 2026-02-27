@@ -132,3 +132,17 @@ def test_cli_run_once_sans_coder():
     assert "tick=" in out
     out2 = run_cli_once(c, "chat etat")
     assert isinstance(out2, str)
+
+
+def test_registry_contains_lmstudio_model():
+    reg = ModelRegistry.default()
+    assert "lmstudio-active" in reg.models
+
+
+def test_router_fallback_if_lmstudio_unavailable():
+    reg = ModelRegistry.default()
+    router = ModelRouter(registry=reg)
+    ctx = ContextPacket({}, {"nom": None}, [], [], [], "neutre", "realtime")
+    res = router.generate("etat", "realtime", {}, ctx)
+    assert isinstance(res.text, str)
+    assert "model" in res.meta

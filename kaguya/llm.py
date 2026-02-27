@@ -6,14 +6,18 @@ Objectifs :
 - routing auto/manuel + fallback,
 - profils realtime/réflexion,
 - contrat stable context packet / dual output,
-- mini-bench interne (5 prompts fixes).
+- mini-bench interne (5 prompts fixes),
+- compatibilité locale LM Studio (OpenAI-compatible API).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 import time
 from typing import Dict, List, Literal, Protocol
+from urllib import error as urlerror
+from urllib import request as urlrequest
 
 ModeInference = Literal["realtime", "reflexion"]
 
@@ -68,7 +72,6 @@ class MockLLMEngine:
 
     def generate(self, prompt: str, mode: ModeInference, constraints: Dict[str, object], context: ContextPacket) -> LLMResult:
         start = time.perf_counter()
-
         short = mode == "realtime"
         msg = "Je propose une action prudente alignée sur ton état." if short else "Je propose un plan structuré en plusieurs étapes, avec prudence et continuité."
         commands: List[Dict[str, object]] = [{"cmd": "PROPOSE"}]
@@ -97,6 +100,62 @@ class MockLLMEngine:
         )
 
 
+class LMStudioEngine:
+    """Engine OpenAI-compatible pour LM Studio local."""
+
+    def __init__(self, endpoint_base: str = "http://127.0.0.1:1234") -> None:
+        self.endpoint_base = endpoint_base.rstrip("/")
+
+    def generate(self, prompt: str, mode: ModeInference, constraints: Dict[str, object], context: ContextPacket) -> LLMResult:
+        start = time.perf_counter()
+        payload = {
+            "model": "lmstudio",
+            "messages": [
+                {"role": "system", "content": "Tu es Kaguya, concise, locale, prudente."},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.5 if mode == "realtime" else 0.65,
+            "top_p": 0.9 if mode == "realtime" else 0.95,
+            "max_tokens": 180 if mode == "realtime" else 420,
+            "stream": False,
+        }
+
+        req = urlrequest.Request(
+            url=f"{self.endpoint_base}/v1/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        try:
+            with urlrequest.urlopen(req, timeout=0.35) as resp:
+                body = resp.read().decode("utf-8")
+                data = json.loads(body)
+        except (urlerror.URLError, TimeoutError, json.JSONDecodeError) as e:
+            raise RuntimeError(f"lmstudio_unavailable:{e}") from e
+
+        text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        usage = data.get("usage", {})
+        elapsed = (time.perf_counter() - start) * 1000
+
+        commands: List[Dict[str, object]] = [{"cmd": "PROPOSE"}]
+        lower = text.lower()
+        if "état" in lower or "etat" in lower:
+            commands = [{"cmd": "GET_STATE"}]
+
+        return LLMResult(
+            text=text or "Réponse vide du modèle.",
+            commands=commands,
+            meta={
+                "latency_ms": round(elapsed, 3),
+                "input_tokens": int(usage.get("prompt_tokens", max(1, len(prompt) // 4))),
+                "output_tokens": int(usage.get("completion_tokens", max(1, len(text) // 4))),
+                "model": "lmstudio-active",
+                "error": None,
+            },
+        )
+
+
 @dataclass
 class ModelRegistry:
     models: Dict[str, ModelSpec]
@@ -105,6 +164,13 @@ class ModelRegistry:
     def default(cls) -> "ModelRegistry":
         return cls(
             models={
+                "lmstudio-active": ModelSpec(
+                    display_name="LM Studio Active Model",
+                    model_path="http://127.0.0.1:1234/v1/chat/completions",
+                    runtime_type="OPENAI_COMPAT",
+                    default_profile=ModelProfile(8192, "runtime", 0, 0, 0.55, 0.92),
+                    tags=["realtime", "qualite"],
+                ),
                 "qwen2.5-14b": ModelSpec(
                     display_name="Qwen2.5 14B",
                     model_path="models/qwen2.5-14b.gguf",
@@ -133,6 +199,7 @@ class ModelRouter:
     loaded_engines: Dict[str, LLMEngine] = field(default_factory=dict)
     active_model_key: str | None = None
     latency_history: List[float] = field(default_factory=list)
+    lmstudio_available: bool = True
 
     def set_mode(self, mode: ModeInference) -> None:
         self.current_mode = mode
@@ -152,13 +219,16 @@ class ModelRouter:
     def choose_model_key(self, mode: ModeInference) -> str:
         if not self.auto_mode and self.forced_model_key:
             return self.forced_model_key
-        if mode == "realtime":
-            return "qwen2.5-14b"
-        return "qwen3.5-35b-a3b"
+        if self.lmstudio_available:
+            return "lmstudio-active"
+        return "qwen2.5-14b" if mode == "realtime" else "qwen3.5-35b-a3b"
 
     def _load_engine(self, key: str) -> LLMEngine:
         if key not in self.loaded_engines:
-            self.loaded_engines[key] = MockLLMEngine(key)
+            if key == "lmstudio-active":
+                self.loaded_engines[key] = LMStudioEngine()
+            else:
+                self.loaded_engines[key] = MockLLMEngine(key)
         self.active_model_key = key
         if not self.keep_warm:
             for k in list(self.loaded_engines.keys()):
@@ -174,7 +244,9 @@ class ModelRouter:
         engine = self._load_engine(target)
         try:
             result = engine.generate(prompt, mode, constraints, context)
-        except Exception as e:  # fallback robuste runtime
+        except Exception as e:
+            if target == "lmstudio-active":
+                self.lmstudio_available = False
             fallback = self._fallback_key()
             engine = self._load_engine(fallback)
             result = engine.generate(prompt, "realtime", constraints, context)
@@ -196,6 +268,7 @@ class ModelRouter:
             "runtime_loaded": list(self.loaded_engines.keys()),
             "estimated_vram_status": "ok" if active else "idle",
             "avg_latency_ms": round(avg, 3),
+            "lmstudio_available": self.lmstudio_available,
         }
 
 
@@ -207,8 +280,16 @@ class QuickEvalResult:
     coherence: float
 
 
+def asdict_like(row: QuickEvalResult) -> Dict[str, object]:
+    return {
+        "prompt": row.prompt,
+        "latency_ms": row.latency_ms,
+        "length": row.length,
+        "coherence": row.coherence,
+    }
+
+
 def quick_eval_harness(router: ModelRouter) -> Dict[str, object]:
-    """Exécute 5 tests fixes pour évaluer rapidement les profils."""
     prompts = [
         "refus naturel",
         "négociation de risque",
@@ -229,13 +310,4 @@ def quick_eval_harness(router: ModelRouter) -> Dict[str, object]:
         "avg_latency_ms": round(sum(x.latency_ms for x in rows) / len(rows), 3),
         "avg_length": round(sum(x.length for x in rows) / len(rows), 2),
         "avg_coherence": round(sum(x.coherence for x in rows) / len(rows), 3),
-    }
-
-
-def asdict_like(row: QuickEvalResult) -> Dict[str, object]:
-    return {
-        "prompt": row.prompt,
-        "latency_ms": row.latency_ms,
-        "length": row.length,
-        "coherence": row.coherence,
     }

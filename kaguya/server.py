@@ -3,12 +3,13 @@
 Usage:
     python -m kaguya.server
 
-Le serveur écoute par défaut sur http://127.0.0.1:1234.
+Le serveur écoute par défaut sur http://127.0.0.1:1235 (1234 est typiquement LM Studio).
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict
+import argparse
 import json
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -140,12 +141,21 @@ def make_handler(service: ChatService):
     return Handler
 
 
-def run_server(host: str = "127.0.0.1", port: int = 1234) -> None:
+def run_server(host: str = "127.0.0.1", port: int = 1235) -> None:
     service = ChatService()
     server = ThreadingHTTPServer((host, port), make_handler(service))
     print(f"Kaguya server running on http://{host}:{port}")
     server.serve_forever()
 
 
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Serveur local Kaguya")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=1235)
+    args = parser.parse_args()
+    run_server(args.host, args.port)
+
+
 if __name__ == "__main__":
-    run_server()
+    main()
