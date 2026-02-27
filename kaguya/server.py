@@ -27,12 +27,23 @@ from kaguya.cerveau import CerveauKaguya
 
 
 def lmstudio_is_ready(endpoint_base: str = "http://127.0.0.1:1234") -> bool:
-    """Teste rapidement si LM Studio répond à l'API locale."""
-    try:
-        with urlrequest.urlopen(f"{endpoint_base.rstrip('/')}/v1/models", timeout=0.6) as resp:
-            return resp.status == 200
-    except Exception:
-        return False
+    """Teste rapidement si LM Studio répond à l'API locale.
+
+    On accepte plusieurs routes selon la version/configuration LM Studio.
+    """
+    base = endpoint_base.rstrip('/')
+    candidates = [
+        f"{base}/v1/models",
+        f"{base}/api/v1/models",
+    ]
+    for url in candidates:
+        try:
+            with urlrequest.urlopen(url, timeout=0.6) as resp:
+                if resp.status == 200:
+                    return True
+        except Exception:
+            continue
+    return False
 
 
 def maybe_start_lmstudio(start: bool, lmstudio_cmd: str | None, wait_s: float = 8.0) -> tuple[bool, str]:
@@ -46,21 +57,30 @@ def maybe_start_lmstudio(start: bool, lmstudio_cmd: str | None, wait_s: float = 
     if not start:
         return False, "LM Studio non démarré automatiquement (utiliser --start-lmstudio)"
 
-    # Commande par défaut : CLI LM Studio si installée.
-    cmd = lmstudio_cmd or os.environ.get("KAGUYA_LMSTUDIO_CMD") or "lms server start"
+    # Commandes candidates (selon installation/OS).
+    if lmstudio_cmd:
+        commands = [lmstudio_cmd]
+    else:
+        env_cmd = os.environ.get("KAGUYA_LMSTUDIO_CMD")
+        commands = [c for c in [env_cmd, "lms server start", "lmstudio server start"] if c]
 
-    try:
-        subprocess.Popen(shlex.split(cmd), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception as e:
-        return False, f"Impossible de lancer LM Studio: {e}"
+    last_error: str | None = None
+    for cmd in commands:
+        try:
+            subprocess.Popen(shlex.split(cmd), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            last_error = str(e)
+            continue
 
-    deadline = time.time() + wait_s
-    while time.time() < deadline:
-        if lmstudio_is_ready():
-            return True, f"LM Studio lancé via: {cmd}"
-        time.sleep(0.25)
+        deadline = time.time() + wait_s
+        while time.time() < deadline:
+            if lmstudio_is_ready():
+                return True, f"LM Studio lancé via: {cmd}"
+            time.sleep(0.25)
 
-    return False, f"LM Studio non prêt après lancement (cmd='{cmd}')"
+    if last_error:
+        return False, f"Impossible de lancer LM Studio automatiquement: {last_error}"
+    return False, "LM Studio non prêt après tentatives auto-start; vérifier le bouton 'Start Server' dans LM Studio"
 
 
 class ChatService:
@@ -81,6 +101,7 @@ class ChatService:
             "router": self.cerveau.model_router.status(),
             "ideas": [asdict(i) for i in self.cerveau.idees_backlog[:5]],
             "lmstudio_ready": lmstudio_is_ready(),
+            "lmstudio_hint": "Si false: démarrer Server dans LM Studio (Developer > Status) ou lancer Kaguya avec --start-lmstudio",
         }
 
     def _apply_command(self, cmd: dict[str, Any]) -> None:

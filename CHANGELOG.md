@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-02-27 — Correction "Server not running" LM Studio + détection d'API robuste
+
+### Pourquoi
+- Quand LM Studio affichait "Server not running", la conversation tombait en fallback sans indication assez claire.
+- Certaines versions LM Studio exposent `/api/v1/...` au lieu de `/v1/...`.
+
+### Quoi
+- `kaguya/server.py` :
+  - `lmstudio_is_ready()` teste maintenant `/v1/models` **et** `/api/v1/models`,
+  - `maybe_start_lmstudio()` tente plusieurs commandes (`lms server start`, `lmstudio server start`),
+  - ajout d'un `lmstudio_hint` dans `GET /state`.
+- `kaguya/llm.py` : `LMStudioEngine` tente successivement `/v1/chat/completions`, `/api/v1/chat/completions`, `/api/v1/chat`.
+- `README.md` : instructions explicites quand LM Studio est ouvert mais serveur non démarré (Start Server).
+- `tests/test_cerveau.py` : test de sonde booléenne `lmstudio_is_ready()`.
+- `AGENT.md` : règle explicite sur la gestion du statut "Server not running".
+
+### Comment
+1. Reproduction locale avec LM Studio indisponible.
+2. Ajout de fallback d'endpoint + messages explicites.
+3. Validation tests et smoke serveur.
+
+### Passages modifiés (état avant modification)
+- Dans `kaguya/server.py`, **avant** la sonde readiness ne testait que `/v1/models`.
+- Dans `kaguya/llm.py`, **avant** l'engine appelait uniquement `/v1/chat/completions`.
+
 ## 2026-02-27 — Commandes slash optionnelles dans le chat web
 
 ### Pourquoi

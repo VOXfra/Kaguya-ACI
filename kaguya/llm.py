@@ -120,19 +120,32 @@ class LMStudioEngine:
             "stream": False,
         }
 
-        req = urlrequest.Request(
-            url=f"{self.endpoint_base}/v1/chat/completions",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
+        candidate_paths = [
+            "/v1/chat/completions",      # OpenAI-compatible classique
+            "/api/v1/chat/completions",  # variantes LM Studio
+            "/api/v1/chat",              # endpoint affiché dans certaines versions UI
+        ]
 
-        try:
-            with urlrequest.urlopen(req, timeout=2.0) as resp:
-                body = resp.read().decode("utf-8")
-                data = json.loads(body)
-        except (urlerror.URLError, TimeoutError, json.JSONDecodeError) as e:
-            raise RuntimeError(f"lmstudio_unavailable:{e}") from e
+        data = None
+        last_err: Exception | None = None
+        for path in candidate_paths:
+            req = urlrequest.Request(
+                url=f"{self.endpoint_base}{path}",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                with urlrequest.urlopen(req, timeout=2.0) as resp:
+                    body = resp.read().decode("utf-8")
+                    data = json.loads(body)
+                    break
+            except (urlerror.URLError, TimeoutError, json.JSONDecodeError) as e:
+                last_err = e
+                continue
+
+        if data is None:
+            raise RuntimeError(f"lmstudio_unavailable:{last_err}")
 
         text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
         usage = data.get("usage", {})
@@ -166,7 +179,7 @@ class ModelRegistry:
             models={
                 "lmstudio-active": ModelSpec(
                     display_name="LM Studio Active Model",
-                    model_path="http://127.0.0.1:1234/v1/chat/completions",
+                    model_path="http://127.0.0.1:1234 (auto-detect /v1 ou /api/v1)",
                     runtime_type="OPENAI_COMPAT",
                     default_profile=ModelProfile(8192, "runtime", 0, 0, 0.55, 0.92),
                     tags=["realtime", "qualite"],

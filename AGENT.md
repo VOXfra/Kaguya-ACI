@@ -17,3 +17,4 @@
 14. Si LM Studio occupe 127.0.0.1:1234, Kaguya web doit utiliser 127.0.0.1:1235 par défaut.
 15. Le serveur Kaguya doit pouvoir tenter de démarrer LM Studio automatiquement (`--start-lmstudio`) tout en gardant un fallback local.
 16. Dans le chat web, les commandes de pilotage doivent être optionnelles et préfixées par `/` (ex: `/etat`) pour ne pas polluer la conversation normale.
+17. Si LM Studio est ouvert mais "Server not running", Kaguya doit indiquer clairement ce statut et proposer auto-start ou instruction explicite de démarrage serveur LM Studio.

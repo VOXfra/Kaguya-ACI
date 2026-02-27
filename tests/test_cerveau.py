@@ -4,7 +4,7 @@ from pathlib import Path
 
 from kaguya.cerveau import CerveauKaguya, SIM_MIN_PER_TICK, SNAPSHOT_VERSION
 from kaguya.llm import ContextPacket, ModelRegistry, ModelRouter, quick_eval_harness
-from kaguya.server import ChatService, maybe_start_lmstudio
+from kaguya.server import ChatService, maybe_start_lmstudio, lmstudio_is_ready
 from kaguya.cli import run_cli_once
 
 
@@ -169,3 +169,7 @@ def test_chat_service_normal_message_still_conversational():
     payload = service.handle_message("bonjour", mode="realtime")
     assert "reply" in payload
     assert payload["state"]["tick"] >= 1
+
+
+def test_lmstudio_ready_probe_returns_bool():
+    assert isinstance(lmstudio_is_ready(), bool)
