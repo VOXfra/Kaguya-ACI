@@ -106,6 +106,21 @@ class LMStudioEngine:
     def __init__(self, endpoint_base: str = "http://127.0.0.1:1234") -> None:
         self.endpoint_base = endpoint_base.rstrip("/")
 
+    def probe_ready(self) -> bool:
+        """Sonde de disponibilité légère pour reconnecter LM Studio à chaud."""
+        candidates = [
+            f"{self.endpoint_base}/v1/models",
+            f"{self.endpoint_base}/api/v1/models",
+        ]
+        for url in candidates:
+            try:
+                with urlrequest.urlopen(url, timeout=0.6) as resp:
+                    if resp.status == 200:
+                        return True
+            except Exception:
+                continue
+        return False
+
     def generate(self, prompt: str, mode: ModeInference, constraints: Dict[str, object], context: ContextPacket) -> LLMResult:
         start = time.perf_counter()
         payload = {
@@ -213,6 +228,8 @@ class ModelRouter:
     active_model_key: str | None = None
     latency_history: List[float] = field(default_factory=list)
     lmstudio_available: bool = True
+    lmstudio_probe_interval_s: float = 2.0
+    next_lmstudio_probe_at: float = 0.0
 
     def set_mode(self, mode: ModeInference) -> None:
         self.current_mode = mode
@@ -234,7 +251,27 @@ class ModelRouter:
             return self.forced_model_key
         if self.lmstudio_available:
             return "lmstudio-active"
+        if self._probe_lmstudio_recovery():
+            return "lmstudio-active"
         return "qwen2.5-14b" if mode == "realtime" else "qwen3.5-35b-a3b"
+
+    def _probe_lmstudio_recovery(self) -> bool:
+        """Retente périodiquement LM Studio pour permettre une reconnexion manuelle."""
+        now = time.time()
+        if now < self.next_lmstudio_probe_at:
+            return False
+        self.next_lmstudio_probe_at = now + self.lmstudio_probe_interval_s
+
+        engine = self.loaded_engines.get("lmstudio-active")
+        if engine is None:
+            engine = LMStudioEngine()
+            self.loaded_engines["lmstudio-active"] = engine
+
+        probe = getattr(engine, "probe_ready", None)
+        if callable(probe) and probe():
+            self.lmstudio_available = True
+            return True
+        return False
 
     def _load_engine(self, key: str) -> LLMEngine:
         if key not in self.loaded_engines:
@@ -260,6 +297,7 @@ class ModelRouter:
         except Exception as e:
             if target == "lmstudio-active":
                 self.lmstudio_available = False
+                self.next_lmstudio_probe_at = time.time() + self.lmstudio_probe_interval_s
             fallback = self._fallback_key()
             engine = self._load_engine(fallback)
             result = engine.generate(prompt, "realtime", constraints, context)

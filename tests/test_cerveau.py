@@ -148,6 +148,42 @@ def test_router_fallback_if_lmstudio_unavailable():
     assert "model" in res.meta
 
 
+def test_router_reconnects_lmstudio_after_manual_start():
+    reg = ModelRegistry.default()
+    router = ModelRouter(registry=reg)
+    ctx = ContextPacket({}, {"nom": None}, [], [], [], "neutre", "realtime")
+
+    class DummyLMStudio:
+        def __init__(self) -> None:
+            self.ready = False
+
+        def probe_ready(self) -> bool:
+            return self.ready
+
+        def generate(self, prompt, mode, constraints, context):
+            if not self.ready:
+                raise RuntimeError("offline")
+            from kaguya.llm import LLMResult
+            return LLMResult(
+                text="ok-lmstudio",
+                commands=[{"cmd": "PROPOSE"}],
+                meta={"latency_ms": 0.1, "input_tokens": 1, "output_tokens": 1, "model": "lmstudio-active", "error": None},
+            )
+
+    lm_engine = DummyLMStudio()
+    router.loaded_engines["lmstudio-active"] = lm_engine
+    router.lmstudio_probe_interval_s = 0.0
+
+    first = router.generate("bonjour", "realtime", {}, ctx)
+    assert first.meta.get("error") is not None
+    assert router.lmstudio_available is False
+
+    lm_engine.ready = True
+    second = router.generate("bonjour", "realtime", {}, ctx)
+    assert second.text == "ok-lmstudio"
+    assert router.lmstudio_available is True
+
+
 def test_server_reports_lmstudio_not_started_without_flag():
     ok, msg = maybe_start_lmstudio(False, None)
     assert ok is False or ok is True

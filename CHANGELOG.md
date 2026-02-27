@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-02-27 — Reconnexion LM Studio après démarrage manuel + bouton Envoyer robuste
+
+### Pourquoi
+- Après un premier échec LM Studio, le routeur restait en fallback local et ne retentait pas la connexion, même si l'utilisateur lançait le serveur LM Studio manuellement ensuite.
+- En cas d'erreur HTTP/réseau côté `/chat`, l'UI web n'affichait pas clairement le problème, donnant l'impression que le bouton **Envoyer** ne faisait rien.
+
+### Quoi
+- `kaguya/llm.py` :
+  - ajout d'une sonde `probe_ready()` dans `LMStudioEngine`,
+  - ajout d'une logique de retry périodique dans `ModelRouter` pour reconnecter automatiquement LM Studio après démarrage manuel,
+  - réactivation `lmstudio_available=True` dès que la sonde redevient positive.
+- `kaguya/server.py` :
+  - script web durci : validation message vide, gestion explicite erreurs HTTP/réseau, auto-scroll du chat, support touche Entrée.
+- `tests/test_cerveau.py` :
+  - nouveau test `test_router_reconnects_lmstudio_after_manual_start` qui valide le scénario "échec puis reconnexion".
+
+### Comment
+1. Simulation d'un moteur LM Studio indisponible puis disponible sans redémarrer Kaguya.
+2. Ajout d'un probe à intervalle court dans le routeur pour retenter la connexion.
+3. Ajout de garde-fous UI pour rendre les erreurs visibles dans la fenêtre de chat.
+
+### Passages modifiés (état avant modification)
+- Dans `kaguya/llm.py`, **avant** `lmstudio_available=False` pouvait rester bloqué sans tentative de reconnexion périodique.
+- Dans `kaguya/server.py`, **avant** le script frontend ne gérait pas explicitement les erreurs `fetch`/HTTP ni l'envoi via touche Entrée.
+
 ## 2026-02-27 — Correction "Server not running" LM Studio + détection d'API robuste
 
 ### Pourquoi

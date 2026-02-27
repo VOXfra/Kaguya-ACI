@@ -185,16 +185,43 @@ HTML_PAGE = """<!doctype html>
 <select id='mode'><option value='realtime'>realtime</option><option value='reflexion'>reflexion</option></select>
 <button onclick='sendMsg()'>Envoyer</button>
 <script>
-async function sendMsg(){
-  const m=document.getElementById('msg').value;
-  const mode=document.getElementById('mode').value;
-  const res=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m,mode})});
-  const data=await res.json();
+function appendChatLine(text){
   const box=document.getElementById('chat');
-  const err = data.meta && data.meta.error ? ' [fallback='+data.meta.error+']' : '';
-  box.textContent += '\nToi: '+m+'\nKaguya: '+data.reply+err+'\n';
-  document.getElementById('msg').value='';
+  box.textContent += text + '\n';
+  box.scrollTop = box.scrollHeight;
 }
+
+async function sendMsg(){
+  const input=document.getElementById('msg');
+  const m=input.value.trim();
+  const mode=document.getElementById('mode').value;
+  if(!m){
+    appendChatLine('⚠️ Message vide.');
+    return;
+  }
+
+  appendChatLine('Toi: '+m);
+  try{
+    const res=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m,mode})});
+    const data=await res.json();
+    if(!res.ok){
+      appendChatLine('Kaguya: [erreur HTTP '+res.status+'] '+(data.error || 'réponse invalide'));
+      return;
+    }
+    const err = data.meta && data.meta.error ? ' [fallback='+data.meta.error+']' : '';
+    appendChatLine('Kaguya: '+(data.reply || '[réponse vide]')+err);
+    input.value='';
+  }catch(e){
+    appendChatLine('Kaguya: [erreur réseau] '+String(e));
+  }
+}
+
+document.getElementById('msg').addEventListener('keydown', (ev) => {
+  if(ev.key === 'Enter'){
+    ev.preventDefault();
+    sendMsg();
+  }
+});
 </script>
 </body></html>"""
 
