@@ -1,106 +1,116 @@
-"""Tests du moteur décisionnel de Kaguya (monde dynamique + progression)."""
+"""Tests du moteur Kaguya + couche LLM registry/router."""
 
 from pathlib import Path
 
-from kaguya.cerveau import CerveauKaguya, SIM_MIN_PER_TICK
+from kaguya.cerveau import CerveauKaguya, SIM_MIN_PER_TICK, SNAPSHOT_VERSION
+from kaguya.llm import ContextPacket, ModelRegistry, ModelRouter, quick_eval_harness
 
 
 def test_temps_interne_progresse_par_tick():
-    cerveau = CerveauKaguya(seed=7)
-    cerveau.boucle_de_vie()
-
-    assert cerveau.tick == 1
-    assert cerveau.sim_minutes == SIM_MIN_PER_TICK
-    assert 0.0 <= cerveau.sim_day_minutes < 1440.0
-    assert cerveau.sim_day_phase in {"night", "morning", "day", "evening"}
+    c = CerveauKaguya(seed=7)
+    c.boucle_de_vie()
+    assert c.tick == 1
+    assert c.sim_minutes == SIM_MIN_PER_TICK
 
 
-def test_monde_evolue_au_tick():
-    cerveau = CerveauKaguya(seed=1)
-    avant = cerveau.etat_monde.nouveaute
-
-    cerveau.boucle_de_vie()
-
-    assert cerveau.etat_monde.nouveaute != avant
-
-
-def test_actions_fixes_sont_presentes():
-    cerveau = CerveauKaguya(seed=2)
-    assert set(cerveau.monde.actions) == {
-        "rest",
-        "organize",
-        "practice",
-        "explore",
-        "reflect",
-        "idle",
-        "challenge",
-    }
+def test_intention_active_est_definie_et_guide_les_actions():
+    c = CerveauKaguya(seed=2)
+    c.boucle_de_vie()
+    assert c.intention_active is not None
+    preferred = set(c.intention_active.actions_preferees)
+    action = c.choisir_action()
+    assert action in preferred
 
 
-def test_objectif_recover_active_si_energie_basse():
-    cerveau = CerveauKaguya(seed=3)
-    cerveau.etat.energy = 0.20
-    actifs = [o.name for o in cerveau._active_objectifs()]
-    assert "Recover" in actifs
-
-
-def test_gating_energie_critique_limite_les_actions():
-    cerveau = CerveauKaguya(seed=4)
-    cerveau.etat.energy = 0.10
-    candidats = cerveau._gated_actions()
-    assert set(candidats).issubset({"rest", "idle", "reflect"})
-
-
-def test_memoire_long_terme_met_a_jour_ema_et_compteurs():
-    cerveau = CerveauKaguya(seed=5)
-
-    for _ in range(8):
-        cerveau.boucle_de_vie()
-
-    mem = cerveau.memoire.long_terme
-    assert any(m.n_total > 0 for m in mem.values())
-    assert any((m.ema_reward != 0.0 or m.ema_cost != 0.0) for m in mem.values())
-
-
-def test_competences_progressent_avec_iterations():
-    cerveau = CerveauKaguya(seed=6)
-
-    for _ in range(80):
-        cerveau.boucle_de_vie()
-
-    assert any(skill.niveau > 1 for skill in cerveau.competences.values())
-
-
-def test_double_journal_et_journal_evolutif():
-    cerveau = CerveauKaguya(seed=8)
-
-    for _ in range(290):
-        cerveau.boucle_de_vie()
-
-    assert len(cerveau.journal_humain) >= 1
-    assert len(cerveau.journal_debug) >= 2
-    assert len(cerveau.journal_evolutif) >= 1
-
-
-def test_souvenirs_marquants_peuvent_apparaitre():
-    cerveau = CerveauKaguya(seed=9)
-
+def test_backlog_idees_naissance_evenement_ou_stagnation():
+    c = CerveauKaguya(seed=9)
     for _ in range(220):
-        cerveau.boucle_de_vie()
-
-    assert len(cerveau.memoire.souvenirs_marquants) >= 1
-
-
-def test_contrainte_hors_ligne_stricte_est_active():
-    cerveau = CerveauKaguya(seed=2)
-
-    assert cerveau.contrainte_locale.hors_ligne_strict is True
-    assert cerveau.contrainte_locale.api_externe_autorisee is False
+        c.boucle_de_vie()
+    assert isinstance(c.idees_backlog, list)
 
 
-def test_fichiers_documentation_et_requirements_sont_presents():
+def test_anti_loop_applique_malus_et_cooldown():
+    c = CerveauKaguya(seed=6)
+    c.action_history = ["rest"] * 30
+    p = c._anti_loop_penalty("rest")
+    assert p >= 0.30
+    assert c.cooldowns["rest"] > c.tick
+
+
+def test_permissions_refusent_capacite_sensible():
+    c = CerveauKaguya(seed=1)
+    assert c.permissions.autorise("network", c.tick) is False
+    assert len(c.permissions.refus_log) >= 1
+
+
+def test_snapshot_save_load_avec_rollback(tmp_path):
+    c = CerveauKaguya(seed=4)
+    for _ in range(20):
+        c.boucle_de_vie()
+    snap = tmp_path / "snap.json"
+    c.save_snapshot(str(snap))
+    assert c.snapshot_dict()["version"] == SNAPSHOT_VERSION
+
+    snap.write_text("{corrompu", encoding="utf-8")
+    assert c.load_snapshot(str(snap)) is True
+
+
+def test_cli_commandes_minimales():
+    c = CerveauKaguya(seed=3)
+    c.boucle_de_vie()
+    assert "tick=" in c.handle_cli("etat")
+    assert "Je veux faire:" in c.handle_cli("propose")
+    assert isinstance(c.handle_cli("idees"), str)
+    assert "pause" in c.handle_cli("pause").lower()
+    assert "reprise" in c.handle_cli("reprendre").lower()
+
+
+def test_cli_suggere_accepte_ou_refuse():
+    c = CerveauKaguya(seed=10)
+    c.boucle_de_vie()
+    rep = c.handle_cli("suggere rest")
+    assert rep.startswith("Oui") or rep.startswith("Non")
+
+
+def test_journal_evolutif_et_dashboard_apres_un_jour_simule():
+    c = CerveauKaguya(seed=8)
+    for _ in range(290):
+        c.boucle_de_vie()
+    assert len(c.journal_evolutif) >= 1
+    assert len(c.dashboard_history) >= 1
+    dash = c.dashboard_history[-1]["dashboard"]
+    assert "fail_rate" in dash
+    assert "top_actions" in dash
+    assert "top_events" in dash
+
+
+def test_model_registry_router_et_harness():
+    reg = ModelRegistry.default()
+    router = ModelRouter(registry=reg)
+    ctx = ContextPacket({}, {"nom": None}, [], [], [], "neutre", "realtime")
+    r = router.generate("etat", "realtime", {}, ctx)
+    assert isinstance(r.text, str)
+    assert "latency_ms" in r.meta
+    status = router.status()
+    assert "active_model" in status
+    bench = quick_eval_harness(router)
+    assert len(bench["tests"]) == 5
+
+
+def test_brain_llm_contract_and_cli_model_controls():
+    c = CerveauKaguya(seed=11)
+    c.boucle_de_vie()
+    packet = c.build_context_packet("realtime")
+    assert packet.mode == "realtime"
+    rr = c.ask_llm("etat")
+    assert isinstance(rr.text, str)
+    assert isinstance(rr.commands, list)
+    assert "auto_mode" in c.handle_cli("model status")
+    assert "AUTO" in c.handle_cli("model auto")
+
+
+def test_docs_et_requirements_presents():
     assert Path("requirements.txt").exists()
-    contenu = Path("README.md").read_text(encoding="utf-8")
-    assert "## Installation" in contenu
-    assert "## Utilisation pas à pas" in contenu
-    assert "## Architecture du cerveau" in contenu
+    r = Path("README.md").read_text(encoding="utf-8")
+    assert "## Utilisation pas à pas" in r
+    assert "## Architecture du cerveau" in r

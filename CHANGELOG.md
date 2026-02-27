@@ -1,5 +1,104 @@
 # Changelog
 
+## 2026-02-27 — Layer LLM unifiée : registry/router/profils/contract + bench
+
+### Pourquoi
+- Découpler le cerveau du modèle effectif grâce à une interface LLM unique.
+- Permettre sélection auto/manuel des modèles, avec fallback robuste en cas d'erreur runtime.
+- Stabiliser le contrat Brain->LLM et LLM->Brain pour éviter les couplages fragiles.
+- Ajouter un bench interne court pour comparer rapidement les comportements utiles à Kaguya.
+
+### Quoi
+- Nouveau module `kaguya/llm.py` :
+  - `ModelRegistry` déclaratif (modèles, runtime, profils, tags),
+  - `LLMEngine`/`MockLLMEngine` avec retour standardisé (`latency/tokens/error`),
+  - `ModelRouter` auto/manuel, modes `realtime`/`reflexion`, fallback rapide,
+  - `ContextPacket` (contrat unique Brain->LLM),
+  - `LLMResult` dual output (texte + commandes),
+  - `quick_eval_harness` (5 tests fixes).
+- `kaguya/cerveau.py` :
+  - intégration router + état modèle,
+  - `build_context_packet()`, `ask_llm()`, validation stricte des commandes,
+  - extension CLI (`model status`, `model auto`, `model set ...`, `mode realtime/reflexion`, `llm ask`, `bench`),
+  - snapshot version `3` incluant état du router.
+- `tests/test_cerveau.py` : tests dédiés registry/router/harness et contrat brain-llm.
+- Mises à jour `README.md` et `AGENT.md`.
+
+### Comment
+1. Exécution baseline des tests existants.
+2. Ajout du module LLM séparé puis câblage progressif dans le cerveau.
+3. Ajout/ajustement des tests sur le contrat unique et le router.
+4. Validation finale via `pytest -q`.
+
+### Passages modifiés (état avant modification)
+- Dans `kaguya/cerveau.py`, **avant** il n'existait pas de module dédié `kaguya/llm.py` ni de `ModelRouter`.
+- Dans `kaguya/cerveau.py`, **avant** `SNAPSHOT_VERSION` était `2`.
+- Dans `tests/test_cerveau.py`, **avant** il n'existait pas de test explicite `quick_eval_harness`.
+
+## 2026-02-27 — Continuité renforcée : intentions, anti-loop, CLI pilotage, observabilité
+
+### Pourquoi
+- Renforcer la continuité des décisions avec de vraies intentions actives multi-ticks.
+- Ajouter de l'initiative via un backlog d'idées réutilisable.
+- Éviter les comportements répétitifs/stagnants et améliorer le pilotage humain en CLI.
+- Consolider la persistance (versioning, rollback) et l'observabilité (métriques synthétiques).
+
+### Quoi
+- `kaguya/cerveau.py` :
+  - intentions actives avec TTL + conditions d'annulation,
+  - backlog d'idées enrichi (`intitule`, contexte, coût/risque estimés, priorité/récence),
+  - anti-loop fenêtre 30 ticks + cooldown,
+  - détection stagnation et idée "changer d'approche",
+  - CLI `etat`, `resume`, `idees`, `propose`, `suggere <...>`, `pause`, `reprendre`,
+  - snapshots versionnés (`SNAPSHOT_VERSION=2`) + rollback backup,
+  - chargement snapshot au démarrage (optionnel) + autosnapshot périodique,
+  - tableaux de bord (`fail_rate`, diversité, moyennes, top actions/events).
+- `tests/test_cerveau.py` : mise à jour complète de la couverture sur ces mécanismes.
+- `README.md` et `AGENT.md` alignés avec les nouvelles commandes et capacités.
+
+### Comment
+1. Exécution des tests existants en baseline avant refonte.
+2. Implémentation incrémentale des sous-systèmes (intention, idées, anti-loop, CLI, persistance, dashboard).
+3. Mise à jour des tests automatisés.
+4. Validation finale par `pytest -q`.
+
+### Passages modifiés (état avant modification)
+- Dans `kaguya/cerveau.py`, **avant** les commandes CLI utilisaient des variantes accentuées et sans `suggere/pause/reprendre` strictement définies.
+- Dans `kaguya/cerveau.py`, **avant** `SNAPSHOT_VERSION` était `1` et il n'y avait pas de dashboard structuré (`top_actions/top_events`).
+- Dans `tests/test_cerveau.py`, **avant** il n'existait pas de test explicite sur la commande `suggere` ni sur les métriques dashboard.
+
+## 2026-02-27 — Intention active, CLI, permissions et persistance versionnée
+
+### Pourquoi
+- Ajouter de la continuité court terme via une intention active au lieu d'un choix totalement myope tick par tick.
+- Introduire un comportement plus organique : backlog d'idées, auto-calibrage et protections anti-boucle.
+- Renforcer la cohabitation PC : permissions explicites et journal des refus.
+- Ajouter une persistance durable avec snapshots versionnés et rollback de sécurité.
+
+### Quoi
+- `kaguya/cerveau.py` :
+  - ajout `IntentionActive` (durée 5–20 ticks),
+  - ajout backlog `Idee` et génération d'idées depuis événements rares,
+  - ajout meta-apprentissage (`meta[audace/diversite]`),
+  - ajout anti-loop/cooldowns,
+  - ajout mémoire contextuelle (`danger_high`, `opportunity_high`, `neutral`),
+  - ajout `Permissions` + `refus_log`,
+  - ajout snapshot `save_snapshot/load_snapshot` versionné + backup rollback,
+  - ajout interface `handle_cli` (propose, explique, résume, idées, état, etc.).
+- `tests/test_cerveau.py` : couverture intention, permissions, snapshot, CLI, anti-loop et résumé évolutif.
+- Mise à jour de `README.md` et `AGENT.md`.
+
+### Comment
+1. Exécution des tests existants avant modifications.
+2. Implémentation incrémentale des nouveaux sous-systèmes.
+3. Mise à jour des tests automatisés pour validation fonctionnelle.
+4. Validation finale de l'ensemble via `pytest -q`.
+
+### Passages modifiés (état avant modification)
+- Dans `kaguya/cerveau.py`, **avant** il n'existait pas de `IntentionActive`, `Idee`, `Permissions` ni de `handle_cli`.
+- Dans `kaguya/cerveau.py`, **avant** il n'existait pas de `save_snapshot/load_snapshot` avec rollback backup.
+- Dans `tests/test_cerveau.py`, **avant** il n'existait pas de tests dédiés à la CLI et aux permissions.
+
 ## 2026-02-27 — Monde dynamique, skills, événements rares et évolution long terme
 
 ### Pourquoi

@@ -1,17 +1,17 @@
 # Kaguya
 
-Kaguya est un moteur décisionnel autonome local, construit comme un système vivant sur un **temps interne**.
+Kaguya est un cerveau décisionnel local (hors-ligne) orienté continuité long terme.
 
-Cette version ajoute 7 briques majeures :
-1. monde dynamique persistant,
-2. progression par compétences,
-3. événements rares,
-4. souvenirs marquants,
-5. consolidation périodique,
-6. routines émergentes,
-7. résumé évolutif par journée simulée.
+## Ce que cette version ajoute
 
----
+- **Intentions actives** (mini-plan multi-ticks avec TTL et annulation en cas d'état critique).
+- **Idées spontanées** (backlog priorisé, réutilisable plus tard).
+- **Anti-loop / anti-stagnation** (malus répétition, cooldown, idée de changement d'approche).
+- **LLM multi-modèles** : registre, moteur unifié, router auto/manuel, profils realtime/réflexion.
+- **Dual output** standardisé (texte + commandes validées).
+- **CLI texte** avec contrôle du modèle et bench rapide.
+- **Snapshots versionnés** + rollback `.bak` en cas de corruption.
+- **Observabilité** : taux d'échec, diversité, stress/énergie moyens, top actions/events.
 
 ## Installation
 
@@ -21,15 +21,11 @@ source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
----
-
 ## Vérification
 
 ```bash
 pytest -q
 ```
-
----
 
 ## Utilisation pas à pas
 
@@ -37,99 +33,73 @@ pytest -q
 
 ```python
 from kaguya.cerveau import CerveauKaguya
-cerveau = CerveauKaguya(seed=42)
+c = CerveauKaguya(seed=42)
 ```
 
-### 2) Lancer des ticks de vie
+### 2) Lancer la boucle
 
 ```python
 for _ in range(50):
-    phrase = cerveau.boucle_de_vie()
-    print(phrase)
+    print(c.boucle_de_vie())
 ```
 
-### 3) Observer les journaux
+### 3) Interagir via CLI texte
 
 ```python
-print(cerveau.journal_humain[-1])
-print(cerveau.journal_debug[-1])
-print(cerveau.journal_evolutif[-1] if cerveau.journal_evolutif else "pas encore de journée complète")
+print(c.handle_cli("etat"))
+print(c.handle_cli("propose"))
+print(c.handle_cli("idees"))
+print(c.handle_cli("resume"))
+print(c.handle_cli("suggere explore"))
+print(c.handle_cli("pause"))
+print(c.handle_cli("reprendre"))
 ```
 
-### 4) Observer monde + compétences + souvenirs
+### 4) Contrôler le router modèle
 
 ```python
-print(cerveau.etat_monde)
-print({k: v.niveau for k, v in cerveau.competences.items()})
-print(len(cerveau.memoire.souvenirs_marquants))
+print(c.handle_cli("model status"))
+print(c.handle_cli("model auto"))
+print(c.handle_cli("mode realtime"))
+print(c.handle_cli("mode reflexion"))
+print(c.handle_cli("model set qwen2.5-14b"))
+print(c.handle_cli("llm ask"))
+print(c.handle_cli("bench"))
 ```
 
----
+### 5) Sauvegarder et recharger
+
+```python
+c.save_snapshot("snapshot.json")
+ok = c.load_snapshot("snapshot.json")
+print("loaded:", ok)
+```
 
 ## Architecture du cerveau
 
-### Temps interne (règle d'or)
-- `tick`, `tick_seconds`, `sim_minutes`, `sim_day_minutes`, `sim_day_phase`.
-- L'horloge PC (`pc_day_phase`) est un simple profil faible.
+- **Temps interne** : `tick`, `sim_minutes`, `sim_day_phase` (pilotage principal).
+- **Monde évolutif** : bruit, opportunités, danger, nouveauté, stabilité.
+- **Intentions actives** : direction durable (`récupérer/stabiliser/explorer/progresser/tester une idée`).
+- **Idées spontanées** : `intitule`, `contexte`, `cout_estime`, `risque_estime`, `priorite`, `recence`.
+- **Meta-apprentissage** : ajustement lent `audace/diversite`.
+- **Anti-loop** : fenêtre glissante 30 ticks + cooldown.
+- **Mémoire contextuelle** : règles par contexte (`danger_high`, `opportunity_high`, `neutral`).
+- **Permissions PC** : whitelist + refus journalisés.
+- **Persistance durable** : snapshot versionné, autoload optionnel, rollback backup.
+- **Observabilité** : `journal_evolutif` + `dashboard_history`.
 
-### État interne
-- `energy`, `clarity`, `stability`, `curiosity`, `risk_tolerance`, `fatigue`, `stress` (toutes bornées [0..1]).
+### Couche LLM
 
-### Monde évolutif autonome
-- `bruit_instabilite`, `opportunites`, `danger`, `nouveaute`, `stabilite_globale`.
-- Le monde évolue à chaque tick, même sans action ciblée.
-- Les actions peuvent modifier durablement son état.
-
-### Compétences (skills)
-Chaque action possède une compétence :
-- `niveau`, `experience`, `seuil`.
-- Effets de progression :
-  - réduction de risque,
-  - réduction du coût énergétique,
-  - légère hausse de récompense,
-  - meilleure régulation du stress.
-
-### Événements rares
-Types gérés :
-- `discovery`
-- `near_failure`
-- `success_major`
-- `stress_spike`
-- `opportunity_exceptionnelle`
-
-Probabilité faible, modulée par l'instabilité du monde.
-
-### Souvenirs marquants
-Chaque souvenir contient :
-- type,
-- gravité,
-- action,
-- tick,
-- état interne au moment.
-
-Influence : biais de scoring pour actions similaires + modulation temporaire de risque/curiosité.
-
-### Consolidation périodique
-Tous les `CONSOLIDATION_EVERY_TICKS` ticks :
-- détection actions dominantes/évitées,
-- ajustements légers de `risk_tolerance`, `curiosity`, `stability`,
-- purge des souvenirs mineurs.
-
-### Routines émergentes
-La répétition action+phase augmente un compteur de routine, qui donne un léger bonus de stabilité/scoring.
-
-### Journal évolutif
-À chaque journée simulée complète (288 ticks), création d'un résumé :
-- actions dominantes,
-- événements marquants,
-- niveaux de compétences,
-- variation d'état interne.
-
----
+- **Model Registry** (`kaguya/llm.py`) : liste déclarative des modèles.
+- **LLM Engine interface** : `generate(prompt, mode, constraints, context)` -> `LLMResult`.
+- **Model Router** : auto/manuel + fallback en cas d'erreur.
+- **Inference profiles** : `realtime` (rapide) / `reflexion` (qualité).
+- **Context Packet** Brain->LLM : stable pour tous les modèles.
+- **Dual Output** LLM->Brain : texte + commandes (parse/validation côté cerveau).
+- **Quick Eval Harness** : 5 prompts fixes (refus, risque, résumé, idée, personnalité).
 
 ## Local / hors-ligne
 
-- Exécution strictement locale.
-- Pas d'appel réseau.
 - Pas d'API externe.
-- Vérification systématique via `ContrainteExecutionLocale.verifier()`.
+- Pas de dépendance réseau.
+- `ContrainteExecutionLocale` vérifiée à chaque tick.
