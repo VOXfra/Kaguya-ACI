@@ -4,6 +4,7 @@ from pathlib import Path
 
 from kaguya.cerveau import CerveauKaguya, SIM_MIN_PER_TICK, SNAPSHOT_VERSION
 from kaguya.llm import ContextPacket, ModelRegistry, ModelRouter, quick_eval_harness
+from kaguya.server import ChatService
 
 
 def test_temps_interne_progresse_par_tick():
@@ -114,3 +115,11 @@ def test_docs_et_requirements_presents():
     r = Path("README.md").read_text(encoding="utf-8")
     assert "## Utilisation pas à pas" in r
     assert "## Architecture du cerveau" in r
+
+
+def test_chat_service_allows_local_discussion():
+    service = ChatService()
+    payload = service.handle_message("etat", mode="realtime")
+    assert "reply" in payload
+    assert "state" in payload
+    assert payload["state"]["tick"] >= 1

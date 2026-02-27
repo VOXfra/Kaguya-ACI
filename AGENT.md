@@ -12,3 +12,4 @@
 9. Kaguya fonctionne intégralement en local (hors-ligne strict), sans API externe.
 10. Le cerveau inclut intentions actives, idées spontanées, anti-loop/anti-stagnation, CLI texte, snapshots versionnés avec rollback et métriques d'observabilité.
 11. La couche LLM suit un contrat stable : registry, engine unique, router auto/manuel, context packet unique, dual output validé, bench rapide 5 prompts.
+12. Le projet doit pouvoir démarrer un serveur de discussion local sur `http://127.0.0.1:1234`.

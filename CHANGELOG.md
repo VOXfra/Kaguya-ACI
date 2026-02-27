@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-02-27 — Serveur de discussion local complet (127.0.0.1:1234)
+
+### Pourquoi
+- Permettre de démarrer Kaguya en mode discussion réelle, pas seulement en tests unitaires.
+- Fournir une interface locale immédiate (web + API JSON) sans dépendance externe.
+
+### Quoi
+- Ajout de `kaguya/server.py` :
+  - `ChatService` (orchestration cerveau + LLM),
+  - serveur HTTP local `run_server(host="127.0.0.1", port=1234)`,
+  - endpoints `GET /`, `GET /state`, `POST /chat`.
+- Mise à jour de `tests/test_cerveau.py` avec un test dédié au service de chat.
+- Mise à jour de `README.md` avec procédure de démarrage serveur et URL cible.
+- Mise à jour de `AGENT.md` pour inscrire l’exigence de démarrage serveur local.
+
+### Comment
+1. Exécution baseline des tests avant modification.
+2. Implémentation du serveur HTTP standard library et du service de conversation.
+3. Ajout d’un test de non-régression sur le flux de discussion.
+4. Validation finale via `pytest -q`.
+
+### Passages modifiés (état avant modification)
+- Dans le dépôt, **avant** il n’existait pas de module `kaguya/server.py`.
+- Dans `README.md`, **avant** il n’y avait pas d’instruction pour démarrer `http://127.0.0.1:1234`.
+
 ## 2026-02-27 — Layer LLM unifiée : registry/router/profils/contract + bench
 
 ### Pourquoi

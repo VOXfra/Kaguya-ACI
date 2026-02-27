@@ -75,6 +75,23 @@ ok = c.load_snapshot("snapshot.json")
 print("loaded:", ok)
 ```
 
+
+## Démarrer une discussion complète (serveur local)
+
+Lance le serveur :
+
+```bash
+python -m kaguya.server
+```
+
+Puis ouvre :
+
+- http://127.0.0.1:1234
+
+API utile :
+- `GET /state`
+- `POST /chat` avec `{"message":"...","mode":"realtime|reflexion"}`
+
 ## Architecture du cerveau
 
 - **Temps interne** : `tick`, `sim_minutes`, `sim_day_phase` (pilotage principal).
