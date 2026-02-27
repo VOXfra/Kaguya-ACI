@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-02-27 — Simplification de lancement: zéro code manuel pour l'utilisateur
+
+### Pourquoi
+- Supprimer le besoin de manipuler du code Python pour démarrer Kaguya.
+- Fournir une expérience prête à l'emploi via commandes terminal/navigateur uniquement.
+
+### Quoi
+- Ajout de `kaguya/cli.py` (mode interactif et `--once`) pour piloter Kaguya sans écrire de script.
+- Mise à jour de `README.md` : remplacement du bloc "coder soi-même" par parcours serveur web + CLI terminal.
+- Mise à jour de `tests/test_cerveau.py` avec test dédié `run_cli_once`.
+- Mise à jour de `AGENT.md` pour imposer une UX orientée commandes prêtes à l'emploi.
+
+### Comment
+1. Exécution baseline des tests.
+2. Ajout d'une CLI dédiée (`python -m kaguya.cli`).
+3. Réécriture de la section usage README en mode opérationnel.
+4. Validation finale des tests.
+
+### Passages modifiés (état avant modification)
+- Dans `README.md`, **avant** l'utilisateur devait instancier `CerveauKaguya` et appeler des méthodes Python manuellement.
+- Dans le dépôt, **avant** il n'existait pas de module `kaguya/cli.py`.
+
 ## 2026-02-27 — Serveur de discussion local complet (127.0.0.1:1234)
 
 ### Pourquoi

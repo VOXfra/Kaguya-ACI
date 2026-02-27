@@ -5,6 +5,7 @@ from pathlib import Path
 from kaguya.cerveau import CerveauKaguya, SIM_MIN_PER_TICK, SNAPSHOT_VERSION
 from kaguya.llm import ContextPacket, ModelRegistry, ModelRouter, quick_eval_harness
 from kaguya.server import ChatService
+from kaguya.cli import run_cli_once
 
 
 def test_temps_interne_progresse_par_tick():
@@ -123,3 +124,11 @@ def test_chat_service_allows_local_discussion():
     assert "reply" in payload
     assert "state" in payload
     assert payload["state"]["tick"] >= 1
+
+
+def test_cli_run_once_sans_coder():
+    c = CerveauKaguya(seed=12)
+    out = run_cli_once(c, "etat")
+    assert "tick=" in out
+    out2 = run_cli_once(c, "chat etat")
+    assert isinstance(out2, str)

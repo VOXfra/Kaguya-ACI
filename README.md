@@ -27,70 +27,54 @@ python -m pip install -r requirements.txt
 pytest -q
 ```
 
-## Utilisation pas à pas
+## Utilisation pas à pas (sans coder)
 
-### 1) Créer le cerveau
+### Option A — Discussion web (recommandé)
 
-```python
-from kaguya.cerveau import CerveauKaguya
-c = CerveauKaguya(seed=42)
-```
-
-### 2) Lancer la boucle
-
-```python
-for _ in range(50):
-    print(c.boucle_de_vie())
-```
-
-### 3) Interagir via CLI texte
-
-```python
-print(c.handle_cli("etat"))
-print(c.handle_cli("propose"))
-print(c.handle_cli("idees"))
-print(c.handle_cli("resume"))
-print(c.handle_cli("suggere explore"))
-print(c.handle_cli("pause"))
-print(c.handle_cli("reprendre"))
-```
-
-### 4) Contrôler le router modèle
-
-```python
-print(c.handle_cli("model status"))
-print(c.handle_cli("model auto"))
-print(c.handle_cli("mode realtime"))
-print(c.handle_cli("mode reflexion"))
-print(c.handle_cli("model set qwen2.5-14b"))
-print(c.handle_cli("llm ask"))
-print(c.handle_cli("bench"))
-```
-
-### 5) Sauvegarder et recharger
-
-```python
-c.save_snapshot("snapshot.json")
-ok = c.load_snapshot("snapshot.json")
-print("loaded:", ok)
-```
-
-
-## Démarrer une discussion complète (serveur local)
-
-Lance le serveur :
+1. Démarrer le serveur:
 
 ```bash
 python -m kaguya.server
 ```
 
-Puis ouvre :
+2. Ouvrir dans le navigateur:
 
 - http://127.0.0.1:1234
 
-API utile :
-- `GET /state`
-- `POST /chat` avec `{"message":"...","mode":"realtime|reflexion"}`
+3. Discuter directement dans l’interface.
+
+### Option B — Terminal interactif (sans Python)
+
+```bash
+python -m kaguya.cli
+```
+
+Commandes utiles:
+- `etat`
+- `propose`
+- `idees`
+- `resume`
+- `suggere <action>`
+- `pause` / `reprendre`
+- `tick`
+- `chat <message>`
+- `save <snapshot.json>`
+- `load <snapshot.json>`
+- `quit`
+
+### Exécution rapide d’une commande unique
+
+```bash
+python -m kaguya.cli --once "etat"
+python -m kaguya.cli --once "chat etat"
+python -m kaguya.cli --once "save snapshot.json"
+```
+
+### Démarrage avec snapshot existant
+
+```bash
+python -m kaguya.cli --snapshot snapshot.json
+```
 
 ## Architecture du cerveau
 
