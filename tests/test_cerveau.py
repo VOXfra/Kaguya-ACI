@@ -1,6 +1,7 @@
 """Tests du moteur Kaguya + couche LLM registry/router."""
 
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from kaguya.cerveau import CerveauKaguya, SIM_MIN_PER_TICK, SNAPSHOT_VERSION
 from kaguya.llm import ContextPacket, ModelRegistry, ModelRouter, quick_eval_harness
@@ -226,6 +227,16 @@ def test_chat_service_writes_usage_log_file(tmp_path):
 
 
 
+
+
+
+def test_html_form_uses_post_chat_fallback():
+    from kaguya.server import HTML_PAGE
+    assert "<form id='chat-form' method='post' action='/chat'>" in HTML_PAGE
+
+
+def test_route_with_query_string_no_longer_not_found():
+    assert urlsplit('/?message=Salut&mode=realtime').path == '/'
 
 def test_parse_chat_payload_accepts_json():
     raw = b'{"message":"bonjour","mode":"realtime"}'

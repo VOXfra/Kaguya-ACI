@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-02-27 — Correction fallback formulaire : plus de `/?message=...` en erreur `not_found`
+
+### Pourquoi
+- En fallback navigateur (JS indisponible/partiel), le `<form>` utilisait le comportement par défaut (`GET /?message=...`).
+- Le routeur HTTP comparait `self.path` strictement à `/`, donc `/?message=...` tombait sur `{"error": "not_found"}` et aucun log de chat n'était produit.
+
+### Quoi
+- `kaguya/server.py` :
+  - formulaire HTML fixé explicitement en `method='post' action='/chat'` pour garantir l'envoi vers l'endpoint chat même sans JS,
+  - parsing des routes via `urlsplit(self.path).path` dans `do_GET`/`do_POST` pour ignorer proprement la query string.
+- `tests/test_cerveau.py` :
+  - test de présence du fallback form `POST /chat`,
+  - test de normalisation de route avec query string (`/?...` -> `/`).
+
+### Comment
+1. Forçage de la soumission formulaire vers `/chat`.
+2. Normalisation de route côté handler HTTP avant dispatch.
+3. Validation automatique + smoke runtime.
+
+### Passages modifiés (état avant modification)
+- Dans `kaguya/server.py`, **avant** le `<form>` n'avait pas `method/action`, donc fallback en `GET /?message=...`.
+- Dans `kaguya/server.py`, **avant** le dispatch comparait `self.path` brut, ce qui rejetait les URL avec query string.
+
 ## 2026-02-27 — Compatibilité envoi chat (formulaire) + documentation PowerShell
 
 ### Pourquoi

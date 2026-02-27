@@ -24,7 +24,7 @@ import time
 from typing import Any, Dict
 from urllib import error as urlerror
 from urllib import request as urlrequest
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlsplit
 
 from kaguya.cerveau import CerveauKaguya
 
@@ -206,7 +206,7 @@ HTML_PAGE = """<!doctype html>
 <p>Serveur Kaguya: <code>127.0.0.1:1235</code></p>
 <p>LM Studio attendu: <code>127.0.0.1:1234</code></p>
 <div id='chat' style='white-space:pre-wrap;border:1px solid #ccc;padding:8px;height:300px;overflow:auto'></div>
-<form id='chat-form'>
+<form id='chat-form' method='post' action='/chat'>
 <input id='msg' name='message' style='width:70%' placeholder='Écris un message... (/etat, /resume, /pause...)'/>
 <select id='mode' name='mode'><option value='realtime'>realtime</option><option value='reflexion'>reflexion</option></select>
 <button id='send-btn' type='submit'>Envoyer</button>
@@ -307,7 +307,8 @@ def make_handler(service: ChatService):
             self.wfile.write(body)
 
         def do_GET(self) -> None:  # noqa: N802
-            if self.path == "/":
+            route = urlsplit(self.path).path
+            if route == "/":
                 data = HTML_PAGE.encode("utf-8")
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -315,13 +316,14 @@ def make_handler(service: ChatService):
                 self.end_headers()
                 self.wfile.write(data)
                 return
-            if self.path == "/state":
+            if route == "/state":
                 self._send_json(service.state_payload())
                 return
             self._send_json({"error": "not_found"}, 404)
 
         def do_POST(self) -> None:  # noqa: N802
-            if self.path != "/chat":
+            route = urlsplit(self.path).path
+            if route != "/chat":
                 self._send_json({"error": "not_found"}, 404)
                 return
             length = int(self.headers.get("Content-Length", "0"))
