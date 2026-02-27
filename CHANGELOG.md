@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-02-27 — Documentation complète avec README pas à pas
+
+### Pourquoi
+- Répondre à la demande d'un README détaillé, esthétique et exploitable immédiatement.
+- Rendre l'utilisation de Kaguya claire pour un usage local, sans ambiguïté.
+- Vérifier automatiquement la présence des sections essentielles du README.
+
+### Quoi
+- Ajout de `README.md` avec :
+  - présentation de Kaguya,
+  - installation,
+  - vérification,
+  - utilisation pas à pas,
+  - architecture du cerveau,
+  - journal de bord,
+  - contraintes offline.
+- Mise à jour de `tests/test_cerveau.py` avec un test dédié qui valide la présence des sections-clés du README.
+
+### Comment
+1. Exécution des tests existants avant modification.
+2. Ajout d'un test de documentation (attendu en échec tant que README absent).
+3. Rédaction du README complet en français.
+4. Exécution finale des tests pour valider l'ensemble.
+
+### Passages modifiés (état avant modification)
+- Dans `tests/test_cerveau.py`, **avant** il n'existait pas de test de validation du README.
+- À la racine du projet, **avant** le fichier `README.md` n'existait pas.
+
 ## 2026-02-27 — Renforcement local/offline + requirements
 
 ### Pourquoi

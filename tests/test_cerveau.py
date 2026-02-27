@@ -64,3 +64,13 @@ def test_kaguya_force_une_execution_hors_ligne_stricte():
 def test_un_requirements_est_present_pour_l_execution_locale():
     """Vérifie qu'un fichier requirements est bien fourni."""
     assert Path("requirements.txt").exists()
+
+
+def test_readme_decrit_l_utilisation_pas_a_pas():
+    """Valide la présence d'un README riche et orienté usage."""
+    contenu = Path("README.md").read_text(encoding="utf-8")
+    assert "# Kaguya" in contenu
+    assert "## Installation" in contenu
+    assert "## Utilisation pas à pas" in contenu
+    assert "## Architecture du cerveau" in contenu
+    assert "## Journal de bord" in contenu
