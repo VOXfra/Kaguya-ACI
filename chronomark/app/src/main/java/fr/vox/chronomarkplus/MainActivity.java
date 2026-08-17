@@ -292,7 +292,8 @@ public class MainActivity extends Activity {
                 }
             }
             append(nus ? "NORDIC UART / ESPRUINO SERVICE DETECTED" : "Nordic UART service not exposed in this GATT table.");
-            runOnUiThread(() -> setStatus(nus ? "CONNECTED / ESPRUINO UART FOUND" : "CONNECTED / GATT MAPPED"));
+            final boolean nusFound = nus;
+            runOnUiThread(() -> setStatus(nusFound ? "CONNECTED / ESPRUINO UART FOUND" : "CONNECTED / GATT MAPPED"));
             readNext(g);
         }
 
