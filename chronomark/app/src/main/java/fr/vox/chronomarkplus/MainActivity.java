@@ -11,6 +11,7 @@ import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
+import android.bluetooth.BluetoothProfile;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanResult;
@@ -39,7 +40,11 @@ import java.util.UUID;
 
 public class MainActivity extends Activity {
     private static final int REQ_BT = 1001;
+
     private static final UUID NUS_SERVICE = UUID.fromString("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
+    private static final UUID NUS_TX = UUID.fromString("6e400002-b5a3-f393-e0a9-e50e24dcca9e");
+    private static final UUID NUS_RX = UUID.fromString("6e400003-b5a3-f393-e0a9-e50e24dcca9e");
+    private static final UUID CCCD = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     private static final UUID BATTERY_SERVICE = UUID.fromString("0000180f-0000-1000-8000-00805f9b34fb");
     private static final UUID BATTERY_LEVEL = UUID.fromString("00002a19-0000-1000-8000-00805f9b34fb");
 
@@ -47,21 +52,33 @@ public class MainActivity extends Activity {
     private final StringBuilder report = new StringBuilder();
     private final Set<String> seen = new HashSet<>();
     private final Queue<BluetoothGattCharacteristic> readQueue = new ArrayDeque<>();
+    private final Queue<byte[]> uartWriteQueue = new ArrayDeque<>();
 
     private BluetoothAdapter adapter;
     private BluetoothLeScanner scanner;
     private BluetoothGatt gatt;
+    private BluetoothGattCharacteristic nusTx;
+    private BluetoothGattCharacteristic nusRx;
+
     private LinearLayout deviceList;
     private TextView status;
     private TextView log;
     private Button scanButton;
     private Button exportButton;
+    private Button systemButton;
+    private Button storageButton;
+    private Button globalsButton;
+
     private boolean scanning;
+    private boolean consoleReady;
+    private boolean uartWriteInFlight;
+    private boolean enableNusAfterReads;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         buildUi();
+
         BluetoothManager manager = getSystemService(BluetoothManager.class);
         adapter = manager != null ? manager.getAdapter() : null;
         if (adapter == null) {
@@ -69,10 +86,12 @@ public class MainActivity extends Activity {
             scanButton.setEnabled(false);
             return;
         }
+
         scanner = adapter.getBluetoothLeScanner();
         requestPermissionsIfNeeded();
-        append("CHRONOMARK+ v0.1.0 / READ-ONLY BLE SURVEY");
-        append("No characteristic will be written and no firmware will be flashed.");
+        append("CHRONOMARK+ v0.2.0 / SAFE ESPRUINO INSPECTOR");
+        append("Persistent storage writes are disabled in this build.");
+        append("Allowed actions: BLE discovery, GATT reads, enabling UART notifications, non-persistent inspection commands.");
     }
 
     private void buildUi() {
@@ -89,7 +108,7 @@ public class MainActivity extends Activity {
         root.addView(title);
 
         TextView sub = new TextView(this);
-        sub.setText("CONSTELLATION DEVICE DIAGNOSTICS / v0.1.0");
+        sub.setText("CONSTELLATION DEVICE INSPECTOR / v0.2.0");
         sub.setTextColor(Color.rgb(211, 71, 54));
         sub.setTextSize(12);
         sub.setPadding(0, 0, 0, dp(14));
@@ -103,15 +122,15 @@ public class MainActivity extends Activity {
         status.setBackgroundColor(Color.rgb(27, 34, 38));
         root.addView(status, new LinearLayout.LayoutParams(-1, -2));
 
-        LinearLayout buttons = new LinearLayout(this);
-        buttons.setOrientation(LinearLayout.HORIZONTAL);
-        buttons.setPadding(0, dp(12), 0, dp(8));
+        LinearLayout topButtons = new LinearLayout(this);
+        topButtons.setOrientation(LinearLayout.HORIZONTAL);
+        topButtons.setPadding(0, dp(12), 0, dp(8));
         scanButton = button("SCAN FOR CHRONOMARK");
         exportButton = button("EXPORT");
         exportButton.setEnabled(false);
-        buttons.addView(scanButton, new LinearLayout.LayoutParams(0, dp(48), 1f));
-        buttons.addView(exportButton, new LinearLayout.LayoutParams(0, dp(48), .45f));
-        root.addView(buttons);
+        topButtons.addView(scanButton, new LinearLayout.LayoutParams(0, dp(48), 1f));
+        topButtons.addView(exportButton, new LinearLayout.LayoutParams(0, dp(48), .45f));
+        root.addView(topButtons);
 
         TextView found = label("NEARBY BLE DEVICES / TAP TO CONNECT");
         root.addView(found);
@@ -120,9 +139,24 @@ public class MainActivity extends Activity {
         deviceList = new LinearLayout(this);
         deviceList.setOrientation(LinearLayout.VERTICAL);
         devicesScroll.addView(deviceList);
-        root.addView(devicesScroll, new LinearLayout.LayoutParams(-1, dp(190)));
+        root.addView(devicesScroll, new LinearLayout.LayoutParams(-1, dp(150)));
 
-        TextView telemetry = label("GATT SURVEY / READ ONLY");
+        TextView inspector = label("ESPRUINO INSPECTION / NON-PERSISTENT");
+        inspector.setPadding(0, dp(10), 0, dp(5));
+        root.addView(inspector);
+
+        LinearLayout inspectButtons = new LinearLayout(this);
+        inspectButtons.setOrientation(LinearLayout.HORIZONTAL);
+        systemButton = button("SYSTEM INFO");
+        storageButton = button("STORAGE INDEX");
+        globalsButton = button("GLOBALS");
+        setInspectorEnabled(false);
+        inspectButtons.addView(systemButton, new LinearLayout.LayoutParams(0, dp(48), 1f));
+        inspectButtons.addView(storageButton, new LinearLayout.LayoutParams(0, dp(48), 1f));
+        inspectButtons.addView(globalsButton, new LinearLayout.LayoutParams(0, dp(48), 1f));
+        root.addView(inspectButtons);
+
+        TextView telemetry = label("DEVICE + UART LOG");
         telemetry.setPadding(0, dp(10), 0, dp(5));
         root.addView(telemetry);
 
@@ -137,6 +171,10 @@ public class MainActivity extends Activity {
 
         scanButton.setOnClickListener(v -> startScan());
         exportButton.setOnClickListener(v -> exportReport());
+        systemButton.setOnClickListener(v -> inspectSystem());
+        storageButton.setOnClickListener(v -> inspectStorage());
+        globalsButton.setOnClickListener(v -> inspectGlobals());
+
         setContentView(root);
     }
 
@@ -151,9 +189,15 @@ public class MainActivity extends Activity {
     private Button button(String s) {
         Button b = new Button(this);
         b.setText(s);
-        b.setTextSize(11);
+        b.setTextSize(10);
         b.setAllCaps(false);
         return b;
+    }
+
+    private void setInspectorEnabled(boolean enabled) {
+        if (systemButton != null) systemButton.setEnabled(enabled);
+        if (storageButton != null) storageButton.setEnabled(enabled);
+        if (globalsButton != null) globalsButton.setEnabled(enabled);
     }
 
     private int dp(int v) {
@@ -178,7 +222,7 @@ public class MainActivity extends Activity {
             for (int result : grantResults) {
                 if (result != PackageManager.PERMISSION_GRANTED) {
                     setStatus("BLUETOOTH PERMISSION REQUIRED");
-                    Toast.makeText(this, "Autorise Appareils à proximité pour scanner la montre.", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "Autorise Appareils a proximite pour scanner la montre.", Toast.LENGTH_LONG).show();
                     return;
                 }
             }
@@ -205,14 +249,15 @@ public class MainActivity extends Activity {
             stopScan();
             return;
         }
+
         deviceList.removeAllViews();
         seen.clear();
         scanning = true;
         scanButton.setText("STOP SCAN");
-        setStatus("SCANNING / 12 SECONDS");
+        setStatus("SCANNING / 15 SECONDS");
         append("\n--- BLE SCAN START ---");
         scanner.startScan(scanCallback);
-        handler.postDelayed(this::stopScan, 12000);
+        handler.postDelayed(this::stopScan, 15000);
     }
 
     @SuppressLint("MissingPermission")
@@ -228,7 +273,12 @@ public class MainActivity extends Activity {
     private final ScanCallback scanCallback = new ScanCallback() {
         @Override public void onScanResult(int callbackType, ScanResult result) { showResult(result); }
         @Override public void onBatchScanResults(java.util.List<ScanResult> results) { for (ScanResult r : results) showResult(r); }
-        @Override public void onScanFailed(int errorCode) { runOnUiThread(() -> { setStatus("SCAN FAILED / " + errorCode); append("Scan failed: " + errorCode); }); }
+        @Override public void onScanFailed(int errorCode) {
+            runOnUiThread(() -> {
+                setStatus("SCAN FAILED / " + errorCode);
+                append("Scan failed: " + errorCode);
+            });
+        }
     };
 
     @SuppressLint("MissingPermission")
@@ -237,13 +287,18 @@ public class MainActivity extends Activity {
         if (d == null) return;
         String key = d.getAddress();
         if (!seen.add(key)) return;
+
         String name;
         try { name = d.getName(); } catch (SecurityException e) { name = null; }
-        if ((name == null || name.trim().isEmpty()) && result.getScanRecord() != null) name = result.getScanRecord().getDeviceName();
+        if ((name == null || name.trim().isEmpty()) && result.getScanRecord() != null) {
+            name = result.getScanRecord().getDeviceName();
+        }
         final String finalName = name == null ? "Unnamed BLE device" : name;
-        int rssi = result.getRssi();
-        boolean likely = finalName.toLowerCase(Locale.ROOT).contains("chronomark") || finalName.toLowerCase(Locale.ROOT).contains("dickens") || finalName.toLowerCase(Locale.ROOT).contains("starfield");
-        append("FOUND " + finalName + " / " + key + " / RSSI " + rssi + (likely ? " / LIKELY CHRONOMARK" : ""));
+        final int rssi = result.getRssi();
+        String lower = finalName.toLowerCase(Locale.ROOT);
+        final boolean likely = lower.contains("chronomark") || lower.contains("dickens") || lower.contains("starfield") || lower.contains("dfutarg");
+
+        append("FOUND " + finalName + " / " + key + " / RSSI " + rssi + (likely ? " / CHRONOMARK FAMILY" : ""));
         runOnUiThread(() -> {
             Button row = button((likely ? "★ " : "") + finalName + "\n" + key + "   RSSI " + rssi);
             row.setTextAlignment(View.TEXT_ALIGNMENT_VIEW_START);
@@ -255,11 +310,17 @@ public class MainActivity extends Activity {
     @SuppressLint("MissingPermission")
     private void connect(BluetoothDevice device, String name) {
         stopScan();
-        if (gatt != null) {
-            gatt.close();
-            gatt = null;
-        }
+        closeGatt();
         readQueue.clear();
+        uartWriteQueue.clear();
+        nusTx = null;
+        nusRx = null;
+        consoleReady = false;
+        uartWriteInFlight = false;
+        enableNusAfterReads = false;
+        setInspectorEnabled(false);
+        exportButton.setEnabled(false);
+
         setStatus("CONNECTING / " + name);
         append("\n--- CONNECT " + name + " / " + device.getAddress() + " ---");
         gatt = device.connectGatt(this, false, gattCallback, BluetoothDevice.TRANSPORT_LE);
@@ -268,32 +329,51 @@ public class MainActivity extends Activity {
     private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
         @Override
         public void onConnectionStateChange(BluetoothGatt g, int statusCode, int newState) {
-            if (newState == BluetoothGatt.STATE_CONNECTED) {
-                runOnUiThread(() -> setStatus("CONNECTED / DISCOVERING SERVICES"));
+            if (newState == BluetoothProfile.STATE_CONNECTED) {
                 append("Connected. GATT status=" + statusCode);
-                try { g.discoverServices(); } catch (SecurityException e) { append("discoverServices permission error: " + e); }
-            } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
+                runOnUiThread(() -> setStatus("CONNECTED / DISCOVERING SERVICES"));
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) g.requestMtu(185);
+                } catch (Exception ignored) {}
+                try { g.discoverServices(); }
+                catch (SecurityException e) { append("discoverServices permission error: " + e); }
+            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 append("Disconnected. GATT status=" + statusCode);
-                runOnUiThread(() -> setStatus("DISCONNECTED"));
+                consoleReady = false;
+                runOnUiThread(() -> {
+                    setInspectorEnabled(false);
+                    setStatus("DISCONNECTED");
+                });
             }
+        }
+
+        @Override
+        public void onMtuChanged(BluetoothGatt g, int mtu, int statusCode) {
+            append("MTU " + mtu + " status=" + statusCode);
         }
 
         @Override
         public void onServicesDiscovered(BluetoothGatt g, int statusCode) {
             append("Services discovered. status=" + statusCode + " count=" + g.getServices().size());
             boolean nus = false;
+
             for (BluetoothGattService s : g.getServices()) {
                 append("SERVICE " + s.getUuid() + uuidHint(s.getUuid()));
                 if (NUS_SERVICE.equals(s.getUuid())) nus = true;
+
                 for (BluetoothGattCharacteristic c : s.getCharacteristics()) {
                     append("  CHAR " + c.getUuid() + " props=" + props(c.getProperties()) + uuidHint(c.getUuid()));
                     for (BluetoothGattDescriptor d : c.getDescriptors()) append("    DESC " + d.getUuid());
+
+                    if (NUS_TX.equals(c.getUuid())) nusTx = c;
+                    if (NUS_RX.equals(c.getUuid())) nusRx = c;
                     if ((c.getProperties() & BluetoothGattCharacteristic.PROPERTY_READ) != 0) readQueue.add(c);
                 }
             }
+
             append(nus ? "NORDIC UART / ESPRUINO SERVICE DETECTED" : "Nordic UART service not exposed in this GATT table.");
-            final boolean nusFound = nus;
-            runOnUiThread(() -> setStatus(nusFound ? "CONNECTED / ESPRUINO UART FOUND" : "CONNECTED / GATT MAPPED"));
+            enableNusAfterReads = nusTx != null && nusRx != null;
+            runOnUiThread(() -> setStatus(enableNusAfterReads ? "CONNECTED / ESPRUINO DETECTED" : "CONNECTED / GATT MAPPED"));
             readNext(g);
         }
 
@@ -309,16 +389,64 @@ public class MainActivity extends Activity {
             append("READ " + c.getUuid() + " status=" + statusCode + " value=" + decode(value));
             readNext(g);
         }
+
+        @Override
+        public void onDescriptorWrite(BluetoothGatt g, BluetoothGattDescriptor descriptor, int statusCode) {
+            if (CCCD.equals(descriptor.getUuid()) && nusRx != null && descriptor.getCharacteristic().getUuid().equals(nusRx.getUuid())) {
+                if (statusCode == BluetoothGatt.GATT_SUCCESS) {
+                    consoleReady = true;
+                    append("ESPRUINO UART NOTIFICATIONS ENABLED");
+                    runOnUiThread(() -> {
+                        setInspectorEnabled(true);
+                        exportButton.setEnabled(true);
+                        setStatus("ESPRUINO READY / SAFE INSPECTION");
+                    });
+                } else {
+                    append("Failed to enable UART notifications. status=" + statusCode);
+                    runOnUiThread(() -> setStatus("ESPRUINO DETECTED / NOTIFY FAILED"));
+                }
+            }
+        }
+
+        @Override
+        public void onCharacteristicChanged(BluetoothGatt g, BluetoothGattCharacteristic c) {
+            handleUartNotification(c.getUuid(), c.getValue());
+        }
+
+        @Override
+        public void onCharacteristicChanged(BluetoothGatt g, BluetoothGattCharacteristic c, byte[] value) {
+            handleUartNotification(c.getUuid(), value);
+        }
+
+        @Override
+        public void onCharacteristicWrite(BluetoothGatt g, BluetoothGattCharacteristic c, int statusCode) {
+            if (NUS_TX.equals(c.getUuid())) {
+                synchronized (MainActivity.this) {
+                    uartWriteInFlight = false;
+                }
+                if (statusCode != BluetoothGatt.GATT_SUCCESS) append("UART WRITE FAILED status=" + statusCode);
+                writeNextUartChunk();
+            }
+        }
     };
 
     @SuppressLint("MissingPermission")
     private synchronized void readNext(BluetoothGatt g) {
         BluetoothGattCharacteristic c = readQueue.poll();
         if (c == null) {
-            append("--- READ-ONLY GATT SURVEY COMPLETE ---");
-            runOnUiThread(() -> { setStatus("SURVEY COMPLETE / EXPORT REPORT"); exportButton.setEnabled(true); });
+            append("--- GATT READ SURVEY COMPLETE ---");
+            if (enableNusAfterReads) {
+                enableNusAfterReads = false;
+                enableNusNotifications(g);
+            } else {
+                runOnUiThread(() -> {
+                    exportButton.setEnabled(true);
+                    setStatus("SURVEY COMPLETE / NO ESPRUINO UART");
+                });
+            }
             return;
         }
+
         try {
             boolean queued = g.readCharacteristic(c);
             if (!queued) {
@@ -331,8 +459,128 @@ public class MainActivity extends Activity {
         }
     }
 
+    @SuppressLint("MissingPermission")
+    private void enableNusNotifications(BluetoothGatt g) {
+        if (nusRx == null) return;
+        try {
+            boolean local = g.setCharacteristicNotification(nusRx, true);
+            append("UART local notification enable=" + local);
+            BluetoothGattDescriptor cccd = nusRx.getDescriptor(CCCD);
+            if (cccd == null) {
+                append("UART CCCD missing");
+                runOnUiThread(() -> setStatus("ESPRUINO DETECTED / CCCD MISSING"));
+                return;
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                int result = g.writeDescriptor(cccd, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+                append("UART CCCD write queued result=" + result);
+            } else {
+                cccd.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+                boolean queued = g.writeDescriptor(cccd);
+                append("UART CCCD write queued=" + queued);
+            }
+        } catch (Exception e) {
+            append("UART notification setup error: " + e.getClass().getSimpleName());
+            runOnUiThread(() -> setStatus("ESPRUINO DETECTED / NOTIFY ERROR"));
+        }
+    }
+
+    private void inspectSystem() {
+        sendInspection("SYSTEM INFO",
+                "print('VOX_SYS:'+JSON.stringify({version:process.version,env:process.env,memory:process.memory()}));\n");
+    }
+
+    private void inspectStorage() {
+        sendInspection("STORAGE INDEX",
+                "var __voxS=require('Storage');print('VOX_STORAGE:'+JSON.stringify({free:__voxS.getFree(),files:__voxS.list()}));\n");
+    }
+
+    private void inspectGlobals() {
+        sendInspection("GLOBALS",
+                "print('VOX_GLOBALS:'+JSON.stringify(Object.keys(global).sort()));\n");
+    }
+
+    private void sendInspection(String label, String command) {
+        if (!consoleReady || gatt == null || nusTx == null) {
+            Toast.makeText(this, "La console Espruino n'est pas prete.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        append("\n>>> " + label + " / NON-PERSISTENT");
+        queueUart(command.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private synchronized void queueUart(byte[] data) {
+        final int chunkSize = 20;
+        for (int offset = 0; offset < data.length; offset += chunkSize) {
+            int len = Math.min(chunkSize, data.length - offset);
+            byte[] chunk = new byte[len];
+            System.arraycopy(data, offset, chunk, 0, len);
+            uartWriteQueue.add(chunk);
+        }
+        writeNextUartChunk();
+    }
+
+    @SuppressLint("MissingPermission")
+    private synchronized void writeNextUartChunk() {
+        if (uartWriteInFlight || gatt == null || nusTx == null) return;
+        byte[] chunk = uartWriteQueue.poll();
+        if (chunk == null) {
+            runOnUiThread(() -> {
+                if (consoleReady) setStatus("ESPRUINO READY / WAITING RESPONSE");
+            });
+            return;
+        }
+
+        uartWriteInFlight = true;
+        runOnUiThread(() -> setStatus("ESPRUINO / SENDING INSPECTION"));
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                int result = gatt.writeCharacteristic(nusTx, chunk, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+                if (result != BluetoothGatt.GATT_SUCCESS) {
+                    uartWriteInFlight = false;
+                    append("UART enqueue failed result=" + result);
+                    handler.post(this::writeNextUartChunk);
+                }
+            } else {
+                nusTx.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+                nusTx.setValue(chunk);
+                boolean queued = gatt.writeCharacteristic(nusTx);
+                if (!queued) {
+                    uartWriteInFlight = false;
+                    append("UART enqueue failed");
+                    handler.post(this::writeNextUartChunk);
+                }
+            }
+        } catch (Exception e) {
+            uartWriteInFlight = false;
+            append("UART write exception: " + e.getClass().getSimpleName());
+            handler.post(this::writeNextUartChunk);
+        }
+    }
+
+    private void handleUartNotification(UUID uuid, byte[] value) {
+        if (!NUS_RX.equals(uuid) || value == null) return;
+        String text = printableUart(value);
+        if (!text.isEmpty()) append("UART << " + text);
+        runOnUiThread(() -> setStatus("ESPRUINO READY / RESPONSE RECEIVED"));
+    }
+
+    private String printableUart(byte[] value) {
+        String raw = new String(value, StandardCharsets.UTF_8);
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            if (c == '\r') continue;
+            if (c == '\n' || c == '\t' || (c >= 32 && c < 127)) out.append(c);
+            else out.append(String.format(Locale.ROOT, "<%02X>", (int)c & 0xff));
+        }
+        return out.toString();
+    }
+
     private String uuidHint(UUID u) {
         if (NUS_SERVICE.equals(u)) return " [Nordic UART / Espruino]";
+        if (NUS_TX.equals(u)) return " [Espruino RX / phone writes]";
+        if (NUS_RX.equals(u)) return " [Espruino TX / phone receives]";
         if (BATTERY_SERVICE.equals(u)) return " [Battery Service]";
         if (BATTERY_LEVEL.equals(u)) return " [Battery Level]";
         String s = u.toString().toLowerCase(Locale.ROOT);
@@ -375,12 +623,14 @@ public class MainActivity extends Activity {
         });
     }
 
-    private void setStatus(String s) { status.setText("STATUS / " + s); }
+    private void setStatus(String s) {
+        status.setText("STATUS / " + s);
+    }
 
     private void exportReport() {
         Intent i = new Intent(Intent.ACTION_SEND);
         i.setType("text/plain");
-        i.putExtra(Intent.EXTRA_SUBJECT, "Chronomark+ BLE Diagnostic");
+        i.putExtra(Intent.EXTRA_SUBJECT, "Chronomark+ v0.2.0 Diagnostic");
         i.putExtra(Intent.EXTRA_TEXT, report.toString());
         startActivity(Intent.createChooser(i, "Exporter le diagnostic Chronomark+"));
     }
@@ -393,11 +643,24 @@ public class MainActivity extends Activity {
         return checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
     }
 
+    @SuppressLint("MissingPermission")
+    private void closeGatt() {
+        try {
+            if (gatt != null) {
+                gatt.disconnect();
+                gatt.close();
+            }
+        } catch (Exception ignored) {}
+        gatt = null;
+    }
+
     @Override
     protected void onDestroy() {
         super.onDestroy();
         handler.removeCallbacksAndMessages(null);
-        try { if (scanning && scanner != null && hasBtPermissions()) scanner.stopScan(scanCallback); } catch (Exception ignored) {}
-        try { if (gatt != null) gatt.close(); } catch (Exception ignored) {}
+        try {
+            if (scanning && scanner != null && hasBtPermissions()) scanner.stopScan(scanCallback);
+        } catch (Exception ignored) {}
+        closeGatt();
     }
 }
