@@ -1,549 +1,406 @@
 package fr.vox.chronomarkplus;
 
-import android.Manifest;
-import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothGatt;
-import android.bluetooth.BluetoothGattCallback;
-import android.bluetooth.BluetoothGattCharacteristic;
-import android.bluetooth.BluetoothGattDescriptor;
-import android.bluetooth.BluetoothGattService;
-import android.bluetooth.BluetoothManager;
-import android.bluetooth.BluetoothProfile;
-import android.bluetooth.le.BluetoothLeScanner;
-import android.bluetooth.le.ScanCallback;
-import android.bluetooth.le.ScanResult;
+import android.app.Notification;
+import android.content.ComponentName;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.graphics.Color;
-import android.os.Build;
+import android.media.MediaMetadata;
+import android.media.session.MediaController;
+import android.media.session.MediaSessionManager;
+import android.media.session.PlaybackState;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.text.method.ScrollingMovementMethod;
-import android.view.View;
+import android.os.SystemClock;
+import android.provider.Settings;
+import android.text.TextUtils;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayDeque;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Queue;
-import java.util.Set;
-import java.util.UUID;
 
 public class MainActivity extends Activity {
-    private static final int REQ_BT = 1001;
-    private static final int UART_CHUNK = 96;
-
-    private static final UUID NUS_SERVICE = UUID.fromString("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
-    private static final UUID NUS_RX_PHONE_TO_WATCH = UUID.fromString("6e400002-b5a3-f393-e0a9-e50e24dcca9e");
-    private static final UUID NUS_TX_WATCH_TO_PHONE = UUID.fromString("6e400003-b5a3-f393-e0a9-e50e24dcca9e");
-    private static final UUID CCCD = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
-
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final Set<String> seen = new HashSet<>();
-    private final Queue<byte[]> writeQueue = new ArrayDeque<>();
-    private final StringBuilder report = new StringBuilder();
 
-    private BluetoothAdapter adapter;
-    private BluetoothLeScanner scanner;
-    private BluetoothGatt gatt;
-    private BluetoothGattCharacteristic uartRx;
-    private BluetoothGattCharacteristic uartTx;
+    private MediaSessionManager mediaSessionManager;
+    private ComponentName listenerComponent;
 
-    private LinearLayout deviceList;
-    private TextView status;
-    private TextView log;
-    private Button scanButton;
-    private Button testButton;
-    private Button returnButton;
-    private Button infoButton;
+    private TextView accessState;
+    private TextView sessionTitle;
+    private TextView appName;
+    private TextView mediaTitle;
+    private TextView mediaSubtitle;
+    private TextView mediaTime;
+    private TextView capabilityText;
+    private TextView rawLog;
+    private ImageView artwork;
+    private Button accessButton;
+    private Button refreshButton;
 
-    private boolean scanning;
-    private boolean consoleReady;
-    private boolean writeInFlight;
+    private boolean running;
+
+    private final Runnable ticker = new Runnable() {
+        @Override public void run() {
+            if (!running) return;
+            refreshMedia(false);
+            handler.postDelayed(this, 1000);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        mediaSessionManager = (MediaSessionManager) getSystemService(MEDIA_SESSION_SERVICE);
+        listenerComponent = new ComponentName(this, MediaProbeNotificationListener.class);
         buildUi();
+        refreshMedia(true);
+    }
 
-        BluetoothManager manager = getSystemService(BluetoothManager.class);
-        adapter = manager != null ? manager.getAdapter() : null;
-        if (adapter == null) {
-            setStatus("BLUETOOTH UNAVAILABLE");
-            scanButton.setEnabled(false);
-            return;
-        }
-        scanner = adapter.getBluetoothLeScanner();
-        requestPermissionsIfNeeded();
+    @Override protected void onResume() {
+        super.onResume();
+        running = true;
+        handler.removeCallbacks(ticker);
+        handler.post(ticker);
+    }
 
-        append("CHRONOMARK+ v0.4.0 / CONSTELLATION RAM UI LAB");
-        append("WATCH STORAGE POLICY: ZERO PERSISTENT WRITES.");
-        append("No Storage.write(), erase(), optimise(), save(), reset(), Flash write or DFU operation exists in this build.");
-        append("RAM UI test auto-exits to clock.app.js after 15 seconds. BTN2 is an immediate local escape.");
+    @Override protected void onPause() {
+        running = false;
+        handler.removeCallbacks(ticker);
+        super.onPause();
     }
 
     private void buildUi() {
+        ScrollView outer = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(18), dp(18), dp(18), dp(18));
+        root.setPadding(dp(18), dp(18), dp(18), dp(24));
         root.setBackgroundColor(Color.rgb(15, 19, 22));
+        outer.addView(root);
 
-        TextView title = new TextView(this);
-        title.setText("CHRONOMARK+");
-        title.setTextColor(Color.rgb(240, 231, 205));
-        title.setTextSize(28);
+        TextView title = text("CHRONOMARK+", 30, Color.rgb(240,231,205));
         title.setLetterSpacing(0.08f);
         root.addView(title);
 
-        TextView sub = new TextView(this);
-        sub.setText("CONSTELLATION RAM UI LAB / v0.4.0");
-        sub.setTextColor(Color.rgb(211, 71, 54));
-        sub.setTextSize(12);
-        sub.setPadding(0, 0, 0, dp(12));
+        TextView sub = text("MEDIA CONTROL+ PROBE / v0.5.0", 13, Color.rgb(211,71,54));
+        sub.setPadding(0,0,0,dp(12));
         root.addView(sub);
 
-        status = new TextView(this);
-        status.setText("STATUS / READY");
-        status.setTextColor(Color.rgb(122, 198, 190));
-        status.setTextSize(13);
-        status.setPadding(dp(10), dp(10), dp(10), dp(10));
-        status.setBackgroundColor(Color.rgb(27, 34, 38));
-        root.addView(status, new LinearLayout.LayoutParams(-1, -2));
+        TextView safety = text("PHONE-SIDE MEDIA DIAGNOSTIC / WATCH STORAGE UNTOUCHED", 11, Color.rgb(122,198,190));
+        safety.setPadding(dp(10),dp(10),dp(10),dp(10));
+        safety.setBackgroundColor(Color.rgb(27,34,38));
+        root.addView(safety, lp(-1, -2));
 
-        scanButton = button("SCAN FOR CHRONOMARK");
-        scanButton.setOnClickListener(v -> startScan());
-        LinearLayout.LayoutParams scanLp = new LinearLayout.LayoutParams(-1, dp(48));
-        scanLp.setMargins(0, dp(10), 0, dp(8));
-        root.addView(scanButton, scanLp);
+        root.addView(label("ANDROID MEDIA ACCESS"));
 
-        root.addView(label("NEARBY BLE DEVICES / TAP CHRONOMARK"));
+        accessState = text("CHECKING...", 13, Color.WHITE);
+        accessState.setPadding(dp(10),dp(8),dp(10),dp(8));
+        root.addView(accessState, lp(-1,-2));
 
-        ScrollView devicesScroll = new ScrollView(this);
-        deviceList = new LinearLayout(this);
-        deviceList.setOrientation(LinearLayout.VERTICAL);
-        devicesScroll.addView(deviceList);
-        root.addView(devicesScroll, new LinearLayout.LayoutParams(-1, dp(125)));
+        LinearLayout accessRow = new LinearLayout(this);
+        accessRow.setOrientation(LinearLayout.HORIZONTAL);
+        accessButton = button("ENABLE MEDIA ACCESS");
+        refreshButton = button("REFRESH");
+        accessButton.setOnClickListener(v -> {
+            try {
+                startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
+            } catch (Exception e) {
+                Toast.makeText(this, "Impossible d'ouvrir les parametres d'acces aux notifications.", Toast.LENGTH_LONG).show();
+            }
+        });
+        refreshButton.setOnClickListener(v -> refreshMedia(true));
+        accessRow.addView(accessButton, new LinearLayout.LayoutParams(0, dp(48), 1.4f));
+        accessRow.addView(refreshButton, new LinearLayout.LayoutParams(0, dp(48), .7f));
+        root.addView(accessRow);
 
-        TextView lab = label("RAM-ONLY WATCH TESTS");
-        lab.setPadding(0, dp(8), 0, dp(4));
-        root.addView(lab);
+        root.addView(label("PRIMARY MEDIA SESSION"));
 
-        testButton = button("CONSTELLATION UI TEST / 15s");
-        testButton.setEnabled(false);
-        testButton.setOnClickListener(v -> launchRamUiTest());
-        root.addView(testButton, new LinearLayout.LayoutParams(-1, dp(50)));
+        artwork = new ImageView(this);
+        artwork.setAdjustViewBounds(true);
+        artwork.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        artwork.setBackgroundColor(Color.rgb(7,10,12));
+        root.addView(artwork, new LinearLayout.LayoutParams(-1, dp(240)));
 
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(0, dp(5), 0, dp(5));
-        returnButton = button("RETURN TO CLOCK");
-        infoButton = button("SYSTEM INFO");
-        returnButton.setEnabled(false);
-        infoButton.setEnabled(false);
-        returnButton.setOnClickListener(v -> returnToClock());
-        infoButton.setOnClickListener(v -> systemInfo());
-        row.addView(returnButton, new LinearLayout.LayoutParams(0, dp(46), 1f));
-        row.addView(infoButton, new LinearLayout.LayoutParams(0, dp(46), 1f));
-        root.addView(row);
+        sessionTitle = text("NO ACTIVE SESSION", 12, Color.rgb(122,198,190));
+        sessionTitle.setPadding(0,dp(10),0,0);
+        root.addView(sessionTitle);
 
-        TextView safety = label("SAFETY / NO WATCH FILES CREATED OR MODIFIED");
-        safety.setTextColor(Color.rgb(122, 198, 190));
-        safety.setPadding(0, dp(3), 0, dp(5));
-        root.addView(safety);
+        appName = text("-", 12, Color.rgb(164,169,167));
+        root.addView(appName);
 
-        log = new TextView(this);
-        log.setTextColor(Color.rgb(219, 219, 210));
-        log.setTextSize(10);
-        log.setTypeface(android.graphics.Typeface.MONOSPACE);
-        log.setMovementMethod(new ScrollingMovementMethod());
-        log.setPadding(dp(10), dp(10), dp(10), dp(10));
-        log.setBackgroundColor(Color.rgb(7, 10, 12));
-        root.addView(log, new LinearLayout.LayoutParams(-1, 0, 1f));
+        mediaTitle = text("-", 20, Color.rgb(240,231,205));
+        mediaTitle.setPadding(0,dp(8),0,0);
+        root.addView(mediaTitle);
 
-        setContentView(root);
+        mediaSubtitle = text("-", 14, Color.rgb(228,158,76));
+        root.addView(mediaSubtitle);
+
+        mediaTime = text("00:00 / 00:00", 16, Color.WHITE);
+        mediaTime.setPadding(0,dp(8),0,0);
+        root.addView(mediaTime);
+
+        capabilityText = text("ARTWORK / UNKNOWN", 12, Color.rgb(164,169,167));
+        capabilityText.setPadding(0,dp(8),0,dp(8));
+        root.addView(capabilityText);
+
+        root.addView(label("RAW MEDIA SURVEY"));
+
+        rawLog = text("", 10, Color.rgb(219,219,210));
+        rawLog.setTypeface(android.graphics.Typeface.MONOSPACE);
+        rawLog.setPadding(dp(10),dp(10),dp(10),dp(10));
+        rawLog.setBackgroundColor(Color.rgb(7,10,12));
+        rawLog.setTextIsSelectable(true);
+        root.addView(rawLog, lp(-1, dp(360)));
+
+        TextView footer = text("Goal: verify YouTube / TIDAL / Spotify metadata and artwork before sending anything to the Chronomark.", 11, Color.rgb(164,169,167));
+        footer.setPadding(0,dp(10),0,0);
+        root.addView(footer);
+
+        setContentView(outer);
     }
 
-    private TextView label(String text) {
-        TextView t = new TextView(this);
-        t.setText(text);
-        t.setTextColor(Color.rgb(164, 169, 167));
-        t.setTextSize(11);
+    private void refreshMedia(boolean verbose) {
+        boolean access = isNotificationListenerEnabled();
+        accessState.setText(access ? "ACCESS / ENABLED / MEDIA SESSIONS AVAILABLE" : "ACCESS / REQUIRED / ENABLE CHRONOMARK+ IN NOTIFICATION ACCESS");
+        accessState.setTextColor(access ? Color.rgb(122,198,190) : Color.rgb(228,158,76));
+        accessButton.setText(access ? "MEDIA ACCESS ENABLED" : "ENABLE MEDIA ACCESS");
+
+        if (!access || mediaSessionManager == null) {
+            showNoSession("Notification access is required.");
+            if (verbose) rawLog.setText("Grant Notification Access to Chronomark+, then return here.\nAndroid uses this permission to let the app inspect active media sessions.");
+            return;
+        }
+
+        List<MediaController> controllers;
+        try {
+            controllers = mediaSessionManager.getActiveSessions(listenerComponent);
+        } catch (SecurityException e) {
+            showNoSession("Android denied active session access.");
+            rawLog.setText("SECURITY EXCEPTION\n" + e);
+            return;
+        } catch (Exception e) {
+            showNoSession("MediaSessionManager error.");
+            rawLog.setText("ERROR\n" + e);
+            return;
+        }
+
+        if (controllers == null || controllers.isEmpty()) {
+            showNoSession("No active MediaSession.");
+            rawLog.setText("MEDIA SESSION COUNT: 0\n\nStart playback in YouTube, TIDAL, Spotify, etc., then tap REFRESH.");
+            return;
+        }
+
+        MediaController primary = choosePrimary(controllers);
+        renderPrimary(primary);
+
+        StringBuilder out = new StringBuilder();
+        out.append("CHRONOMARK+ v0.5.0 / MEDIA PROBE\n");
+        out.append("SESSION COUNT: ").append(controllers.size()).append("\n\n");
+        int i = 0;
+        for (MediaController c : controllers) {
+            MediaMetadata md = c.getMetadata();
+            PlaybackState ps = c.getPlaybackState();
+            String pkg = c.getPackageName();
+            MediaProbeNotificationListener.MediaNotice notice = MediaProbeNotificationListener.getNotice(pkg);
+
+            out.append("--- SESSION ").append(++i).append(" ---\n");
+            out.append("PACKAGE: ").append(pkg).append("\n");
+            out.append("APP: ").append(getAppLabel(pkg)).append("\n");
+            out.append("STATE: ").append(stateName(ps)).append("\n");
+            out.append("POSITION: ").append(formatTime(estimatePosition(ps))).append("\n");
+            if (md != null) {
+                out.append("TITLE: ").append(value(md, MediaMetadata.METADATA_KEY_TITLE, MediaMetadata.METADATA_KEY_DISPLAY_TITLE)).append("\n");
+                out.append("ARTIST: ").append(value(md, MediaMetadata.METADATA_KEY_ARTIST, MediaMetadata.METADATA_KEY_ALBUM_ARTIST, MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE)).append("\n");
+                out.append("ALBUM: ").append(value(md, MediaMetadata.METADATA_KEY_ALBUM)).append("\n");
+                out.append("DURATION: ").append(formatTime(md.getLong(MediaMetadata.METADATA_KEY_DURATION))).append("\n");
+                out.append("MEDIA_ID: ").append(value(md, MediaMetadata.METADATA_KEY_MEDIA_ID)).append("\n");
+                out.append("DISPLAY_DESC: ").append(value(md, MediaMetadata.METADATA_KEY_DISPLAY_DESCRIPTION)).append("\n");
+                out.append("ART_BITMAP: ").append(getArtwork(md) != null ? "YES" : "NO").append("\n");
+                out.append("ART_URI: ").append(firstNonEmpty(md.getString(MediaMetadata.METADATA_KEY_ART_URI), md.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI), md.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI))).append("\n");
+            } else {
+                out.append("METADATA: NONE\n");
+            }
+            if (notice != null) {
+                out.append("NOTIFICATION_TITLE: ").append(notice.title).append("\n");
+                out.append("NOTIFICATION_TEXT: ").append(notice.text).append("\n");
+                out.append("NOTIFICATION_SUBTEXT: ").append(notice.subText).append("\n");
+                out.append("NOTIFICATION_LARGE_ICON: ").append(notice.hasLargeIcon ? "YES" : "NO").append("\n");
+            } else {
+                out.append("NOTIFICATION_SNAPSHOT: NONE\n");
+            }
+            out.append("\n");
+        }
+        rawLog.setText(out.toString());
+    }
+
+    private MediaController choosePrimary(List<MediaController> list) {
+        for (MediaController c : list) {
+            PlaybackState s = c.getPlaybackState();
+            if (s != null && s.getState() == PlaybackState.STATE_PLAYING) return c;
+        }
+        return list.get(0);
+    }
+
+    private void renderPrimary(MediaController c) {
+        MediaMetadata md = c.getMetadata();
+        PlaybackState ps = c.getPlaybackState();
+        String pkg = c.getPackageName();
+        String label = getAppLabel(pkg);
+
+        sessionTitle.setText("ACTIVE / " + stateName(ps));
+        appName.setText(label + " / " + pkg);
+
+        String title = md == null ? "" : value(md, MediaMetadata.METADATA_KEY_TITLE, MediaMetadata.METADATA_KEY_DISPLAY_TITLE);
+        String subtitle = md == null ? "" : value(md, MediaMetadata.METADATA_KEY_ARTIST, MediaMetadata.METADATA_KEY_ALBUM_ARTIST, MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE, MediaMetadata.METADATA_KEY_DISPLAY_DESCRIPTION);
+        if (TextUtils.isEmpty(title)) {
+            MediaProbeNotificationListener.MediaNotice n = MediaProbeNotificationListener.getNotice(pkg);
+            if (n != null) {
+                title = n.title;
+                if (TextUtils.isEmpty(subtitle)) subtitle = firstNonEmpty(n.text, n.subText);
+            }
+        }
+        mediaTitle.setText(TextUtils.isEmpty(title) ? "UNTITLED MEDIA" : title);
+        mediaSubtitle.setText(TextUtils.isEmpty(subtitle) ? "-" : subtitle);
+
+        long pos = estimatePosition(ps);
+        long dur = md == null ? 0 : md.getLong(MediaMetadata.METADATA_KEY_DURATION);
+        mediaTime.setText(formatTime(pos) + " / " + formatTime(dur));
+
+        Bitmap b = md == null ? null : getArtwork(md);
+        if (b != null) artwork.setImageBitmap(b); else artwork.setImageDrawable(null);
+
+        MediaProbeNotificationListener.MediaNotice notice = MediaProbeNotificationListener.getNotice(pkg);
+        boolean notifArt = notice != null && notice.hasLargeIcon;
+        String uri = md == null ? "" : firstNonEmpty(md.getString(MediaMetadata.METADATA_KEY_ART_URI), md.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI), md.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI));
+        capabilityText.setText("ARTWORK / METADATA BITMAP: " + (b != null ? "YES" : "NO") + " / URI: " + (!TextUtils.isEmpty(uri) ? "YES" : "NO") + " / NOTIFICATION ICON: " + (notifArt ? "YES" : "NO"));
+    }
+
+    private Bitmap getArtwork(MediaMetadata md) {
+        Bitmap b = md.getBitmap(MediaMetadata.METADATA_KEY_ART);
+        if (b == null) b = md.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART);
+        if (b == null) b = md.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON);
+        return b;
+    }
+
+    private long estimatePosition(PlaybackState s) {
+        if (s == null) return 0;
+        long p = Math.max(0, s.getPosition());
+        if (s.getState() == PlaybackState.STATE_PLAYING && s.getLastPositionUpdateTime() > 0) {
+            long dt = Math.max(0, SystemClock.elapsedRealtime() - s.getLastPositionUpdateTime());
+            p += (long) (dt * s.getPlaybackSpeed());
+        }
+        return Math.max(0, p);
+    }
+
+    private String stateName(PlaybackState s) {
+        if (s == null) return "UNKNOWN";
+        switch (s.getState()) {
+            case PlaybackState.STATE_PLAYING: return "PLAYING";
+            case PlaybackState.STATE_PAUSED: return "PAUSED";
+            case PlaybackState.STATE_BUFFERING: return "BUFFERING";
+            case PlaybackState.STATE_STOPPED: return "STOPPED";
+            case PlaybackState.STATE_CONNECTING: return "CONNECTING";
+            case PlaybackState.STATE_SKIPPING_TO_NEXT: return "SKIP NEXT";
+            case PlaybackState.STATE_SKIPPING_TO_PREVIOUS: return "SKIP PREVIOUS";
+            case PlaybackState.STATE_FAST_FORWARDING: return "FAST FORWARD";
+            case PlaybackState.STATE_REWINDING: return "REWIND";
+            case PlaybackState.STATE_ERROR: return "ERROR";
+            case PlaybackState.STATE_NONE:
+            default: return "NONE";
+        }
+    }
+
+    private String value(MediaMetadata md, String... keys) {
+        if (md == null) return "";
+        for (String k : keys) {
+            CharSequence t = md.getText(k);
+            if (t != null && t.length() > 0) return t.toString();
+            String s = md.getString(k);
+            if (!TextUtils.isEmpty(s)) return s;
+        }
+        return "";
+    }
+
+    private String firstNonEmpty(String... values) {
+        for (String s : values) if (!TextUtils.isEmpty(s)) return s;
+        return "";
+    }
+
+    private String getAppLabel(String pkg) {
+        try {
+            PackageManager pm = getPackageManager();
+            ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
+            CharSequence label = pm.getApplicationLabel(ai);
+            return label == null ? pkg : label.toString();
+        } catch (Exception e) {
+            return pkg;
+        }
+    }
+
+    private boolean isNotificationListenerEnabled() {
+        try {
+            String flat = Settings.Secure.getString(getContentResolver(), "enabled_notification_listeners");
+            return flat != null && flat.contains(getPackageName());
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void showNoSession(String reason) {
+        sessionTitle.setText("NO ACTIVE MEDIA SESSION");
+        appName.setText(reason);
+        mediaTitle.setText("-");
+        mediaSubtitle.setText("-");
+        mediaTime.setText("00:00 / 00:00");
+        capabilityText.setText("ARTWORK / UNKNOWN");
+        artwork.setImageDrawable(null);
+    }
+
+    private String formatTime(long ms) {
+        if (ms <= 0) return "00:00";
+        long total = ms / 1000;
+        long h = total / 3600;
+        long m = (total % 3600) / 60;
+        long s = total % 60;
+        if (h > 0) return String.format(Locale.ROOT, "%d:%02d:%02d", h, m, s);
+        return String.format(Locale.ROOT, "%02d:%02d", m, s);
+    }
+
+    private TextView label(String s) {
+        TextView t = text(s, 11, Color.rgb(164,169,167));
+        t.setPadding(0,dp(14),0,dp(5));
         return t;
     }
 
-    private Button button(String text) {
+    private TextView text(String s, int size, int color) {
+        TextView t = new TextView(this);
+        t.setText(s);
+        t.setTextSize(size);
+        t.setTextColor(color);
+        return t;
+    }
+
+    private Button button(String s) {
         Button b = new Button(this);
-        b.setText(text);
-        b.setTextSize(10);
+        b.setText(s);
         b.setAllCaps(false);
+        b.setTextSize(10);
         return b;
+    }
+
+    private LinearLayout.LayoutParams lp(int w, int h) {
+        return new LinearLayout.LayoutParams(w,h);
     }
 
     private int dp(int v) {
         return Math.round(v * getResources().getDisplayMetrics().density);
-    }
-
-    private void requestPermissionsIfNeeded() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED ||
-                    checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(new String[]{Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT}, REQ_BT);
-            }
-        } else if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, REQ_BT);
-        }
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode != REQ_BT) return;
-        for (int r : grantResults) {
-            if (r != PackageManager.PERMISSION_GRANTED) {
-                setStatus("BLUETOOTH PERMISSION REQUIRED");
-                return;
-            }
-        }
-        setStatus("READY");
-    }
-
-    @SuppressLint("MissingPermission")
-    private void startScan() {
-        if (!hasBtPermissions()) {
-            requestPermissionsIfNeeded();
-            return;
-        }
-        if (!adapter.isEnabled()) {
-            Toast.makeText(this, "Active le Bluetooth puis relance le scan.", Toast.LENGTH_LONG).show();
-            return;
-        }
-        if (scanning) {
-            stopScan();
-            return;
-        }
-        if (scanner == null) scanner = adapter.getBluetoothLeScanner();
-        if (scanner == null) {
-            setStatus("BLE SCANNER UNAVAILABLE");
-            return;
-        }
-
-        deviceList.removeAllViews();
-        seen.clear();
-        scanning = true;
-        scanButton.setText("STOP SCAN");
-        setStatus("SCANNING / 15 SECONDS");
-        append("\n--- BLE SCAN START ---");
-        scanner.startScan(scanCallback);
-        handler.postDelayed(this::stopScan, 15000);
-    }
-
-    @SuppressLint("MissingPermission")
-    private void stopScan() {
-        if (!scanning) return;
-        scanning = false;
-        scanButton.setText("SCAN FOR CHRONOMARK");
-        try { if (scanner != null && hasBtPermissions()) scanner.stopScan(scanCallback); } catch (Exception ignored) {}
-        setStatus("SCAN COMPLETE / TAP CHRONOMARK");
-        append("--- BLE SCAN END ---");
-    }
-
-    private final ScanCallback scanCallback = new ScanCallback() {
-        @Override public void onScanResult(int callbackType, ScanResult result) { showResult(result); }
-        @Override public void onBatchScanResults(List<ScanResult> results) { for (ScanResult r : results) showResult(r); }
-        @Override public void onScanFailed(int errorCode) {
-            runOnUiThread(() -> {
-                setStatus("SCAN FAILED / " + errorCode);
-                append("Scan failed: " + errorCode);
-            });
-        }
-    };
-
-    @SuppressLint("MissingPermission")
-    private void showResult(ScanResult result) {
-        BluetoothDevice device = result.getDevice();
-        if (device == null) return;
-        String address = device.getAddress();
-        if (!seen.add(address)) return;
-
-        String name = null;
-        try { name = device.getName(); } catch (Exception ignored) {}
-        if ((name == null || name.trim().isEmpty()) && result.getScanRecord() != null) name = result.getScanRecord().getDeviceName();
-        if (name == null || name.trim().isEmpty()) name = "Unnamed BLE device";
-
-        final String finalName = name;
-        final int rssi = result.getRssi();
-        String l = finalName.toLowerCase(Locale.ROOT);
-        final boolean chronomark = l.contains("chronomark") || l.contains("dickens") || l.contains("starfield") || l.contains("dfutarg");
-
-        append("FOUND " + finalName + " / " + address + " / RSSI " + rssi + (chronomark ? " / CHRONOMARK FAMILY" : ""));
-        runOnUiThread(() -> {
-            Button row = button((chronomark ? "★ " : "") + finalName + "\n" + address + "   RSSI " + rssi);
-            row.setTextAlignment(View.TEXT_ALIGNMENT_VIEW_START);
-            row.setOnClickListener(v -> connect(device, finalName));
-            deviceList.addView(row, new LinearLayout.LayoutParams(-1, dp(56)));
-        });
-    }
-
-    @SuppressLint("MissingPermission")
-    private void connect(BluetoothDevice device, String name) {
-        stopScan();
-        closeGatt();
-        consoleReady = false;
-        uartRx = null;
-        uartTx = null;
-        writeQueue.clear();
-        writeInFlight = false;
-        setControls(false);
-        append("\n--- CONNECT " + name + " / " + device.getAddress() + " ---");
-        setStatus("CONNECTING / " + name);
-        gatt = device.connectGatt(this, false, gattCallback, BluetoothDevice.TRANSPORT_LE);
-    }
-
-    private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
-        @Override
-        public void onConnectionStateChange(BluetoothGatt bg, int statusCode, int newState) {
-            if (newState == BluetoothProfile.STATE_CONNECTED) {
-                append("Connected. GATT status=" + statusCode);
-                runOnUiThread(() -> setStatus("CONNECTED / DISCOVERING"));
-                try { bg.requestMtu(185); } catch (Exception ignored) {}
-                try { bg.discoverServices(); } catch (Exception e) { append("discoverServices error: " + e); }
-            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                append("Disconnected. GATT status=" + statusCode);
-                consoleReady = false;
-                runOnUiThread(() -> {
-                    setControls(false);
-                    setStatus("DISCONNECTED");
-                });
-            }
-        }
-
-        @Override public void onMtuChanged(BluetoothGatt bg, int mtu, int statusCode) { append("MTU " + mtu + " status=" + statusCode); }
-
-        @Override
-        public void onServicesDiscovered(BluetoothGatt bg, int statusCode) {
-            append("Services discovered. status=" + statusCode + " count=" + bg.getServices().size());
-            BluetoothGattService nus = bg.getService(NUS_SERVICE);
-            if (nus == null) {
-                append("Nordic UART / Espruino service not found.");
-                runOnUiThread(() -> setStatus("NOT ESPRUINO / NO NUS"));
-                return;
-            }
-            uartRx = nus.getCharacteristic(NUS_RX_PHONE_TO_WATCH);
-            uartTx = nus.getCharacteristic(NUS_TX_WATCH_TO_PHONE);
-            if (uartRx == null || uartTx == null) {
-                append("NUS characteristics incomplete.");
-                return;
-            }
-            append("NORDIC UART / ESPRUINO DETECTED");
-            enableNotifications(bg);
-        }
-
-        @Override
-        public void onDescriptorWrite(BluetoothGatt bg, BluetoothGattDescriptor descriptor, int statusCode) {
-            append("UART CCCD status=" + statusCode);
-            if (CCCD.equals(descriptor.getUuid()) && statusCode == BluetoothGatt.GATT_SUCCESS) {
-                consoleReady = true;
-                runOnUiThread(() -> {
-                    setControls(true);
-                    setStatus("ESPRUINO READY / RAM ONLY");
-                });
-                append("ESPRUINO UART READY");
-            }
-        }
-
-        @Override
-        public void onCharacteristicChanged(BluetoothGatt bg, BluetoothGattCharacteristic c) {
-            handleNotify(c.getValue());
-        }
-
-        @Override
-        public void onCharacteristicChanged(BluetoothGatt bg, BluetoothGattCharacteristic c, byte[] value) {
-            handleNotify(value);
-        }
-
-        @Override
-        public void onCharacteristicWrite(BluetoothGatt bg, BluetoothGattCharacteristic c, int statusCode) {
-            writeInFlight = false;
-            if (statusCode != BluetoothGatt.GATT_SUCCESS) append("UART write status=" + statusCode);
-            writeNext();
-        }
-    };
-
-    @SuppressLint("MissingPermission")
-    private void enableNotifications(BluetoothGatt bg) {
-        try {
-            boolean ok = bg.setCharacteristicNotification(uartTx, true);
-            append("UART local notification enable=" + ok);
-            BluetoothGattDescriptor d = uartTx.getDescriptor(CCCD);
-            if (d == null) {
-                append("UART CCCD missing");
-                return;
-            }
-            if (Build.VERSION.SDK_INT >= 33) {
-                int r = bg.writeDescriptor(d, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-                append("UART CCCD write queued result=" + r);
-            } else {
-                d.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-                boolean r = bg.writeDescriptor(d);
-                append("UART CCCD write queued result=" + r);
-            }
-        } catch (Exception e) {
-            append("Enable notifications error: " + e);
-        }
-    }
-
-    private void handleNotify(byte[] value) {
-        if (value == null || value.length == 0) return;
-        String s = new String(value, StandardCharsets.UTF_8);
-        append("UART << " + printable(s));
-        if (s.contains("VOX_RAM_UI:READY")) runOnUiThread(() -> setStatus("WATCH UI TEST ACTIVE / AUTO RETURN 15s"));
-        if (s.contains("VOX_RAM_UI:ERR")) runOnUiThread(() -> setStatus("WATCH UI TEST ERROR / RECOVERING"));
-    }
-
-    private void launchRamUiTest() {
-        if (!requireConsole()) return;
-        append("\n>>> CONSTELLATION RAM UI TEST / ZERO STORAGE WRITE");
-        setStatus("SENDING RAM UI TEST");
-
-        String js = "(function(){try{" +
-                "if(global.__voxRamTimer)clearTimeout(global.__voxRamTimer);" +
-                "if(global.__voxRamDraw)clearInterval(global.__voxRamDraw);" +
-                "E.clearWatches();" +
-                "if(Dickens.pauseSeconds)Dickens.pauseSeconds();" +
-                "var back=function(){try{if(global.__voxRamTimer)clearTimeout(global.__voxRamTimer);if(global.__voxRamDraw)clearInterval(global.__voxRamDraw);}catch(e){}load('clock.app.js');};" +
-                "var draw=function(){" +
-                "g.reset().clear(1);Dickens.loadSurround();" +
-                "g.setColor('#358').fillArc(-0.97,0.97,96).fillArc(Math.PI-0.75,Math.PI+0.75,96).fillRect(37,69,201,69).fillRect(51,186,187,186);" +
-                "g.setColor(-1).setBgColor('#358').setFontAlign(0,0).setFontGrotesk16().drawString('CHRONOMARK+',120,55);" +
-                "g.setBgColor(0).setColor(-1).setFontGrotesk20().drawString('CONSTELLATION',119,102);" +
-                "g.setFontArchitekt15().setColor('#E49E4C').drawString('RAM UI TEST',119,128);" +
-                "g.setFontGrotesk14().setColor('#BBB').drawString('NO STORAGE WRITE',119,150);" +
-                "Dickens.buttonIcons=['select','back','down','up'];Dickens.loadSurround();g.flip();};" +
-                "draw();global.__voxRamDraw=setInterval(draw,1000);" +
-                "Bangle.btnWatches=[setWatch(function(){},BTN1,{edge:1}),setWatch(back,BTN2,{edge:1}),setWatch(function(){},BTN3,{edge:1}),setWatch(function(){},BTN4,{edge:1})];" +
-                "global.__voxRamTimer=setTimeout(back,15000);print('VOX_RAM_UI:READY');" +
-                "}catch(e){print('VOX_RAM_UI:ERR:'+e);setTimeout(function(){load('clock.app.js');},1000);}})();\n";
-        sendConsole(js);
-    }
-
-    private void returnToClock() {
-        if (!requireConsole()) return;
-        append("\n>>> RETURN TO ORIGINAL CLOCK / RAM ONLY");
-        String js = "try{if(global.__voxRamTimer)clearTimeout(global.__voxRamTimer);if(global.__voxRamDraw)clearInterval(global.__voxRamDraw);}catch(e){}load('clock.app.js');\n";
-        sendConsole(js);
-        setStatus("RETURN COMMAND SENT / ORIGINAL CLOCK");
-    }
-
-    private void systemInfo() {
-        if (!requireConsole()) return;
-        append("\n>>> SYSTEM INFO / NON-PERSISTENT");
-        sendConsole("print('VOX_SYS:'+JSON.stringify({version:process.version,board:process.env.BOARD,free:process.memory().free,usage:process.memory().usage}));\n");
-    }
-
-    private boolean requireConsole() {
-        if (!consoleReady || gatt == null || uartRx == null) {
-            Toast.makeText(this, "Connecte d'abord Chronomark e295.", Toast.LENGTH_SHORT).show();
-            return false;
-        }
-        return true;
-    }
-
-    private synchronized void sendConsole(String text) {
-        byte[] all = text.getBytes(StandardCharsets.UTF_8);
-        for (int off = 0; off < all.length; off += UART_CHUNK) {
-            int n = Math.min(UART_CHUNK, all.length - off);
-            byte[] part = new byte[n];
-            System.arraycopy(all, off, part, 0, n);
-            writeQueue.add(part);
-        }
-        writeNext();
-    }
-
-    @SuppressLint("MissingPermission")
-    private synchronized void writeNext() {
-        if (writeInFlight || writeQueue.isEmpty() || gatt == null || uartRx == null) return;
-        byte[] part = writeQueue.poll();
-        writeInFlight = true;
-        try {
-            if (Build.VERSION.SDK_INT >= 33) {
-                int r = gatt.writeCharacteristic(uartRx, part, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
-                if (r != 0) {
-                    append("UART queue error=" + r);
-                    writeInFlight = false;
-                    handler.postDelayed(this::writeNext, 30);
-                }
-            } else {
-                uartRx.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
-                uartRx.setValue(part);
-                boolean ok = gatt.writeCharacteristic(uartRx);
-                if (!ok) {
-                    append("UART queue rejected");
-                    writeInFlight = false;
-                    handler.postDelayed(this::writeNext, 30);
-                }
-            }
-        } catch (Exception e) {
-            append("UART write exception: " + e);
-            writeInFlight = false;
-        }
-    }
-
-    private void setControls(boolean enabled) {
-        testButton.setEnabled(enabled);
-        returnButton.setEnabled(enabled);
-        infoButton.setEnabled(enabled);
-    }
-
-    @SuppressLint("MissingPermission")
-    private void closeGatt() {
-        if (gatt != null) {
-            try { gatt.disconnect(); } catch (Exception ignored) {}
-            try { gatt.close(); } catch (Exception ignored) {}
-            gatt = null;
-        }
-    }
-
-    private boolean hasBtPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            return checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED &&
-                    checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED;
-        }
-        return checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
-    }
-
-    private void setStatus(String s) {
-        runOnUiThread(() -> status.setText("STATUS / " + s));
-    }
-
-    private void append(String s) {
-        report.append(s).append('\n');
-        runOnUiThread(() -> {
-            log.append(s + "\n");
-            if (log.getLayout() != null) {
-                int scroll = log.getLayout().getLineTop(log.getLineCount()) - log.getHeight();
-                if (scroll > 0) log.scrollTo(0, scroll);
-            }
-        });
-    }
-
-    private String printable(String s) {
-        return s.replace("\r", "\\r").replace("\n", "\\n");
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        stopScan();
-        closeGatt();
     }
 }
