@@ -15,12 +15,17 @@ on:
       - '.github/workflows/tmp-vox-cardsim-apk.yml'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
 
       - name: Java 17
         uses: actions/setup-java@v4
@@ -42,6 +47,18 @@ jobs:
       - name: Build debug APK
         working-directory: cardsim-build
         run: gradle :app:assembleDebug --no-daemon
+
+      - name: Export APK payload
+        if: github.event_name == 'push'
+        run: |
+          mkdir -p cardsim-build/output
+          base64 -w 76 cardsim-build/app/build/outputs/apk/debug/app-debug.apk > cardsim-build/output/VOX_CardSim_151_v0.1.apk.b64
+          sha256sum cardsim-build/app/build/outputs/apk/debug/app-debug.apk > cardsim-build/output/VOX_CardSim_151_v0.1.sha256.txt
+          git config user.name 'VOX CardSim Builder'
+          git config user.email 'actions@users.noreply.github.com'
+          git add cardsim-build/output
+          git commit -m 'temp: built CardSim APK [skip ci]' || exit 0
+          git push origin HEAD:tmp-vox-cardsim-apk-build
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
