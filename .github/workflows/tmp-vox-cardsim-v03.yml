@@ -12,6 +12,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Validate web assets
+        run: |
+          node --check cardsim-v03/app/src/main/assets/v03a.js
+          node --check cardsim-v03/app/src/main/assets/v03b.js
+          node --check cardsim-v03/app/src/main/assets/v03c.js
+          grep -q 'v03.css' cardsim-v03/app/src/main/assets/index.html
+          grep -q 'versionCode = 3' cardsim-v03/app/build.gradle.kts
       - name: Java 17
         uses: actions/setup-java@v4
         with:
