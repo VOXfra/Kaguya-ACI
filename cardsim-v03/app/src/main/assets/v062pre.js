@@ -5,9 +5,14 @@
  try{
   const nativeJson=window.VOXNative?.getMirroredSave?.();
   if(!nativeJson)return;
-  const native=JSON.parse(nativeJson),local=JSON.parse(localStorage.getItem(V06_STORAGE)||'null');
-  const nt=Number(native.lastSavedAt||native.migrationInfo?.at||0),lt=Number(local?.lastSavedAt||local?.migrationInfo?.at||0);
-  if(!local||nt>=lt){localStorage.setItem(V06_STORAGE,nativeJson);localStorage.setItem(V06_BACKUP,nativeJson);}
+  const native=JSON.parse(nativeJson),v=Number(native.version||native.schemaVersion||0);
+  if(v>=6){
+   const local=JSON.parse(localStorage.getItem(V06_STORAGE)||'null');
+   const nt=Number(native.lastSavedAt||native.migrationInfo?.at||0),lt=Number(local?.lastSavedAt||local?.migrationInfo?.at||0);
+   if(!local||nt>=lt){localStorage.setItem(V06_STORAGE,nativeJson);localStorage.setItem(V06_BACKUP,nativeJson);}
+  }else if(v===5){localStorage.removeItem(V06_STORAGE);localStorage.setItem('voxCardSimV05',nativeJson)}
+  else if(v===4){localStorage.removeItem(V06_STORAGE);localStorage.setItem('voxCardSimV04',nativeJson)}
+  else if(v===3){localStorage.removeItem(V06_STORAGE);localStorage.setItem('voxCardSimV03',nativeJson)}
  }catch(e){console.warn('V0.6.2 native restore skipped',e)}
 })();
 
