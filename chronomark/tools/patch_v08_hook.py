@@ -19,4 +19,14 @@ if 'protected void onV08WatchLine(String line)' not in s:
     s = s.replace(hook_needle, hook_replacement, 1)
 
 p.write_text(s, encoding='utf-8')
-print('Applied Chronomark+ v0.8 watch-command hook')
+
+# v0.8.1 physical-round-display readability guard.
+# Keep the model and bottom action hint fully inside the 40..198 / 34..190 safe clip.
+p81 = Path('app/src/main/java/fr/vox/chronomarkplus/MainActivityV081.java')
+if p81.exists():
+    s81 = p81.read_text(encoding='utf-8')
+    s81 = s81.replace("drawString(P.model,119,177);", "drawString(P.model,119,168);")
+    s81 = s81.replace("drawString('BTN1  FIND PHONE',119,189);", "drawString('BTN1  FIND PHONE',119,183);")
+    p81.write_text(s81, encoding='utf-8')
+
+print('Applied Chronomark+ v0.8 watch-command hook + v0.8.1 safe text layout')
