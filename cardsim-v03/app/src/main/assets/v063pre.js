@@ -28,7 +28,7 @@ fetchSetData=async function(setId){
   const bundle=window.V063_STANDARD_DATA?.[setId];
   const cfg=SETS[setId];
   if(!cfg||!bundle||!bundle.set||!Array.isArray(bundle.raw))throw new Error(`embedded standard set missing ${setId}`);
-  const set=structuredClone?structuredClone(bundle.set):JSON.parse(JSON.stringify(bundle.set));
+  const set=(typeof structuredClone==='function')?structuredClone(bundle.set):JSON.parse(JSON.stringify(bundle.set));
   set.cards=[...(set.cards||[])].sort((a,b)=>cardNo(a)-cardNo(b));
   if(set.cards.length!==cfg.total)throw new Error(`${setId} card count ${set.cards.length}/${cfg.total}`);
 
