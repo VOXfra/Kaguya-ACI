@@ -45,14 +45,17 @@ jobs:
       - name: Apply v1.0.2 reliability patch
         run: python3 tools/patch_v102_reliability.py
 
+      - name: Apply v1.0.3 Music recovery
+        run: python3 tools/patch_v103_music_recovery.py
+
       - name: Build debug APK
         id: build
         continue-on-error: true
         run: |
           set +e
-          gradle assembleDebug --stacktrace > build-v102.log 2>&1
+          gradle assembleDebug --stacktrace > build-v103.log 2>&1
           code=$?
-          tail -n 200 build-v102.log > last-build-status.txt
+          tail -n 220 build-v103.log > last-build-status.txt
           printf '\nEXIT_CODE=%s\nRUN_ID=%s\n' "$code" "$GITHUB_RUN_ID" >> last-build-status.txt
           exit "$code"
 
@@ -64,7 +67,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add chronomark/last-build-status.txt
           if ! git diff --cached --quiet; then
-            git commit -m "Record Chronomark+ v1.0.2 build failure"
+            git commit -m "Record Chronomark+ v1.0.3 build failure"
             git push
           fi
 
@@ -76,7 +79,7 @@ jobs:
         if: steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: ChronomarkPlus-v1.0.2-debug
+          name: ChronomarkPlus-v1.0.3-debug
           path: chronomark/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Publish branch APK
@@ -84,14 +87,14 @@ jobs:
         working-directory: .
         run: |
           mkdir -p chronomark/releases
-          cp chronomark/app/build/outputs/apk/debug/app-debug.apk chronomark/releases/ChronomarkPlus-v1.0.2-debug.apk
+          cp chronomark/app/build/outputs/apk/debug/app-debug.apk chronomark/releases/ChronomarkPlus-v1.0.3-debug.apk
           printf '%s\n' "$GITHUB_RUN_ID" > chronomark/last-build-run.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add chronomark/releases/ChronomarkPlus-v1.0.2-debug.apk chronomark/last-build-run.txt
+          git add chronomark/releases/ChronomarkPlus-v1.0.3-debug.apk chronomark/last-build-run.txt
           if git diff --cached --quiet; then
             echo "APK unchanged"
           else
-            git commit -m "Publish Chronomark+ v1.0.2 APK"
+            git commit -m "Publish Chronomark+ v1.0.3 APK"
             git push
           fi
