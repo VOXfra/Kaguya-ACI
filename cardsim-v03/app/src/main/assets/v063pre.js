@@ -36,4 +36,9 @@ fetchSetData=async function(setId){
  }catch(e){console.error('V0.6.3 embedded set load failed',setId,e);state.metaReady[setId]=false;const cfg=SETS[setId];state.sets[setId]=state.sets[setId]||{id:setId,name:cfg?.name||setId,cards:[]}}
 };
 
-window.addEventListener('load',()=>{if(window.__voxV07Loaded)return;window.__voxV07Loaded=true;const s=document.createElement('script');s.src='v07online.js';document.body.appendChild(s)});
+window.addEventListener('load',()=>{
+ if(window.__voxV07Loaded)return;window.__voxV07Loaded=true;
+ const online=document.createElement('script');online.src='v07online.js';
+ online.onload=()=>{const fix=document.createElement('script');fix.src='v07fix.js';document.body.appendChild(fix)};
+ document.body.appendChild(online);
+});
