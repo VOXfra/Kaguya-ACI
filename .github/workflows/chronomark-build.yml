@@ -38,21 +38,21 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ChronomarkPlus-v0.7.0-debug
+          name: ChronomarkPlus-v0.7.1-debug
           path: chronomark/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Publish branch APK
         working-directory: .
         run: |
           mkdir -p chronomark/releases
-          cp chronomark/app/build/outputs/apk/debug/app-debug.apk chronomark/releases/ChronomarkPlus-v0.7.0-debug.apk
+          cp chronomark/app/build/outputs/apk/debug/app-debug.apk chronomark/releases/ChronomarkPlus-v0.7.1-debug.apk
           printf '%s\n' "$GITHUB_RUN_ID" > chronomark/last-build-run.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add chronomark/releases/ChronomarkPlus-v0.7.0-debug.apk chronomark/last-build-run.txt
+          git add chronomark/releases/ChronomarkPlus-v0.7.1-debug.apk chronomark/last-build-run.txt
           if git diff --cached --quiet; then
             echo "APK unchanged"
           else
-            git commit -m "Publish Chronomark+ v0.7.0 APK"
+            git commit -m "Publish Chronomark+ v0.7.1 APK"
             git push
           fi
