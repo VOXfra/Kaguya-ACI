@@ -20,36 +20,20 @@ fetchSetData=async function(setId){
    const counts={};for(const r of Object.values(rarity))counts[r]=(counts[r]||0)+1;
    for(const k of ['jp_common','jp_uncommon','jp_rare','jp_rr','jp_rrr','jp_sr','jp_hr','jp_ur'])if(!(counts[k]>0))throw new Error(`Eevee missing pool ${k}`);
    state.sets[setId]={id:setId,name:'Eevee Heroes',logo:'img/eevee_logo',cards:items};
-   state.meta[setId]={rarity,raw:items,counts};
-   state.metaReady[setId]=true;
-   return;
+   state.meta[setId]={rarity,raw:items,counts};state.metaReady[setId]=true;return;
   }
-
-  const bundle=window.V063_STANDARD_DATA?.[setId];
-  const cfg=SETS[setId];
+  const bundle=window.V063_STANDARD_DATA?.[setId],cfg=SETS[setId];
   if(!cfg||!bundle||!bundle.set||!Array.isArray(bundle.raw))throw new Error(`embedded standard set missing ${setId}`);
   const set=(typeof structuredClone==='function')?structuredClone(bundle.set):JSON.parse(JSON.stringify(bundle.set));
   set.cards=[...(set.cards||[])].sort((a,b)=>cardNo(a)-cardNo(b));
   if(set.cards.length!==cfg.total)throw new Error(`${setId} card count ${set.cards.length}/${cfg.total}`);
-
-  const rarity={};
-  for(const c of bundle.raw){
-   const n=Number.parseInt(c.number,10);
-   if(Number.isFinite(n))rarity[n]=RARITY_NORMALIZE[c.rarity]||'unknown';
-  }
-  const exp=EXPECTED_RARITIES[setId]||{total:cfg.total},counts={};
-  for(const v of Object.values(rarity))counts[v]=(counts[v]||0)+1;
+  const rarity={};for(const c of bundle.raw){const n=Number.parseInt(c.number,10);if(Number.isFinite(n))rarity[n]=RARITY_NORMALIZE[c.rarity]||'unknown'}
+  const exp=EXPECTED_RARITIES[setId]||{total:cfg.total},counts={};for(const v of Object.values(rarity))counts[v]=(counts[v]||0)+1;
   if(bundle.raw.length!==exp.total)throw new Error(`${setId} metadata count ${bundle.raw.length}/${exp.total}`);
   for(const [k,v] of Object.entries(exp))if(k!=='total'&&counts[k]!==v)throw new Error(`${setId} rarity ${k} ${counts[k]||0}/${v}`);
   for(const k of ['common','uncommon','rare'])if(!(counts[k]>0))throw new Error(`${setId} missing base pool ${k}`);
-
-  state.sets[setId]=set;
-  state.meta[setId]={rarity,raw:bundle.raw,counts};
-  state.metaReady[setId]=true;
- }catch(e){
-  console.error('V0.6.3 embedded set load failed',setId,e);
-  state.metaReady[setId]=false;
-  const cfg=SETS[setId];
-  state.sets[setId]=state.sets[setId]||{id:setId,name:cfg?.name||setId,cards:[]};
- }
+  state.sets[setId]=set;state.meta[setId]={rarity,raw:bundle.raw,counts};state.metaReady[setId]=true;
+ }catch(e){console.error('V0.6.3 embedded set load failed',setId,e);state.metaReady[setId]=false;const cfg=SETS[setId];state.sets[setId]=state.sets[setId]||{id:setId,name:cfg?.name||setId,cards:[]}}
 };
+
+window.addEventListener('load',()=>{if(window.__voxV07Loaded)return;window.__voxV07Loaded=true;const s=document.createElement('script');s.src='v07online.js';document.body.appendChild(s)});
