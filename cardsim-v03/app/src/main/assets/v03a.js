@@ -11,7 +11,7 @@ const shuffle=a=>{const x=[...a];for(let i=x.length-1;i>0;i--){const j=Math.floo
 const uid=p=>`${p}-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2,8).toUpperCase()}`;
 const escapeHtml=v=>String(v??'').replace(/[&<>"']/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
 const cardNo=c=>Number.parseInt(c?.localId??c?.number,10)||0;
-const cardImg=(c,q='high')=>c?.image?`${c.image}/${q}.webp`:(q==='low'?(c?.images?.small||c?.imageSmall||''):(c?.images?.large||c?.imageLarge||c?.images?.small||''));
+let cardImg=(c,q='high')=>c?.image?`${c.image}/${q}.webp`:(q==='low'?(c?.images?.small||c?.imageSmall||''):(c?.images?.large||c?.imageLarge||c?.images?.small||''));
 
 const ENERGY=[
  {n:1,name:'Plante'},{n:2,name:'Feu'},{n:3,name:'Eau'},{n:4,name:'Électrique'},
