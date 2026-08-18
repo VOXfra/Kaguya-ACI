@@ -27,7 +27,9 @@ jobs:
           node --check cardsim-v03/app/src/main/assets/v04market2.js
           node --check cardsim-v03/app/src/main/assets/v04market3.js
           node --check cardsim-v03/app/src/main/assets/v05features.js
+          node --check cardsim-v03/app/src/main/assets/v05fix.js
           grep -q 'v05.css' cardsim-v03/app/src/main/assets/index.html
+          grep -q 'v05fix.js' cardsim-v03/app/src/main/assets/index.html
           grep -q 'versionCode = 5' cardsim-v03/app/build.gradle.kts
           grep -q "id:'sv02'" cardsim-v03/app/src/main/assets/v05pre.js
           grep -q 'sellerProfile' cardsim-v03/app/src/main/assets/v05features.js
