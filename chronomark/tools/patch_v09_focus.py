@@ -31,6 +31,7 @@ s = s.replace(old, new, 1)
 p.write_text(s, encoding='utf-8')
 
 # Phone Status: remove the least useful text line and keep every instruction inside safe area.
+# patch_v08_hook runs first and may already have moved these two lines for v0.8.1.
 p = Path('app/src/main/java/fr/vox/chronomarkplus/MainActivityV081.java')
 s = p.read_text(encoding='utf-8')
 
@@ -40,11 +41,17 @@ if old not in s:
     raise SystemExit('Phone header not found')
 s = s.replace(old, new, 1)
 
-old = '''                "g.setColor('#9BA4A7').drawString(P.model,119,177);" +\n                "g.setColor('#00BCEB').drawString('BTN1  FIND PHONE',119,189);g.setClipRect(0,0,239,239);g.flip();};" +'''
+candidates = [
+    '''                "g.setColor('#9BA4A7').drawString(P.model,119,168);" +\n                "g.setColor('#00BCEB').drawString('BTN1  FIND PHONE',119,183);g.setClipRect(0,0,239,239);g.flip();};" +''',
+    '''                "g.setColor('#9BA4A7').drawString(P.model,119,177);" +\n                "g.setColor('#00BCEB').drawString('BTN1  FIND PHONE',119,189);g.setClipRect(0,0,239,239);g.flip();};" +'''
+]
 new = '''                "g.setColor('#00BCEB').drawString('BTN1  FIND PHONE',119,181);g.setClipRect(0,0,239,239);g.flip();};" +'''
-if old not in s:
+for old in candidates:
+    if old in s:
+        s = s.replace(old, new, 1)
+        break
+else:
     raise SystemExit('Phone bottom block not found')
-s = s.replace(old, new, 1)
 
 p.write_text(s, encoding='utf-8')
 print('Applied Chronomark+ v0.9 focused Music/Phone polish')
