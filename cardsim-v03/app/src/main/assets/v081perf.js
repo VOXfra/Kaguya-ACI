@@ -83,13 +83,14 @@ const v081PublishListingNow=v07PublishListing;
 let v081PublishQueue=[],v081PublishQueued=new Set(),v081PublishTimer=0;
 function v081QueueRemoteListing(l){
  if(v08Mode()!=='realistic'||!l||l.type==='energy'||l.status!=='active'||listingRemaining(l)<=0||l.remoteId)return;
+ if(!v07OnlineAvailable?.()||!v07Auth()?.signedIn||!state.sellerProfile)return;
  if(v081PublishQueued.has(l.id))return;v081PublishQueued.add(l.id);v081PublishQueue.push(l);v081PumpRemoteListings();
 }
 function v081PumpRemoteListings(){
  if(v081PublishTimer||!v081PublishQueue.length)return;
  v081PublishTimer=setTimeout(()=>{
   v081PublishTimer=0;const l=v081PublishQueue.shift();if(l)v081PublishQueued.delete(l.id);
-  if(l&&l.status==='active'&&!l.remoteId&&listingRemaining(l)>0){try{v081DeferNextSave=true;v081PublishListingNow(l)}catch(e){console.warn('V0.8.1 listing publish',e)}}
+  if(l&&l.status==='active'&&!l.remoteId&&listingRemaining(l)>0){try{v081DeferNextSave=true;v081PublishListingNow(l)}catch(e){console.warn('V0.8.1 listing publish',e)}finally{v081DeferNextSave=false}}
   if(v081PublishQueue.length)v081PumpRemoteListings();else{v081PersistSoon(450);setTimeout(()=>{try{v07PublishPublicProfile()}catch{}},500)}
  },110);
 }
