@@ -39,6 +39,10 @@ fetchSetData=async function(setId){
 window.addEventListener('load',()=>{
  if(window.__voxV07Loaded)return;window.__voxV07Loaded=true;
  const online=document.createElement('script');online.src='v07online.js';
- online.onload=()=>{const fix=document.createElement('script');fix.src='v07fix.js';document.body.appendChild(fix)};
+ online.onload=()=>{
+  const fix=document.createElement('script');fix.src='v07fix.js';
+  fix.onload=()=>{const perf=document.createElement('script');perf.src='v072perf.js';document.body.appendChild(perf)};
+  document.body.appendChild(fix);
+ };
  document.body.appendChild(online);
 });
