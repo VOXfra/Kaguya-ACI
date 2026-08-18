@@ -39,5 +39,5 @@ fetchSetData=async function(setId){
 function voxLoadScript(src,next){const s=document.createElement('script');s.src=src;s.onload=()=>next?.();s.onerror=e=>console.error('VOX layer load failed',src,e);document.body.appendChild(s)}
 window.addEventListener('load',()=>{
  if(window.__voxV07Loaded)return;window.__voxV07Loaded=true;
- voxLoadScript('v07online.js',()=>voxLoadScript('v07fix.js',()=>voxLoadScript('v072perf.js',()=>voxLoadScript('v08core.js',()=>voxLoadScript('v08market.js',()=>voxLoadScript('v08binder.js',()=>voxLoadScript('v08friends.js',()=>voxLoadScript('v08final.js'))))))));
+ voxLoadScript('v07online.js',()=>voxLoadScript('v07fix.js',()=>voxLoadScript('v072perf.js',()=>voxLoadScript('v08core.js',()=>voxLoadScript('v08market.js',()=>voxLoadScript('v08binder.js',()=>voxLoadScript('v08friends.js',()=>voxLoadScript('v08final.js',()=>voxLoadScript('v08ui.js')))))))));
 });
