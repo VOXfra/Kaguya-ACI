@@ -9,6 +9,7 @@ import android.app.PendingIntent;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.webkit.JavascriptInterface;
@@ -23,10 +24,12 @@ import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
@@ -38,8 +41,12 @@ import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
     private static final String SALE_CHANNEL = "market_sales";
+    private static final String SAVE_PREFS = "vox_save";
+    private static final int REQ_EXPORT_SAVE = 610;
+    private static final int REQ_IMPORT_SAVE = 611;
     private WebView web;
     private OfflineBridge offlineBridge;
+    private String pendingExportJson;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -106,6 +113,58 @@ public class MainActivity extends Activity {
         return "application/octet-stream";
     }
 
+    private void notifySaveResult(String kind, boolean ok, String message) {
+        if (web == null) return;
+        String js = "window.voxNativeSaveResult&&window.voxNativeSaveResult(" + JSONObject.quote(kind) + "," + ok + "," + JSONObject.quote(message == null ? "" : message) + ");";
+        runOnUiThread(() -> web.evaluateJavascript(js, null));
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+            if (requestCode == REQ_EXPORT_SAVE) notifySaveResult("export", false, "Export annulé");
+            if (requestCode == REQ_IMPORT_SAVE) notifySaveResult("import", false, "Import annulé");
+            return;
+        }
+        Uri uri = data.getData();
+        try {
+            if (requestCode == REQ_EXPORT_SAVE) {
+                String json = pendingExportJson;
+                if (json == null || json.isEmpty()) throw new Exception("Sauvegarde vide");
+                try (OutputStream out = getContentResolver().openOutputStream(uri, "w")) {
+                    if (out == null) throw new Exception("Fichier inaccessible");
+                    out.write(json.getBytes("UTF-8"));
+                    out.flush();
+                }
+                pendingExportJson = null;
+                notifySaveResult("export", true, "Sauvegarde exportée");
+            } else if (requestCode == REQ_IMPORT_SAVE) {
+                byte[] buffer = new byte[16384];
+                int n;
+                ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                try (InputStream in = getContentResolver().openInputStream(uri)) {
+                    if (in == null) throw new Exception("Fichier inaccessible");
+                    while ((n = in.read(buffer)) != -1) {
+                        bytes.write(buffer, 0, n);
+                        if (bytes.size() > 8 * 1024 * 1024) throw new Exception("Fichier trop volumineux");
+                    }
+                }
+                String json = bytes.toString("UTF-8");
+                JSONObject parsed = new JSONObject(json);
+                if (!parsed.has("version") && !parsed.has("schemaVersion")) throw new Exception("Ce fichier n'est pas une sauvegarde VOX Card Sim");
+                getSharedPreferences(SAVE_PREFS, MODE_PRIVATE).edit()
+                        .putString("save_json", json)
+                        .putLong("save_time", System.currentTimeMillis())
+                        .apply();
+                final String js = "window.voxImportSave&&window.voxImportSave(" + JSONObject.quote(json) + ");";
+                runOnUiThread(() -> web.evaluateJavascript(js, null));
+            }
+        } catch (Exception e) {
+            notifySaveResult(requestCode == REQ_EXPORT_SAVE ? "export" : "import", false, e.getMessage() == null ? "Erreur" : e.getMessage());
+        }
+    }
+
     private class CacheWebViewClient extends WebViewClient {
         @Override
         public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
@@ -131,6 +190,48 @@ public class MainActivity extends Activity {
     public class OfflineBridge {
         private final ExecutorService worker = Executors.newSingleThreadExecutor();
         private final SharedPreferences prefs = getSharedPreferences("vox_offline", MODE_PRIVATE);
+        private final SharedPreferences savePrefs = getSharedPreferences(SAVE_PREFS, MODE_PRIVATE);
+
+        @JavascriptInterface
+        public String getMirroredSave() { return savePrefs.getString("save_json", ""); }
+
+        @JavascriptInterface
+        public long mirroredSaveTime() { return savePrefs.getLong("save_time", 0); }
+
+        @JavascriptInterface
+        public boolean mirrorSave(String json) {
+            try {
+                JSONObject parsed = new JSONObject(json);
+                if (!parsed.has("version") && !parsed.has("schemaVersion")) return false;
+                savePrefs.edit().putString("save_json", json).putLong("save_time", System.currentTimeMillis()).apply();
+                return true;
+            } catch (Exception e) { return false; }
+        }
+
+        @JavascriptInterface
+        public void exportSave(String json) {
+            try {
+                new JSONObject(json);
+                pendingExportJson = json;
+                runOnUiThread(() -> {
+                    Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    intent.setType("application/json");
+                    intent.putExtra(Intent.EXTRA_TITLE, "VOX_CardSim_save.json");
+                    startActivityForResult(intent, REQ_EXPORT_SAVE);
+                });
+            } catch (Exception e) { notifySaveResult("export", false, "Sauvegarde invalide"); }
+        }
+
+        @JavascriptInterface
+        public void importSave() {
+            runOnUiThread(() -> {
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("application/json");
+                startActivityForResult(intent, REQ_IMPORT_SAVE);
+            });
+        }
 
         @JavascriptInterface
         public boolean hasPack(String setId) { return prefs.getBoolean("pack_" + setId, false); }
@@ -198,7 +299,7 @@ public class MainActivity extends Activity {
 
         private void downloadUrl(String address, File target) throws Exception {
             HttpURLConnection conn = (HttpURLConnection) new URL(address).openConnection();
-            conn.setConnectTimeout(15000); conn.setReadTimeout(30000); conn.setInstanceFollowRedirects(true); conn.setRequestProperty("User-Agent", "VOX-CardSim/0.6 Android"); conn.connect();
+            conn.setConnectTimeout(15000); conn.setReadTimeout(30000); conn.setInstanceFollowRedirects(true); conn.setRequestProperty("User-Agent", "VOX-CardSim/0.6.2 Android"); conn.connect();
             int code = conn.getResponseCode(); if (code < 200 || code >= 300) throw new Exception("HTTP " + code);
             File tmp = new File(target.getAbsolutePath() + ".part");
             try (InputStream in = new BufferedInputStream(conn.getInputStream()); BufferedOutputStream out = new BufferedOutputStream(new FileOutputStream(tmp))) { byte[] buffer = new byte[32768]; int n; while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n); }
