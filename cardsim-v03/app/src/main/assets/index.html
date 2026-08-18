@@ -7,6 +7,7 @@
   <title>VOX Card Sim</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="v03.css" />
+  <link rel="stylesheet" href="v04.css" />
 </head>
 <body>
 <div id="app">
@@ -97,12 +98,15 @@
 
   <div id="cardModal" class="modal hidden"><div class="modal-backdrop"></div><div class="modal-card"><button class="close">×</button><div id="modalVisual" class="modal-visual"></div><div id="modalInfo" class="modal-info"></div><div id="modalActions" class="modal-actions"></div></div></div>
   <div id="sellModal" class="modal hidden"><div class="modal-backdrop"></div><div class="modal-card compact-modal"><button class="close-sell close">×</button><div id="sellContent"></div></div></div>
-  <div id="marketModal" class="modal hidden"><div class="modal-backdrop"></div><div class="modal-card market-sheet"><button class="close-market close">×</button><div class="section-title"><span>MARCHÉ FICTIF</span><h2>Mon profil vendeur</h2><p>Ventes non instantanées, concurrence fictive et commandes groupées.</p></div><div id="marketContent"></div></div></div>
+  <div id="marketModal" class="modal hidden"><div class="modal-backdrop"></div><div class="modal-card market-sheet"><button class="close-market close">×</button><div class="section-title"><span>MARKETPLACE</span><h2>Marché des collectionneurs</h2><p>Achète et vends dans le même carnet d’offres.</p></div><div id="marketContent"></div></div></div>
   <div id="settingsModal" class="modal hidden"><div class="modal-backdrop"></div><div class="modal-card compact-modal"><button class="close-settings close">×</button><span class="tag">OUVERTURE</span><h2>Réglages</h2><div class="setting-row"><div><strong>Card trick automatique</strong><small>Déplace X cartes du dessous vers le dessus à chaque nouveau booster.</small></div><label class="switch"><input id="trickEnabled" type="checkbox"><span></span></label></div><div class="setting-count"><span>Cartes déplacées</span><div class="stepper"><button id="trickMinus">−</button><strong id="trickCount">0</strong><button id="trickPlus">+</button></div><small>La dernière valeur est mémorisée même lorsque l'option est désactivée.</small></div></div></div>
   <div id="toast" class="toast"></div>
 </div>
 <script src="v03a.js"></script>
 <script src="v03b.js"></script>
+<script src="v04pre.js"></script>
 <script src="v03c.js"></script>
+<script src="v04market1.js"></script>
+<script src="v04market2.js"></script>
 </body>
 </html>
