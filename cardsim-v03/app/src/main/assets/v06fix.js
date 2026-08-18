@@ -13,6 +13,10 @@ v05HydratePrices=async function(setId,statusEl){if(setId!=='s6a')return v06Hydra
 // Exact cancellation for cost-tracked stacked products (avoid restoring quantity twice).
 cancelListing=function(id){const l=state.listings.find(x=>x.id===id&&x.status==='active');if(!l)return;l.status='cancelled';if(l.type==='card'){for(const iid of l.remainingIds||[]){const ins=state.instances.find(x=>x.id===iid);if(ins){ins.status='owned';ins.location='inventory'}}l.remainingIds=[]}else{const qty=l.remaining||0,costs=(l.costUnits||[]).slice(0,qty);l.remaining=0;l.costUnits=[];for(const c of costs)v06AddLot(l.sku,1,c,'annonce_retiree')}reconcileBinder(l.setId);save();renderInventory();renderBinder();updateStats();toast('Annonce retirée')};
 
+// Products whose exact contents are not modelled must never be consumed by a fake opening.
+const v06OpenSealedBase=openSealedSku;
+openSealedSku=function(sku){const p=productForSku(sku);if(p&&(!Number.isFinite(Number(p.opens))||Number(p.opens)<=0))return toast('Contenu non modélisé : ce produit reste scellé');return v06OpenSealedBase(sku)};
+
 // The V0.4 hard-coded VOX card was never a user-created profile.
 const legacyName=String(state.sellerProfile?.displayName||'').trim().toLowerCase(),legacyHandle=String(state.sellerProfile?.handle||'').trim().toLowerCase();if(!state.profileLegacyPrompted&&(legacyName==='vox'||legacyHandle==='vox'||legacyHandle==='vo')){state.sellerProfile=null;state.profileLegacyPrompted=true;save()}
 
