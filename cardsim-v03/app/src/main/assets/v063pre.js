@@ -37,7 +37,8 @@ fetchSetData=async function(setId){
 };
 
 function voxLoadScript(src,next){const s=document.createElement('script');s.src=src;s.onload=()=>next?.();s.onerror=e=>console.error('VOX layer load failed',src,e);document.body.appendChild(s)}
+function voxLoadScripts(files,index=0){if(index>=files.length)return;voxLoadScript(files[index],()=>voxLoadScripts(files,index+1))}
 window.addEventListener('load',()=>{
  if(window.__voxV07Loaded)return;window.__voxV07Loaded=true;
- voxLoadScript('v07online.js',()=>voxLoadScript('v07fix.js',()=>voxLoadScript('v072perf.js',()=>voxLoadScript('v08core.js',()=>voxLoadScript('v08market.js',()=>voxLoadScript('v08binder.js',()=>voxLoadScript('v08friends.js',()=>voxLoadScript('v08final.js',()=>voxLoadScript('v08ui.js',()=>voxLoadScript('v08safety.js'))))))))));
+ voxLoadScripts(['v07online.js','v07fix.js','v072perf.js','v08core.js','v08market.js','v08binder.js','v08friends.js','v08final.js','v08ui.js','v08safety.js','v081perf.js']);
 });
