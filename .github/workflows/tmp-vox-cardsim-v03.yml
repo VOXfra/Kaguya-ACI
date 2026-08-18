@@ -26,9 +26,10 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Build debug APK
+        working-directory: cardsim-v03
         run: gradle :app:assembleDebug --no-daemon
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: VOX-CardSim-v0.3-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: cardsim-v03/app/build/outputs/apk/debug/app-debug.apk
