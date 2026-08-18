@@ -1,0 +1,148 @@
+name: VOX CardSim V0.8.1 Validation Build
+
+on:
+  pull_request:
+    branches: [tmp-vox-cardsim-v081-ci-base]
+    paths:
+      - 'cardsim-v03/**'
+      - '.github/workflows/tmp-vox-cardsim-v081.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Bundle deterministic card metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASSETS="cardsim-v03/app/src/main/assets"
+          mkdir -p "$ASSETS/img" /tmp/voxsets
+          curl -L --fail --retry 3 --retry-delay 1 'https://raw.githubusercontent.com/seavey-org/tcg-tracker/11ca9a20d57e88d5091e92ff0c907458e7e36281/backend/data/pokemon-tcg-data-japan/cards/jp-s6a-eevee-heroes.json' -o "$ASSETS/eevee_heroes.json"
+          curl -L --fail --retry 3 'https://api.tcgdex.net/v2/fr/sets/sv03.5' -o /tmp/voxsets/sv035_set.json
+          curl -L --fail --retry 3 'https://api.tcgdex.net/v2/fr/sets/sv03' -o /tmp/voxsets/sv03_set.json
+          curl -L --fail --retry 3 'https://api.tcgdex.net/v2/fr/sets/sv02' -o /tmp/voxsets/sv02_set.json
+          curl -L --fail --retry 3 'https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master/cards/en/sv3pt5.json' -o /tmp/voxsets/sv035_raw.json
+          curl -L --fail --retry 3 'https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master/cards/en/sv3.json' -o /tmp/voxsets/sv03_raw.json
+          curl -L --fail --retry 3 'https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master/cards/en/sv2.json' -o /tmp/voxsets/sv02_raw.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          assets=Path('cardsim-v03/app/src/main/assets')
+          p=assets/'eevee_heroes.json'; data=json.load(open(p,encoding='utf-8'))
+          nums={int(str(x['number']).split('/')[0]) for x in data if x.get('number') and x['number']!='N/A'}
+          if 95 not in nums:
+              data.append({'id':'jp-s6a-eevee-heroes-095/069','name':'Umbreon VMAX - 095/069','supertype':'Pokémon','number':'095/069','rarity':'Hyper Rare','images':{'small':'https://tcgplayer-cdn.tcgplayer.com/product/570557_200w.jpg','large':'https://tcgplayer-cdn.tcgplayer.com/product/570557_400w.jpg'},'tcgplayerId':'570557'})
+          nums={int(str(x['number']).split('/')[0]) for x in data if x.get('number') and x['number']!='N/A'}
+          assert nums==set(range(1,102)), f'Eevee numbers invalid: {len(nums)}'
+          (assets/'eevee_heroes_embed.js').write_text('window.V062_EEVEE_DATA='+json.dumps(data,ensure_ascii=False,separators=(',',':'))+';\n',encoding='utf-8')
+          specs={'sv03.5':('/tmp/voxsets/sv035_set.json','/tmp/voxsets/sv035_raw.json',207),'sv03':('/tmp/voxsets/sv03_set.json','/tmp/voxsets/sv03_raw.json',230),'sv02':('/tmp/voxsets/sv02_set.json','/tmp/voxsets/sv02_raw.json',279)}
+          out={}; rarity_map={'Common':'common','Uncommon':'uncommon','Rare':'rare','Double Rare':'double','Illustration Rare':'ir','Ultra Rare':'ur','Special Illustration Rare':'sir','Hyper Rare':'hr'}
+          for sid,(sp,rp,total) in specs.items():
+              s=json.load(open(sp,encoding='utf-8')); raw=json.load(open(rp,encoding='utf-8')); cards=s.get('cards') or []
+              assert len(cards)==total,(sid,len(cards),total); assert len(raw)==total,(sid,len(raw),total)
+              counts={}
+              for c in raw:
+                  k=rarity_map.get(c.get('rarity'),'unknown'); counts[k]=counts.get(k,0)+1
+              for k in ('common','uncommon','rare'): assert counts.get(k,0)>0,(sid,k,counts)
+              if sid=='sv03.5':
+                  expected={'common':66,'uncommon':62,'rare':25,'double':12,'ir':16,'ur':16,'sir':7,'hr':3}; assert all(counts.get(k)==v for k,v in expected.items()),(sid,counts)
+              if sid=='sv03':
+                  expected={'double':21,'ir':12,'ur':12,'sir':6,'hr':3}; assert all(counts.get(k)==v for k,v in expected.items()),(sid,counts)
+              out[sid]={'set':s,'raw':raw}
+          (assets/'standard_sets_embed.js').write_text('window.V063_STANDARD_DATA='+json.dumps(out,ensure_ascii=False,separators=(',',':'))+';\n',encoding='utf-8')
+          print('Card metadata OK')
+          PY
+          curl -L --fail --retry 3 'https://archives.bulbagarden.net/media/upload/thumb/1/1f/S6a_Eevee_Heroes_Logo.png/1200px-S6a_Eevee_Heroes_Logo.png' -o "$ASSETS/img/eevee_logo.png"
+          curl -L --fail --retry 3 'https://tcgplayer-cdn.tcgplayer.com/product/565350_400w.jpg' -o "$ASSETS/img/eevee_booster.jpg"
+          curl -L --fail --retry 3 'https://tcgplayer-cdn.tcgplayer.com/product/565351_400w.jpg' -o "$ASSETS/img/eevee_box.jpg"
+          curl -L --fail --retry 3 'https://d2j6dbq0eux0bg.cloudfront.net/images/51000416/4098527801.jpg' -o "$ASSETS/img/binder_151.jpg"
+          curl -L --fail --retry 3 'https://matraws.dk/cdn/shop/files/ultra-pro-charizard-pokemon-obsidian-flames-9-pocket-portfolio-mappe-kortspil-643.webp?crop=center&height=1200&v=1707377473&width=1200' -o "$ASSETS/img/binder_obsidian.webp"
+          curl -L --fail --retry 3 'https://kawaiicollector.com.au/cdn/shop/files/Paldea-Evolved-Portfolio-Large_1200x1200.png?v=1693561546' -o "$ASSETS/img/binder_paldea.png"
+          curl -L --fail --retry 3 'https://s3-ap-northeast-1.amazonaws.com/jiraffe-magi/prod/images/item/9644364/1.jpg' -o "$ASSETS/img/binder_eevee.jpg"
+
+      - name: Static and layered-runtime validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          A=cardsim-v03/app/src/main/assets
+          for f in eevee_heroes_embed.js standard_sets_embed.js v03a.js v03b.js v04pre.js v05pre.js v06pre.js v061pre.js v062pre.js v063pre.js v03c.js v04market1.js v04market2.js v04market3.js v05features.js v05fix.js v06features.js v06fix.js v061fix.js v062fix.js v07online.js v07fix.js v072perf.js v08core.js v08market.js v08binder.js v08friends.js v08final.js v08ui.js v08safety.js v081perf.js; do node --check "$A/$f"; done
+          cat "$A"/{v03a.js,v03b.js,v04pre.js,v05pre.js,v06pre.js,v061pre.js,eevee_heroes_embed.js,v062pre.js,standard_sets_embed.js,v063pre.js,v03c.js,v04market1.js,v04market2.js,v04market3.js,v05features.js,v05fix.js,v06features.js,v06fix.js,v061fix.js,v062fix.js,v07online.js,v07fix.js,v072perf.js,v08core.js,v08market.js,v08binder.js,v08friends.js,v08final.js,v08ui.js,v08safety.js,v081perf.js} > /tmp/vox_all_layers.js
+          node --check /tmp/vox_all_layers.js
+          grep -q 'sellAllInventoryCards' "$A/v072perf.js"
+          grep -q 'v08-new-star' "$A/v08core.js"
+          grep -q 'friendRequestsOut' "$A/v08friends.js"
+          grep -q 'Nom ou n° de carte' "$A/v08market.js"
+          grep -q 'v08TurnBinder' "$A/v08binder.js"
+          grep -q "realistic" "$A/v08core.js" && grep -q "ludic" "$A/v08core.js" && grep -q "creative" "$A/v08core.js"
+          grep -q 'eventEdition' "$A/v08core.js"
+          grep -q 'v08DemandCapRatio' "$A/v08core.js"
+          grep -q 'v081BulkListBusy' "$A/v081perf.js"
+          grep -q 'v081LiveCardCount' "$A/v081perf.js"
+          grep -q 'versionCode = 15' cardsim-v03/app/build.gradle.kts
+          grep -q 'versionName = "0.8.1"' cardsim-v03/app/build.gradle.kts
+          grep -q 'android.useAndroidX=true' cardsim-v03/gradle.properties
+          grep -q '"project_id": "vox-card-sim"' cardsim-v03/app/google-services.json
+          echo 'V0.8.1 static validation OK'
+
+      - name: Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Verify preinstalled Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          if [ ! -d "$ANDROID_HOME/platforms/android-35" ] || [ ! -d "$ANDROID_HOME/build-tools/35.0.0" ]; then
+            yes | "$SDKMANAGER" --licenses >/dev/null || true
+            "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+          fi
+
+      - name: Gradle 8.9 with cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+          cache-read-only: false
+          cache-cleanup: on-success
+
+      - name: Build release APK
+        working-directory: cardsim-v03
+        run: gradle :app:assembleRelease --no-daemon --build-cache
+
+      - name: Restore permanent signing key
+        uses: actions/download-artifact@v4
+        with:
+          name: VOX-CardSim-signing-key-v04-baseline
+          path: ${{ runner.temp }}/signing
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 32137945543
+
+      - name: Sign and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          STOREPASS="$(sed -n 's/^Store password: //p' "$RUNNER_TEMP/signing/signing-info.txt")"
+          KEYPASS="$(sed -n 's/^Key password: //p' "$RUNNER_TEMP/signing/signing-info.txt")"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$RUNNER_TEMP/signing/vox-cardsim-release.jks" --ks-key-alias vox-cardsim --ks-pass "pass:$STOREPASS" --key-pass "pass:$KEYPASS" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$RUNNER_TEMP/VOX_CardSim_v0.8.1.apk" cardsim-v03/app/build/outputs/apk/release/app-release-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$RUNNER_TEMP/VOX_CardSim_v0.8.1.apk"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VOX-CardSim-v0.8.1-performance
+          path: ${{ runner.temp }}/VOX_CardSim_v0.8.1.apk
+          if-no-files-found: error
