@@ -25,6 +25,28 @@ jobs:
           curl -L --fail --retry 3 --retry-delay 2 \
             'https://raw.githubusercontent.com/seavey-org/tcg-tracker/11ca9a20d57e88d5091e92ff0c907458e7e36281/backend/data/pokemon-tcg-data-japan/cards/jp-s6a-eevee-heroes.json' \
             -o "$ASSETS/eevee_heroes.json"
+          python - <<'PY'
+          import json
+          p='cardsim-v03/app/src/main/assets/eevee_heroes.json'
+          with open(p,encoding='utf-8') as f:
+              data=json.load(f)
+          nums={int(str(x['number']).split('/')[0]) for x in data if x.get('number') and x['number']!='N/A'}
+          if 95 not in nums:
+              data.append({
+                  'id':'jp-s6a-eevee-heroes-095/069',
+                  'name':'Umbreon VMAX - 095/069',
+                  'supertype':'Pokémon',
+                  'number':'095/069',
+                  'rarity':'Hyper Rare',
+                  'images':{
+                      'small':'https://tcgplayer-cdn.tcgplayer.com/product/570557_200w.jpg',
+                      'large':'https://tcgplayer-cdn.tcgplayer.com/product/570557_400w.jpg'
+                  },
+                  'tcgplayerId':'570557'
+              })
+          with open(p,'w',encoding='utf-8') as f:
+              json.dump(data,f,ensure_ascii=False,indent=2)
+          PY
           curl -L --fail --retry 3 'https://archives.bulbagarden.net/media/upload/thumb/1/1f/S6a_Eevee_Heroes_Logo.png/1200px-S6a_Eevee_Heroes_Logo.png' -o "$ASSETS/img/eevee_logo.png"
           curl -L --fail --retry 3 'https://tcgplayer-cdn.tcgplayer.com/product/565350_400w.jpg' -o "$ASSETS/img/eevee_booster.jpg"
           curl -L --fail --retry 3 'https://tcgplayer-cdn.tcgplayer.com/product/565351_400w.jpg' -o "$ASSETS/img/eevee_box.jpg"
@@ -40,7 +62,7 @@ jobs:
           p='cardsim-v03/app/src/main/assets/eevee_heroes.json'
           data=json.load(open(p,encoding='utf-8'))
           nums={int(str(x['number']).split('/')[0]) for x in data if x.get('number') and x['number']!='N/A'}
-          assert nums==set(range(1,102)), (len(nums), min(nums), max(nums))
+          assert nums==set(range(1,102)), (len(nums), sorted(set(range(1,102))-nums))
           rar={x.get('rarity') for x in data if x.get('number')!='N/A'}
           for r in ['Common','Uncommon','Rare','Double Rare','Triple Rare','Super Rare','Hyper Rare','Ultra Rare']:
               assert r in rar, r
