@@ -21,7 +21,9 @@ jobs:
           node --check cardsim-v03/app/src/main/assets/v03c.js
           node --check cardsim-v03/app/src/main/assets/v04market1.js
           node --check cardsim-v03/app/src/main/assets/v04market2.js
+          node --check cardsim-v03/app/src/main/assets/v04market3.js
           grep -q 'v04.css' cardsim-v03/app/src/main/assets/index.html
+          grep -q 'v04market3.js' cardsim-v03/app/src/main/assets/index.html
           grep -q 'versionCode = 4' cardsim-v03/app/build.gradle.kts
           grep -q 'voxCardSimV04' cardsim-v03/app/src/main/assets/v04pre.js
 
