@@ -1,4 +1,5 @@
 /* ---------- GRADING ---------- */
+const V100_GRADE_LABELS=['PSA 10','PSA 9','PSA 8','PSA 7','PSA 6','PSA 5','PSA 4','PSA 3','PSA 2','PSA 1'];
 const v100ConditionMultiplierBase=v4ConditionMultiplier;
 v4ConditionMultiplier=function(c){const m=/^PSA\s*(10|[1-9])$/i.exec(String(c||''));if(m)return({10:2.35,9:1.50,8:1.20,7:1.00,6:.85,5:.72,4:.60,3:.49,2:.40,1:.32})[Number(m[1])]||1;return v100ConditionMultiplierBase(c)};
 function v100GradeFor(ins){const d=ins.conditionDetail||v100ConditionTemplate(ins.condition||'NM',ins.id),score=v100ConditionScore(d)+(v100Rand01(ins.id,'grade')-.5)*.8;let g=score>=98.3?10:score>=95?9:score>=91?8:score>=87?7:score>=82?6:score>=76?5:score>=68?4:score>=58?3:score>=45?2:1;if(d.centering<72)g=Math.min(g,7);else if(d.centering<82)g=Math.min(g,8);return g}
