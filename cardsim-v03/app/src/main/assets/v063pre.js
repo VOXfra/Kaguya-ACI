@@ -91,5 +91,5 @@ function voxLoadScript(src,next){const s=document.createElement('script');s.src=
 function voxLoadScripts(files,index=0){if(index>=files.length)return;const src=files[index];voxLoadScript(src,()=>{if(src==='v07online.js')v084InstallEarlyOnlineGuard();voxLoadScripts(files,index+1)})}
 window.addEventListener('load',()=>{
  if(window.__voxV07Loaded)return;window.__voxV07Loaded=true;
- voxLoadScripts(['v07online.js','v07fix.js','v072perf.js','v08core.js','v08market.js','v08binder.js','v08friends.js','v08final.js','v08ui.js','v08safety.js','v081perf.js','v082reset.js','v083offline.js','v084mode.js','v085ux.js','v086commit.js','v087prices.js','v088powerstock.js','pitch_black_embed.js','v090game.js']);
+ voxLoadScripts(['v07online.js','v07fix.js','v072perf.js','v08core.js','v08market.js','v08binder.js','v08friends.js','v08final.js','v08ui.js','v08safety.js','v081perf.js','v082reset.js','v083offline.js','v084mode.js','v085ux.js','v086commit.js','v087prices.js','v088powerstock.js','pitch_black_embed.js','v090game.js','v091energy.js']);
 });
