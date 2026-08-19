@@ -1,4 +1,4 @@
-// VOX CardSim V1.0.0 validation build
+// VOX CardSim V1.0.1 validation build
 plugins {
     id("com.android.application")
     id("com.google.gms.google-services")
@@ -12,8 +12,8 @@ android {
         applicationId = "com.vox.cardsim"
         minSdk = 26
         targetSdk = 35
-        versionCode = 27
-        versionName = "1.0.0"
+        versionCode = 28
+        versionName = "1.0.1"
     }
 
     compileOptions {
