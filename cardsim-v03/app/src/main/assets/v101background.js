@@ -31,7 +31,7 @@ function v101BetterOffers(slot,l){
  for(const o of b.offers){if(!(Number(o.quantity)>0)||Number(o.createdAt)>now+60000)continue;const eff=Number(o.price||0)/v101ConditionPower(o.condition);if(eff>0&&eff<own)n++}return n;
 }
 function v101InstanceIndex(slot){const m=new Map();for(const x of slot.instances||[])if(x?.id)m.set(x.id,x);return m}
-function v101ConsumeListing(slot,l,requested,byId,onlineTradeTotal=null){
+function v101ConsumeListing(slot,l,requested,byId,onlineTradeTotal=Number.NaN){
  let remain=v101Remaining(l);if(remain<=0)return null;const units=Math.max(1,Math.min(Math.floor(Number(requested)||1),remain));let actual=units;
  if(l.type==='card'||l.type==='energy'){
   const ids=Array.isArray(l.remainingIds)?l.remainingIds.splice(0,units):[];actual=ids.length;
