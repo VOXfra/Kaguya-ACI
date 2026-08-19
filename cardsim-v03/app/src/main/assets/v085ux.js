@@ -48,9 +48,9 @@ v4RenderBuyHome=function(){const r=v085RenderBuyHomeBase();v085InstallStableMark
 const v085Style=document.createElement('style');
 v085Style.textContent=`
 .card-stack{overflow:visible!important}
-.stable-card[data-depth="0"]{transform:translate3d(0,0,0) scale(1)!important}
-.stable-card[data-depth="1"]{transform:translate3d(8px,12px,0) scale(.975)!important;filter:brightness(.96)!important;opacity:1!important}
-.stable-card[data-depth="2"]{transform:translate3d(14px,22px,0) scale(.95)!important;filter:brightness(.80)!important;opacity:1!important}
+.stable-card[data-depth="0"]{transform:translate3d(0,0,0) scale(1)}
+.stable-card[data-depth="1"]{transform:translate3d(8px,12px,0) scale(.975);filter:brightness(.96);opacity:1}
+.stable-card[data-depth="2"]{transform:translate3d(14px,22px,0) scale(.95);filter:brightness(.80);opacity:1}
 .stable-card[data-depth]:not([data-depth="0"]){pointer-events:none}
 `;
 document.head.appendChild(v085Style);
