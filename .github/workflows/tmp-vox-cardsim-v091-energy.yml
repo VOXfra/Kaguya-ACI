@@ -1,0 +1,171 @@
+name: VOX CardSim V0.9.1 Energy Binder Build
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'cardsim-v03/**'
+      - '.github/workflows/tmp-vox-cardsim-v091-energy.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate embedded collection data
+        shell: bash
+        run: |
+          set -euo pipefail
+          A=cardsim-v03/app/src/main/assets
+          mkdir -p "$A/img" /tmp/vox
+          curl -Lf --retry 3 'https://raw.githubusercontent.com/seavey-org/tcg-tracker/11ca9a20d57e88d5091e92ff0c907458e7e36281/backend/data/pokemon-tcg-data-japan/cards/jp-s6a-eevee-heroes.json' -o /tmp/vox/eevee.json
+          for sid in sv03.5 sv03 sv02 me05; do curl -Lf --retry 3 "https://api.tcgdex.net/v2/fr/sets/$sid" -o "/tmp/vox/${sid//./_}_set.json"; done
+          curl -Lf --retry 3 'https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master/cards/en/sv3pt5.json' -o /tmp/vox/sv03_5_raw.json
+          curl -Lf --retry 3 'https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master/cards/en/sv3.json' -o /tmp/vox/sv03_raw.json
+          curl -Lf --retry 3 'https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master/cards/en/sv2.json' -o /tmp/vox/sv02_raw.json
+          python - <<'PY'
+          import json,time,urllib.request
+          from pathlib import Path
+          from concurrent.futures import ThreadPoolExecutor,as_completed
+          A=Path('cardsim-v03/app/src/main/assets')
+          ee=json.load(open('/tmp/vox/eevee.json',encoding='utf-8'))
+          nums={int(str(x['number']).split('/')[0]) for x in ee if x.get('number') and x['number']!='N/A'}
+          if 95 not in nums: ee.append({'id':'jp-s6a-eevee-heroes-095/069','name':'Umbreon VMAX - 095/069','number':'095/069','rarity':'Hyper Rare','images':{'small':'https://tcgplayer-cdn.tcgplayer.com/product/570557_200w.jpg','large':'https://tcgplayer-cdn.tcgplayer.com/product/570557_400w.jpg'}})
+          nums={int(str(x['number']).split('/')[0]) for x in ee if x.get('number') and x['number']!='N/A'}
+          assert nums==set(range(1,102))
+          (A/'eevee_heroes_embed.js').write_text('window.V062_EEVEE_DATA='+json.dumps(ee,ensure_ascii=False,separators=(',',':'))+';\n',encoding='utf-8')
+
+          specs={'sv03.5':('sv03_5_set.json','sv03_5_raw.json',207),'sv03':('sv03_set.json','sv03_raw.json',230),'sv02':('sv02_set.json','sv02_raw.json',279)}
+          old={}; rm={'Common':'common','Uncommon':'uncommon','Rare':'rare','Double Rare':'double','Illustration Rare':'ir','Ultra Rare':'ur','Special Illustration Rare':'sir','Hyper Rare':'hr'}
+          for sid,(sf,rf,total) in specs.items():
+              s=json.load(open('/tmp/vox/'+sf,encoding='utf-8')); raw=json.load(open('/tmp/vox/'+rf,encoding='utf-8'))
+              assert len(s.get('cards') or [])==total and len(raw)==total
+              old[sid]={'set':s,'raw':raw}
+          (A/'standard_sets_embed.js').write_text('window.V063_STANDARD_DATA='+json.dumps(old,ensure_ascii=False,separators=(',',':'))+';\n',encoding='utf-8')
+
+          me=json.load(open('/tmp/vox/me05_set.json',encoding='utf-8')); briefs=me.get('cards') or []
+          assert len(briefs)==120
+          def fetch(cid):
+              for i in range(4):
+                  try:
+                      req=urllib.request.Request('https://api.tcgdex.net/v2/en/cards/'+cid,headers={'User-Agent':'VOX-CardSim-CI/0.9.1'})
+                      with urllib.request.urlopen(req,timeout=20) as r:return json.load(r)
+                  except Exception:
+                      if i==3: raise
+                      time.sleep(.4*(i+1))
+          details={}
+          with ThreadPoolExecutor(max_workers=12) as ex:
+              fs={ex.submit(fetch,b['id']):b['id'] for b in briefs}
+              for f in as_completed(fs): details[fs[f]]=f.result()
+          rmap={'common':'common','uncommon':'uncommon','rare':'rare','double rare':'double','illustration rare':'ir','ultra rare':'ur','special illustration rare':'sir','mega hyper rare':'mhr'}
+          cards=[];counts={};nums=set()
+          for b in briefs:
+              d=details[b['id']]; raw=str(d.get('rarity') or '').strip(); key=rmap.get(raw.casefold(),'unknown'); counts[key]=counts.get(key,0)+1
+              n=int(str(b.get('localId') or d.get('localId')).lstrip('0') or 0);nums.add(n)
+              cards.append({'id':b['id'],'localId':str(b.get('localId') or d.get('localId')),'name':b.get('name') or d.get('name'),'image':b.get('image') or d.get('image'),'rarity':raw,'rarityKey':key,'pricing':d.get('pricing') or {}})
+          assert nums==set(range(1,121))
+          assert counts=={'common':37,'uncommon':26,'rare':11,'double':10,'ir':11,'ur':18,'sir':6,'mhr':1},counts
+          pack={'generatedAt':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'set':{k:me.get(k) for k in ('id','name','logo','symbol','cardCount','releaseDate')},'cards':cards}
+          (A/'pitch_black_embed.js').write_text('window.V090_PITCH_BLACK_DATA='+json.dumps(pack,ensure_ascii=False,separators=(',',':'))+';\n',encoding='utf-8')
+          PY
+          curl -Lf --retry 3 'https://archives.bulbagarden.net/media/upload/thumb/1/1f/S6a_Eevee_Heroes_Logo.png/1200px-S6a_Eevee_Heroes_Logo.png' -o "$A/img/eevee_logo.png"
+          curl -Lf --retry 3 'https://tcgplayer-cdn.tcgplayer.com/product/565350_400w.jpg' -o "$A/img/eevee_booster.jpg"
+          curl -Lf --retry 3 'https://tcgplayer-cdn.tcgplayer.com/product/565351_400w.jpg' -o "$A/img/eevee_box.jpg"
+          curl -Lf --retry 3 'https://d2j6dbq0eux0bg.cloudfront.net/images/51000416/4098527801.jpg' -o "$A/img/binder_151.jpg"
+          curl -Lf --retry 3 'https://matraws.dk/cdn/shop/files/ultra-pro-charizard-pokemon-obsidian-flames-9-pocket-portfolio-mappe-kortspil-643.webp?crop=center&height=1200&v=1707377473&width=1200' -o "$A/img/binder_obsidian.webp"
+          curl -Lf --retry 3 'https://kawaiicollector.com.au/cdn/shop/files/Paldea-Evolved-Portfolio-Large_1200x1200.png?v=1693561546' -o "$A/img/binder_paldea.png"
+          curl -Lf --retry 3 'https://s3-ap-northeast-1.amazonaws.com/jiraffe-magi/prod/images/item/9644364/1.jpg' -o "$A/img/binder_eevee.jpg"
+
+      - name: Validate V0.9.1 source and energy layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          A=cardsim-v03/app/src/main/assets
+          for f in eevee_heroes_embed.js standard_sets_embed.js pitch_black_embed.js v03a.js v03b.js v04pre.js v05pre.js v06pre.js v061pre.js v062pre.js v063pre.js v03c.js v04market1.js v04market2.js v04market3.js v05features.js v05fix.js v06features.js v06fix.js v061fix.js v062fix.js v07online.js v07fix.js v072perf.js v08core.js v08market.js v08binder.js v08friends.js v08final.js v08ui.js v08safety.js v081perf.js v082reset.js v083offline.js v084mode.js v085ux.js v086commit.js v087prices.js v088powerstock.js v090game.js v091energy.js; do node --check "$A/$f"; done
+          cat "$A"/{v03a.js,v03b.js,v04pre.js,v05pre.js,v06pre.js,v061pre.js,eevee_heroes_embed.js,v062pre.js,standard_sets_embed.js,v063pre.js,v03c.js,v04market1.js,v04market2.js,v04market3.js,v05features.js,v05fix.js,v06features.js,v06fix.js,v061fix.js,v062fix.js,v07online.js,v07fix.js,v072perf.js,v08core.js,v08market.js,v08binder.js,v08friends.js,v08final.js,v08ui.js,v08safety.js,v081perf.js,v082reset.js,v083offline.js,v084mode.js,v085ux.js,v086commit.js,v087prices.js,v088powerstock.js,pitch_black_embed.js,v090game.js,v091energy.js} >/tmp/all.js
+          node --check /tmp/all.js
+          python - <<'PY'
+          from pathlib import Path
+          q=Path('cardsim-v03/app/src/main/assets/v091energy.js').read_text()
+          l=Path('cardsim-v03/app/src/main/assets/v063pre.js').read_text()
+          for t in ['v091EnergyVariants','v091EnergySlotCount','v091NumberedCapacity','v091NumberedSlots','v091EnergyStart','v062EnergySlot=function','reconcileBinder=function','v090RenderBinderCore=function','v090RequiredBinders=function']: assert t in q,t
+          assert "'v090game.js','v091energy.js'" in l
+          # Real physical layouts: numbered cards first, then actual energy pockets.
+          cases={
+            '151':(207,360,16,207,207),
+            'Obsidian':(230,252,8,230,230),
+            'Paldea-1':(279,252,8,244,244),
+            'Eevee':(101,180,8,101,101),
+            'PitchBlack':(120,252,8,120,120),
+          }
+          for name,(total,cap,energies,expected_cards,expected_start) in cases.items():
+              numbered=min(total,max(0,cap-energies)); start=numbered
+              assert numbered==expected_cards,(name,numbered)
+              assert start==expected_start,(name,start)
+              assert start+energies<=cap,(name,start,energies,cap)
+          total,cap,energies=279,504,8
+          numbered=min(total,cap-energies); assert numbered==279 and numbered+energies<=cap
+          print('V0.9.1 energy layouts OK')
+          PY
+          grep -q 'versionCode = 24' cardsim-v03/app/build.gradle.kts
+          grep -q 'versionName = "0.9.1"' cardsim-v03/app/build.gradle.kts
+
+      - name: Java 17
+        uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+
+      - name: Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          S="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"; test -x "$S"
+          if [ ! -d "$ANDROID_HOME/platforms/android-35" ] || [ ! -d "$ANDROID_HOME/build-tools/35.0.0" ]; then yes | "$S" --licenses >/dev/null || true; "$S" 'platforms;android-35' 'build-tools;35.0.0'; fi
+
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.9', cache-read-only: true, cache-cleanup: on-success}
+
+      - name: Clean build release with no cache
+        working-directory: cardsim-v03
+        run: gradle clean :app:assembleRelease --no-daemon --no-build-cache --rerun-tasks
+
+      - name: Inspect unsigned APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=cardsim-v03/app/build/outputs/apk/release/app-release-unsigned.apk
+          test -f "$APK"
+          unzip -l "$APK" | grep -q 'assets/v091energy.js'
+          unzip -l "$APK" | grep -q 'assets/v090game.js'
+          unzip -l "$APK" | grep -q 'assets/pitch_black_embed.js'
+          unzip -p "$APK" assets/v091energy.js | grep -q "V091_VERSION='0.9.1'"
+
+      - name: Restore signing key
+        uses: actions/download-artifact@v4
+        with:
+          name: VOX-CardSim-signing-key-v04-baseline
+          path: ${{ runner.temp }}/signing
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 32137945543
+
+      - name: Sign and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          SP="$(sed -n 's/^Store password: //p' "$RUNNER_TEMP/signing/signing-info.txt")"; KP="$(sed -n 's/^Key password: //p' "$RUNNER_TEMP/signing/signing-info.txt")"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$RUNNER_TEMP/signing/vox-cardsim-release.jks" --ks-key-alias vox-cardsim --ks-pass "pass:$SP" --key-pass "pass:$KP" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$RUNNER_TEMP/VOX_CardSim_v0.9.1.apk" cardsim-v03/app/build/outputs/apk/release/app-release-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$RUNNER_TEMP/VOX_CardSim_v0.9.1.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VOX-CardSim-v0.9.1-energy-binders
+          path: ${{ runner.temp }}/VOX_CardSim_v0.9.1.apk
+          if-no-files-found: error
