@@ -1,3 +1,4 @@
+// VOX CardSim V0.8.8 validation build
 plugins {
     id("com.android.application")
     id("com.google.gms.google-services")
