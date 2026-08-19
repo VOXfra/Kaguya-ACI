@@ -40,5 +40,5 @@ function voxLoadScript(src,next){const s=document.createElement('script');s.src=
 function voxLoadScripts(files,index=0){if(index>=files.length)return;voxLoadScript(files[index],()=>voxLoadScripts(files,index+1))}
 window.addEventListener('load',()=>{
  if(window.__voxV07Loaded)return;window.__voxV07Loaded=true;
- voxLoadScripts(['v07online.js','v07fix.js','v072perf.js','v08core.js','v08market.js','v08binder.js','v08friends.js','v08final.js','v08ui.js','v08safety.js','v081perf.js']);
+ voxLoadScripts(['v07online.js','v07fix.js','v072perf.js','v08core.js','v08market.js','v08binder.js','v08friends.js','v08final.js','v08ui.js','v08safety.js','v081perf.js','v082reset.js']);
 });
