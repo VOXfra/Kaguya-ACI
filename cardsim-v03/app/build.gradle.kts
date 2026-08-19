@@ -11,8 +11,8 @@ android {
         applicationId = "com.vox.cardsim"
         minSdk = 26
         targetSdk = 35
-        versionCode = 21
-        versionName = "0.8.7"
+        versionCode = 22
+        versionName = "0.8.8"
     }
 
     compileOptions {
