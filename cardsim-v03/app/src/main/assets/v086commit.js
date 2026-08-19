@@ -20,7 +20,7 @@ function v086WriteSlot(mode,json){
 }
 
 /* MODE SWITCH: lock BEFORE writing the destination slot so pagehide cannot restore the old mode. */
-v08SwitchMode=function(mode){
+window.v08SwitchMode=function(mode){
  if(!V084_VALID_MODES.has(mode)||mode===v084ActiveMode())return;
  const current=v084ActiveMode();state.gameMode=current;
  /* Persist the current slot before entering the atomic transition. */
@@ -39,7 +39,7 @@ v08SwitchMode=function(mode){
 };
 
 /* NORMAL RESET: same atomic rule. Realistic cloud reset still uses the verified nonce flow. */
-v06ResetConfirm=function(){
+window.v06ResetConfirm=function(){
  const mode=v084ActiveMode(),m=$('#sellModal');m.classList.remove('hidden');const google=typeof v07Auth==='function'?(v07Auth()||{}):{};
  $('#sellContent').innerHTML=`<span class="tag danger-tag">DANGER</span><h2>Réinitialiser le mode ${V08_MODES[mode].label} ?</h2><p>${mode==='realistic'&&google.signedIn&&!google.anonymous?'La progression locale ET la sauvegarde liée à ton compte Google seront remplacées par une partie neuve.':'Seule cette progression sera effacée. Les deux autres modes et tes amis restent intacts.'}</p><label class="profile-field">Tape RESET pour confirmer<input id="resetWord" autocomplete="off" autocapitalize="characters" spellcheck="false"></label><button id="resetFinal" class="danger-button" disabled>Effacer ce mode</button><small id="resetCloudState"></small>`;
  const inp=$('#resetWord'),btn=$('#resetFinal'),status=$('#resetCloudState');
@@ -68,7 +68,7 @@ if(typeof v082FinishReset==='function'){
 }
 
 /* FORCE RESET: preserve cards + 1000 EUR, but commit the new state atomically. */
-v084StartForceReset=function(){
+window.v084StartForceReset=function(){
  const mode=v084ActiveMode(),m=$('#sellModal');m.classList.remove('hidden'),kept=v084KeptCards().length;
  $('#sellContent').innerHTML=`<span class="tag danger-tag">RÉPARATION</span><h2>Force Reset · ${V08_MODES[mode].label}</h2><p>Cette opération conserve <strong>${kept} carte(s)</strong>, remet le solde à <strong>1 000 €</strong> et efface le reste de la progression de ce mode.</p><p>Les réglages, amis et ton identité de compte restent conservés.</p><label class="profile-field">Tape FORCE pour confirmer<input id="forceResetWord" autocomplete="off" autocapitalize="characters" spellcheck="false"></label><button id="forceResetFinal" class="danger-button" disabled>Force Reset</button><small id="forceResetState"></small>`;
  const inp=$('#forceResetWord'),btn=$('#forceResetFinal'),status=$('#forceResetState');const sync=()=>{btn.disabled=inp.value.trim().toUpperCase()!=='FORCE'};inp.oninput=sync;inp.onkeyup=sync;
@@ -85,9 +85,9 @@ v084StartForceReset=function(){
 
 /* Existing settings panels may have been created before this layer loaded: rebind them explicitly. */
 function v086RebindSettingsActions(){
- document.querySelectorAll('[data-v08-mode]').forEach(b=>b.onclick=()=>v08SwitchMode(b.dataset.v08Mode));
- const reset=$('#resetProgressBtn');if(reset)reset.onclick=v06ResetConfirm;
- const force=$('#v084ForceResetBtn');if(force)force.onclick=v084StartForceReset;
+ document.querySelectorAll('[data-v08-mode]').forEach(b=>b.onclick=()=>window.v08SwitchMode(b.dataset.v08Mode));
+ const reset=$('#resetProgressBtn');if(reset)reset.onclick=window.v06ResetConfirm;
+ const force=$('#v084ForceResetBtn');if(force)force.onclick=window.v084StartForceReset;
 }
 const v086RenderSettingsBase=renderSettings;
 renderSettings=function(){const r=v086RenderSettingsBase();v086RebindSettingsActions();return r};
