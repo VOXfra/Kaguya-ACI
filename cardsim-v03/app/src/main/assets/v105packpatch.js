@@ -41,7 +41,12 @@ reconcileBinder=function(setId){
    window.__voxV106LoaderStarted=true;
    const s=document.createElement('script');s.src='v106fix.js';
    s.onerror=e=>console.error('VOX V1.0.6 load failed',e);
-   s.onload=()=>{const m=document.createElement('script');m.src='v106memory.js';m.onerror=e=>console.error('VOX V1.0.6 memory load failed',e);document.body.appendChild(m)};
+   s.onload=()=>{
+    const p=document.createElement('script');p.src='v106productart.js';
+    p.onerror=e=>console.error('VOX V1.0.6 product art load failed',e);
+    p.onload=()=>{const m=document.createElement('script');m.src='v106memory.js';m.onerror=e=>console.error('VOX V1.0.6 memory load failed',e);document.body.appendChild(m)};
+    document.body.appendChild(p)
+   };
    document.body.appendChild(s);return;
   }
   if(++tries<250)setTimeout(wait,20);else{reconcileBinder=v105RegisterReconcileBase;console.error('VOX V1.0.6 catalog wait timeout')}
