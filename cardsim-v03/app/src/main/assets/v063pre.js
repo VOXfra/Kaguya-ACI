@@ -1,10 +1,12 @@
 'use strict';
 
-/* V0.8.4 — select the requested game-mode slot BEFORE the legacy V0.6 loader runs.
-   This prevents the shared V06 key and Google cloud from deciding the active progression. */
+/* V0.8.4/V1.0.7 — select the requested game-mode slot BEFORE the legacy loader runs.
+   V1.0.7 also restores a validated last-good snapshot instead of creating a fresh
+   save immediately when the active slot is malformed. */
 const V084_BOOT_META='voxCardSimV08_activeMode';
 const V084_BOOT_PREFIX='voxCardSimV08_slot_';
 const V084_BOOT_MODES=new Set(['realistic','ludic','creative']);
+const V107_BOOT_LASTGOOD='voxCardSimV107_lastgood_';
 function v084BootFresh(mode,legacy={}){
  const now=Date.now();
  return {
@@ -19,6 +21,7 @@ function v084BootFresh(mode,legacy={}){
   onlineProcessedSellerTrades:[],onlineProcessedBuyerTrades:[],onlineCloudEnabled:true,lastSavedAt:now
  };
 }
+function v107BootValidate(raw,mode){try{const d=JSON.parse(raw||'');if(!d||d.gameMode!==mode||!Array.isArray(d.instances))return null;d.version=Math.max(8,Number(d.version)||0);d.schemaVersion=Math.max(8,Number(d.schemaVersion)||0);d.lastSavedAt=Number(d.lastSavedAt)||Date.now();return JSON.stringify(d)}catch{return null}}
 (function v084PrepareModeBeforeLoad(){
  let legacy={};try{legacy=JSON.parse(localStorage.getItem('voxCardSimV06')||'{}')||{}}catch{}
  let mode=localStorage.getItem(V084_BOOT_META);
@@ -28,9 +31,9 @@ function v084BootFresh(mode,legacy={}){
  }
  let json=localStorage.getItem(V084_BOOT_PREFIX+mode);
  if(!json){const fresh=v084BootFresh(mode,legacy);json=JSON.stringify(fresh);localStorage.setItem(V084_BOOT_PREFIX+mode,json)}
- try{
-  const d=JSON.parse(json);d.gameMode=mode;d.version=Math.max(8,Number(d.version)||0);d.schemaVersion=Math.max(8,Number(d.schemaVersion)||0);json=JSON.stringify(d);
- }catch{json=JSON.stringify(v084BootFresh(mode,legacy));localStorage.setItem(V084_BOOT_PREFIX+mode,json)}
+ let valid=v107BootValidate(json,mode);
+ if(!valid){valid=v107BootValidate(localStorage.getItem(V107_BOOT_LASTGOOD+mode),mode);if(valid)console.warn('VOX V1.0.7 restored last-good save',mode)}
+ if(!valid)valid=JSON.stringify(v084BootFresh(mode,legacy));json=valid;
  localStorage.setItem('voxCardSimV06',json);localStorage.setItem('voxCardSimV06_backup',json);localStorage.setItem(V084_BOOT_PREFIX+mode,json);localStorage.setItem(V084_BOOT_META,mode);
  try{state.gameMode=mode}catch{}
  window.__voxBootGameMode=mode;
@@ -71,5 +74,5 @@ function voxLoadScript(src,next){const s=document.createElement('script');s.src=
 function voxLoadScripts(files,index=0){if(index>=files.length)return;const src=files[index];voxLoadScript(src,()=>{if(src==='v07online.js')v084InstallEarlyOnlineGuard();voxLoadScripts(files,index+1)})}
 window.addEventListener('load',()=>{
  if(window.__voxV07Loaded)return;window.__voxV07Loaded=true;
- voxLoadScripts(['v07online.js','v07fix.js','v072perf.js','v08core.js','v08market.js','v08binder.js','v08friends.js','v08final.js','v08ui.js','v08safety.js','v081perf.js','v082reset.js','v083offline.js','v084mode.js','v085ux.js','v086commit.js','v087prices.js','v088powerstock.js','pitch_black_embed.js','v090game.js','v091energy.js','v092pagefix.js','v093perf.js','master_variants_embed.js','v110core.js','v110master.js','v110background.js','v104progression.js','v105_catalog_embed.js','v105catalog.js']);
+ voxLoadScripts(['v07online.js','v07fix.js','v072perf.js','v08core.js','v08market.js','v08binder.js','v08friends.js','v08final.js','v08ui.js','v08safety.js','v081perf.js','v082reset.js','v083offline.js','v084mode.js','v085ux.js','v086commit.js','v087prices.js','v088powerstock.js','pitch_black_embed.js','v090game.js','v091energy.js','v092pagefix.js','v093perf.js','master_variants_embed.js','v110core.js','v110master.js','v110background.js','v104progression.js','v105_catalog_embed.js','v105catalog.js','v106fix.js','v106productart.js','v106memory.js','v107fix.js']);
 });
