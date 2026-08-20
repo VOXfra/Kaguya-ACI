@@ -21,20 +21,30 @@ generatePack=function(setId){
  else r3=wrapCard(pick(rares),setId,'Rare Holo','holo');out.push(r3);out.push(energyCard(setId));return out;
 };
 
+/* V1.0.5 registers 16 sets and then reconciles every binder. Avoid 16 full
+   inventory scans when those newly registered sets contain no owned items. */
+const v105RegisterReconcileBase=reconcileBinder;
+const v105OwnedCatalogSetsAtBoot=new Set((state.instances||[]).filter(x=>x?.status==='owned'&&x.setId).map(x=>x.setId));
+reconcileBinder=function(setId){
+ if(window.V105_CATALOG?.sets?.[setId]&&!v105OwnedCatalogSetsAtBoot.has(setId))return;
+ return v105RegisterReconcileBase(setId);
+};
+
 /* v105_catalog_embed.js is evaluated immediately before v105catalog.js. Wait for
-   registration, then load V1.0.6 last so V1.0.5 cannot overwrite its hooks. */
+   registration, restore the normal binder function, then load V1.0.6 last. */
 (function v106LoadAfterCatalog(){
  let tries=0;
  const wait=()=>{
   if(window.__voxV106LoaderStarted)return;
   if(typeof v105RegisterCatalog==='function'&&SETS?.me04&&SETS?.me05){
+   reconcileBinder=v105RegisterReconcileBase;
    window.__voxV106LoaderStarted=true;
    const s=document.createElement('script');s.src='v106fix.js';
    s.onerror=e=>console.error('VOX V1.0.6 load failed',e);
    s.onload=()=>{const m=document.createElement('script');m.src='v106memory.js';m.onerror=e=>console.error('VOX V1.0.6 memory load failed',e);document.body.appendChild(m)};
    document.body.appendChild(s);return;
   }
-  if(++tries<250)setTimeout(wait,20);else console.error('VOX V1.0.6 catalog wait timeout');
+  if(++tries<250)setTimeout(wait,20);else{reconcileBinder=v105RegisterReconcileBase;console.error('VOX V1.0.6 catalog wait timeout')}
  };
  setTimeout(wait,0);
 })();
