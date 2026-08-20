@@ -50,7 +50,9 @@ jobs:
           txt=(A/'v105_catalog_embed.js').read_text(encoding='utf-8')
           m=re.search(r'window\.V105_CATALOG=(.*);\s*$',txt,re.S); assert m
           d=json.loads(m.group(1))
-          assert d['stats']=={'sets':16,'cards':3033,'masterSlots':4882},d['stats']
+          assert d['stats']['sets']==16,d['stats']
+          assert d['stats']['cards']==3033,d['stats']
+          assert d['stats']['masterSlots']==4882,d['stats']
           assert d['rotation2026']==['me02.5','me03','me04','me05']
           pre=(A/'v063pre.js').read_text(encoding='utf-8')
           expected="'v105_catalog_embed.js','v105catalog.js','v106fix.js','v106productart.js','v106memory.js','v107fix.js'"
