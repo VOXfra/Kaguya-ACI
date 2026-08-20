@@ -1,5 +1,5 @@
 'use strict';
-/* Concatenated into the generated V1.0.5 catalog embed during release builds. */
+/* Concatenated into the generated catalog embed during release builds. */
 const v105PackBase=generatePack;
 generatePack=function(setId){
  const d=window.V105_CATALOG?.sets?.[setId];
@@ -20,3 +20,20 @@ generatePack=function(setId){
  else if(y<ru+rd&&dr.length)r3=wrapCard(pick(dr),setId,'Double Rare','holo');
  else r3=wrapCard(pick(rares),setId,'Rare Holo','holo');out.push(r3);out.push(energyCard(setId));return out;
 };
+
+/* v105_catalog_embed.js is evaluated immediately before v105catalog.js. Wait for
+   registration, then load the additive V1.0.6 layer last so it cannot be
+   overwritten by the V1.0.5 catalog hooks. */
+(function v106LoadAfterCatalog(){
+ let tries=0;
+ const wait=()=>{
+  if(window.__voxV106LoaderStarted)return;
+  if(typeof v105RegisterCatalog==='function'&&SETS?.me04&&SETS?.me05){
+   window.__voxV106LoaderStarted=true;
+   const s=document.createElement('script');s.src='v106fix.js';
+   s.onerror=e=>console.error('VOX V1.0.6 load failed',e);document.body.appendChild(s);return;
+  }
+  if(++tries<250)setTimeout(wait,20);else console.error('VOX V1.0.6 catalog wait timeout');
+ };
+ setTimeout(wait,0);
+})();
