@@ -1,4 +1,4 @@
-// VOX CardSim V1.0.5 2024-2026 catalog and marketplace supply
+// VOX CardSim V1.0.6 market objects, offline packs and performance
 plugins {
     id("com.android.application")
     id("com.google.gms.google-services")
@@ -12,8 +12,8 @@ android {
         applicationId = "com.vox.cardsim"
         minSdk = 26
         targetSdk = 35
-        versionCode = 31
-        versionName = "1.0.5"
+        versionCode = 32
+        versionName = "1.0.6"
     }
 
     compileOptions {
