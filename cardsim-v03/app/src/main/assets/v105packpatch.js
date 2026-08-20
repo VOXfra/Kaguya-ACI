@@ -30,26 +30,8 @@ reconcileBinder=function(setId){
  return v105RegisterReconcileBase(setId);
 };
 
-/* v105_catalog_embed.js is evaluated immediately before v105catalog.js. Wait for
-   registration, restore the normal binder function, then load V1.0.6 last. */
-(function v106LoadAfterCatalog(){
- let tries=0;
- const wait=()=>{
-  if(window.__voxV106LoaderStarted)return;
-  if(typeof v105RegisterCatalog==='function'&&SETS?.me04&&SETS?.me05){
-   reconcileBinder=v105RegisterReconcileBase;
-   window.__voxV106LoaderStarted=true;
-   const s=document.createElement('script');s.src='v106fix.js';
-   s.onerror=e=>console.error('VOX V1.0.6 load failed',e);
-   s.onload=()=>{
-    const p=document.createElement('script');p.src='v106productart.js';
-    p.onerror=e=>console.error('VOX V1.0.6 product art load failed',e);
-    p.onload=()=>{const m=document.createElement('script');m.src='v106memory.js';m.onerror=e=>console.error('VOX V1.0.6 memory load failed',e);document.body.appendChild(m)};
-    document.body.appendChild(p)
-   };
-   document.body.appendChild(s);return;
-  }
-  if(++tries<250)setTimeout(wait,20);else{reconcileBinder=v105RegisterReconcileBase;console.error('VOX V1.0.6 catalog wait timeout')}
- };
- setTimeout(wait,0);
+/* V1.0.7 loads v106/v107 explicitly from v063pre.js. Only restore the normal
+   binder function once catalog registration is complete; do not inject scripts here. */
+(function v107RestoreBinderAfterCatalog(){
+ let tries=0;const wait=()=>{if(typeof v105RegisterCatalog==='function'&&SETS?.me04&&SETS?.me05){reconcileBinder=v105RegisterReconcileBase;window.__voxV106LoaderStarted=true;return}if(++tries<250)setTimeout(wait,20);else{reconcileBinder=v105RegisterReconcileBase;console.error('VOX V1.0.7 catalog wait timeout')}};setTimeout(wait,0);
 })();
