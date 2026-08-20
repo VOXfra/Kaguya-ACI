@@ -1,4 +1,4 @@
-// VOX CardSim V1.0.3 clean rebuild from validated V0.9.3
+// VOX CardSim V1.0.4 tiered progression rebalance on validated V1.0.3
 plugins {
     id("com.android.application")
     id("com.google.gms.google-services")
@@ -12,8 +12,8 @@ android {
         applicationId = "com.vox.cardsim"
         minSdk = 26
         targetSdk = 35
-        versionCode = 29
-        versionName = "1.0.3"
+        versionCode = 30
+        versionName = "1.0.4"
     }
 
     compileOptions {
