@@ -78,6 +78,7 @@ jobs:
           node <<'NODE'
           const fs=require('fs'),vm=require('vm');
           global.window=global;
+          global.document={querySelectorAll:()=>[]};
           global.state={eventCatalog:{},marketTab:'buy'};
           global.v106MarketIndex=null;global.v106InvalidateMarket=()=>{};
           global.V061_BINDERS={me04:{image:''}};
