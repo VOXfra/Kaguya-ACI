@@ -59,7 +59,7 @@ jobs:
           loader=(A/'v105packpatch.js').read_text(encoding='utf-8')
           art=(A/'v106productart.js').read_text(encoding='utf-8')
           mem=(A/'v106memory.js').read_text(encoding='utf-8')
-          for token in ['v106MarketIndex','v106MarketCache','category:\'object\'','v05OfflineManifest=function','SETS.me05.endgame=false']:
+          for token in ['v106MarketIndex','v106MarketCache',"marketKind:object?'object':'sealed'",'Classeur / objet physique','v05OfflineManifest=function','SETS.me05.endgame=false']:
               assert token in fix,token
           assert "p.src='v106productart.js'" in loader
           assert "m.src='v106memory.js'" in loader
@@ -91,6 +91,7 @@ jobs:
             {id:'c',mode:'binderUnlock',qty:1,kind:'Classeur'},
             {id:'x',mode:'sealed',opens:6,kind:'ÉDITION LIMITÉE',eventEdition:true}
           ]}};
+          global.v08DailyEvent=(now)=>({id:'evt',setId:'me04',name:'Édition limitée',mode:'sealed',opens:6,eventEdition:true});
           vm.runInThisContext(fs.readFileSync('cardsim-v03/app/src/main/assets/v106productart.js','utf8'));
           const imgs=SETS.me04.products.map(p=>p.image);
           if(!imgs.every(x=>x.startsWith('data:image/svg+xml')))throw new Error('product art is not local SVG');
@@ -101,7 +102,6 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           q=Path('cardsim-v03/app/src/main/assets/v105packpatch.js').read_text(encoding='utf-8')
-          # Modern Scarlet & Violet / Mega Evolution pack contract: 4 common + 3 uncommon + 3 foil + basic Energy.
           assert "uniquePicks(commons,4)" in q
           assert "uniquePicks(uncommons,3)" in q
           assert "Reverse 1" in q and "Reverse 2" in q and "Rare Holo" in q
