@@ -1,0 +1,178 @@
+name: VOX CardSim V1.0.6 Market Offline Product Art Build
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'cardsim-v03/**'
+      - '.github/workflows/tmp-vox-cardsim-v106-release.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate validated embedded card data
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p cardsim-v03/app/src/main/assets/img
+          python cardsim-v03/tools/generate_v110_data.py
+          python cardsim-v03/tools/generate_v105_catalog.py
+          A=cardsim-v03/app/src/main/assets
+          curl -Lf --retry 3 'https://archives.bulbagarden.net/media/upload/thumb/1/1f/S6a_Eevee_Heroes_Logo.png/1200px-S6a_Eevee_Heroes_Logo.png' -o "$A/img/eevee_logo.png"
+          curl -Lf --retry 3 'https://tcgplayer-cdn.tcgplayer.com/product/565350_400w.jpg' -o "$A/img/eevee_booster.jpg"
+          curl -Lf --retry 3 'https://tcgplayer-cdn.tcgplayer.com/product/565351_400w.jpg' -o "$A/img/eevee_box.jpg"
+          curl -Lf --retry 3 'https://d2j6dbq0eux0bg.cloudfront.net/images/51000416/4098527801.jpg' -o "$A/img/binder_151.jpg"
+          curl -Lf --retry 3 'https://matraws.dk/cdn/shop/files/ultra-pro-charizard-pokemon-obsidian-flames-9-pocket-portfolio-mappe-kortspil-643.webp?crop=center&height=1200&v=1707377473&width=1200' -o "$A/img/binder_obsidian.webp"
+          curl -Lf --retry 3 'https://kawaiicollector.com.au/cdn/shop/files/Paldea-Evolved-Portfolio-Large_1200x1200.png?v=1693561546' -o "$A/img/binder_paldea.png"
+          curl -Lf --retry 3 'https://s3-ap-northeast-1.amazonaws.com/jiraffe-magi/prod/images/item/9644364/1.jpg' -o "$A/img/binder_eevee.jpg"
+
+      - name: Validate V1.0.6 runtime source
+        shell: bash
+        run: |
+          set -euo pipefail
+          A=cardsim-v03/app/src/main/assets
+          for f in "$A"/*.js; do node --check "$f"; done
+          python - <<'PY'
+          import json,re
+          from pathlib import Path
+          A=Path('cardsim-v03/app/src/main/assets')
+          txt=(A/'v105_catalog_embed.js').read_text(encoding='utf-8')
+          m=re.search(r'window\.V105_CATALOG=(.*);\s*$',txt,re.S)
+          assert m,'catalog payload missing'
+          d=json.loads(m.group(1))
+          assert d['stats']['sets']==16,d['stats']
+          assert d['stats']['cards']==3033,d['stats']
+          assert d['stats']['masterSlots']==4882,d['stats']
+          assert d['rotation2026']==['me02.5','me03','me04','me05'],d['rotation2026']
+          fix=(A/'v106fix.js').read_text(encoding='utf-8')
+          loader=(A/'v105packpatch.js').read_text(encoding='utf-8')
+          art=(A/'v106productart.js').read_text(encoding='utf-8')
+          mem=(A/'v106memory.js').read_text(encoding='utf-8')
+          for token in ['v106MarketIndex','v106MarketCache','category:\'object\'','v05OfflineManifest=function','SETS.me05.endgame=false']:
+              assert token in fix,token
+          assert "p.src='v106productart.js'" in loader
+          assert "m.src='v106memory.js'" in loader
+          for token in ["return'booster'","return'lot'","return'etb'","return'display'","return'binder'","return'limited'","data:image/svg+xml"]:
+              assert token in art,token
+          assert 'v106ReleaseRawCatalog' in mem
+          print('V1.0.6 static validation OK')
+          PY
+          grep -q 'versionCode = 32' cardsim-v03/app/build.gradle.kts
+          grep -q 'versionName = "1.0.6"' cardsim-v03/app/build.gradle.kts
+
+      - name: Runtime smoke test product artwork and pack structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('fs'),vm=require('vm');
+          global.window=global;
+          global.state={eventCatalog:{},marketTab:'buy'};
+          global.v106MarketIndex=null;global.v106InvalidateMarket=()=>{};
+          global.V061_BINDERS={me04:{image:''}};
+          global.$=()=>({classList:{contains:()=>false}});
+          global.renderProducts=()=>{};global.v4RenderBuyHome=()=>{};
+          global.SETS={me04:{id:'me04',name:'Chaos Ascendant',v105Catalog:true,products:[
+            {id:'b',mode:'loose',qty:1,kind:'Booster'},
+            {id:'l',mode:'loose',qty:6,kind:'Lot de boosters'},
+            {id:'e',mode:'sealed',opens:9,kind:'ETB'},
+            {id:'d',mode:'sealed',opens:36,kind:'Booster Box'},
+            {id:'c',mode:'binderUnlock',qty:1,kind:'Classeur'},
+            {id:'x',mode:'sealed',opens:6,kind:'ÉDITION LIMITÉE',eventEdition:true}
+          ]}};
+          vm.runInThisContext(fs.readFileSync('cardsim-v03/app/src/main/assets/v106productart.js','utf8'));
+          const imgs=SETS.me04.products.map(p=>p.image);
+          if(!imgs.every(x=>x.startsWith('data:image/svg+xml')))throw new Error('product art is not local SVG');
+          if(new Set(imgs).size!==imgs.length)throw new Error('different product types share identical artwork');
+          if(window.__voxV106ProductArtCount<6)throw new Error('product art count');
+          console.log('Product artwork smoke test OK');
+          NODE
+          python - <<'PY'
+          from pathlib import Path
+          q=Path('cardsim-v03/app/src/main/assets/v105packpatch.js').read_text(encoding='utf-8')
+          # Modern Scarlet & Violet / Mega Evolution pack contract: 4 common + 3 uncommon + 3 foil + basic Energy.
+          assert "uniquePicks(commons,4)" in q
+          assert "uniquePicks(uncommons,3)" in q
+          assert "Reverse 1" in q and "Reverse 2" in q and "Rare Holo" in q
+          assert "out.push(energyCard(setId))" in q
+          print('Modern booster 10 cards + Energy structure present')
+          PY
+
+      - name: Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          S="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"; test -x "$S"
+          if [ ! -d "$ANDROID_HOME/platforms/android-35" ] || [ ! -d "$ANDROID_HOME/build-tools/35.0.0" ]; then
+            yes | "$S" --licenses >/dev/null || true
+            "$S" 'platforms;android-35' 'build-tools;35.0.0'
+          fi
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+          cache-read-only: true
+          cache-cleanup: on-success
+
+      - name: Clean release build without Gradle cache
+        working-directory: cardsim-v03
+        run: |
+          rm -rf app/build .gradle
+          gradle clean :app:assembleRelease --no-daemon --no-build-cache --rerun-tasks
+
+      - name: Inspect unsigned APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=cardsim-v03/app/build/outputs/apk/release/app-release-unsigned.apk
+          test -f "$APK"
+          unzip -l "$APK" | grep -q 'assets/v106fix.js'
+          unzip -l "$APK" | grep -q 'assets/v106memory.js'
+          unzip -l "$APK" | grep -q 'assets/v106productart.js'
+          unzip -l "$APK" | grep -q 'assets/v105_catalog_embed.js'
+          unzip -p "$APK" assets/v106fix.js | grep -q "V106_VERSION='1.0.6'"
+          unzip -p "$APK" assets/v106productart.js | grep -q "V106_PRODUCT_ART_VERSION='1.0.6'"
+          SIZE=$(unzip -p "$APK" assets/v105_catalog_embed.js | wc -c)
+          test "$SIZE" -gt 1000000
+
+      - name: Restore permanent signing key
+        uses: actions/download-artifact@v4
+        with:
+          name: VOX-CardSim-signing-key-v04-baseline
+          path: ${{ runner.temp }}/signing
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 32137945543
+
+      - name: Sign and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          SP="$(sed -n 's/^Store password: //p' "$RUNNER_TEMP/signing/signing-info.txt")"
+          KP="$(sed -n 's/^Key password: //p' "$RUNNER_TEMP/signing/signing-info.txt")"
+          OUT="$RUNNER_TEMP/VOX_CardSim_v1.0.6.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$RUNNER_TEMP/signing/vox-cardsim-release.jks" --ks-key-alias vox-cardsim --ks-pass "pass:$SP" --key-pass "pass:$KP" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$OUT" cardsim-v03/app/build/outputs/apk/release/app-release-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$OUT"
+          sha256sum "$OUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VOX-CardSim-v1.0.6-market-offline-product-art
+          path: ${{ runner.temp }}/VOX_CardSim_v1.0.6.apk
+          if-no-files-found: error
