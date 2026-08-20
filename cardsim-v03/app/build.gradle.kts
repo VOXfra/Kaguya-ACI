@@ -1,4 +1,4 @@
-// VOX CardSim V1.0.6 market objects, offline packs and performance
+// VOX CardSim V1.0.7 UI, save, offline and performance repair
 plugins {
     id("com.android.application")
     id("com.google.gms.google-services")
@@ -12,8 +12,8 @@ android {
         applicationId = "com.vox.cardsim"
         minSdk = 26
         targetSdk = 35
-        versionCode = 32
-        versionName = "1.0.6"
+        versionCode = 33
+        versionName = "1.0.7"
     }
 
     compileOptions {
