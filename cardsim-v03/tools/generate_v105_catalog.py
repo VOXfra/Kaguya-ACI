@@ -9,10 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 A = ROOT / "app" / "src" / "main" / "assets"
 A.mkdir(parents=True, exist_ok=True)
-HEADERS = {"User-Agent": "VOX-CardSim-V105-build/1.0.5"}
+HEADERS = {"User-Agent": "VOX-CardSim-V106-build/1.0.6"}
 
-# All international expansions released in 2024 and 2025, plus the released
-# 2026 sets that are not already implemented by the V0.9.3 Pitch Black layer.
 SPECS = [
     ("sv04.5", 2024, "2024-01-26", "legacy"),
     ("sv05",   2024, "2024-03-22", "legacy"),
@@ -94,18 +92,20 @@ def supply_tier(raw):
     return "rare"
 
 
-def image_candidates(image):
-    image = str(image or "")
-    if not image:
-        return []
-    if image.endswith((".webp", ".jpg", ".jpeg", ".png")):
-        return [image]
-    return [image + "/low.webp", image + "/high.webp", image]
+def lean_pricing(raw):
+    """Keep only Cardmarket fields used by the game; discard TCGplayer and metadata bloat."""
+    cm = (raw or {}).get("cardmarket") or {}
+    out = {}
+    for k, v in cm.items():
+        if k == "updated":
+            out[k] = v
+        elif isinstance(v, (int, float)) and (k == "low" or k.startswith("trend") or k.startswith("avg")):
+            out[k] = v
+    return {"cardmarket": out} if out else {}
 
 
 def main():
-    sets = {}
-    briefs = {}
+    sets, briefs = {}, {}
     print(f"Loading {len(SPECS)} TCGdex sets...")
     for sid, year, release, availability in SPECS:
         d = get_json("https://api.tcgdex.net/v2/fr/sets/" + urllib.parse.quote(sid))
@@ -124,11 +124,9 @@ def main():
             "id": sid,
             "name": d.get("name") or sid,
             "logo": d.get("logo") or "",
-            "symbol": d.get("symbol") or "",
             "releaseDate": api_release,
             "year": year,
             "availability": availability,
-            "cardCount": cc,
             "total": declared,
             "official": int(cc.get("official") or declared),
             "cards": [],
@@ -158,8 +156,7 @@ def main():
     if len(details) != len(jobs):
         raise RuntimeError(f"details {len(details)}/{len(jobs)}")
 
-    total_cards = 0
-    total_master_slots = 0
+    total_cards = total_master_slots = 0
     rarity_report = {}
     for sid, _, _, _ in SPECS:
         rarity_report[sid] = {}
@@ -174,28 +171,20 @@ def main():
                 raise RuntimeError(f"{sid}: duplicate localId {local}")
             local_seen.add(local)
             raw_rarity = str(d.get("rarity") or "Rare")
-            game = game_rarity(raw_rarity)
-            tier = supply_tier(raw_rarity)
+            game, tier = game_rarity(raw_rarity), supply_tier(raw_rarity)
             variants = d.get("variants") or {}
-            master = [k for k in ("normal", "holo", "reverse") if variants.get(k) is True]
-            if not master:
-                # TCGdex occasionally omits variants on promo-like entries. It is safer
-                # to expose the actual card as normal than to make the Master Set impossible.
-                master = ["normal"]
+            master = [k for k in ("normal", "holo", "reverse") if variants.get(k) is True] or ["normal"]
             image = brief.get("image") or d.get("image") or ""
             if not image:
                 raise RuntimeError(f"{sid}/{cid}: missing image")
-            pricing = d.get("pricing") or {}
             sets[sid]["cards"].append({
                 "id": cid,
                 "localId": local,
                 "name": brief.get("name") or d.get("name") or cid,
                 "image": image,
-                "images": image_candidates(image),
-                "rarity": raw_rarity,
                 "rarityKey": game,
                 "supplyTier": tier,
-                "pricing": pricing,
+                "pricing": lean_pricing(d.get("pricing") or {}),
             })
             sets[sid]["master"][local.zfill(3)] = master
             rarity_report[sid][tier] = rarity_report[sid].get(tier, 0) + 1
@@ -206,7 +195,7 @@ def main():
         total_cards += len(sets[sid]["cards"])
 
     payload = {
-        "schema": 105,
+        "schema": 106,
         "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "sets": sets,
         "rotation2026": ["me02.5", "me03", "me04", "me05"],
@@ -219,10 +208,9 @@ def main():
         },
     }
     compact_js("v105_catalog_embed.js", "V105_CATALOG", payload)
-    (A / "v105_catalog.json").write_text(
-        json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
-    )
-    print(f"Catalog ready: {len(sets)} sets / {total_cards} cards / {total_master_slots} Master slots")
+    (A / "v105_catalog.json").write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    size = (A / "v105_catalog_embed.js").stat().st_size
+    print(f"Catalog ready: {len(sets)} sets / {total_cards} cards / {total_master_slots} Master slots / {size} bytes")
 
 
 if __name__ == "__main__":
