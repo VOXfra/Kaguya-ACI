@@ -64,7 +64,7 @@ jobs:
           for token in ['V108_BOOT_SWITCH_MARKER','window.v108BootSwitchMode','v108BootInjectModeFallback','v108fix.js','__voxV108BootReady']:
               assert token in boot,token
           fix=(A/'v108fix.js').read_text(encoding='utf-8')
-          for token in ["V108_VERSION='1.0.8'",'V108_RETAIL_YEAR=2026','V108_ARCHIVE_ONE_DAY_IN=8','v108ArchiveDay','v108InstallModePanel','Collection Archive','OFFRE ARCHIVE','V108_OPENING_PACK_ART','V108_BINDER_ART','marketHidden','shopHidden','v108OfflineManifestBase']:
+          for token in ["V108_VERSION='1.0.8'",'V108_RETAIL_YEAR=2026','V108_ARCHIVE_ONE_DAY_IN=8','v108ArchiveDay','v108InstallModePanel','Collection Archive','OFFRE ARCHIVE','V108_OPENING_PACK_ART','V108_BINDER_ART','marketHidden','shopHidden','v108OfflineManifestBase','v4MarketAssetResults=function']:
               assert token in fix,token
           pack=(A/'v105packpatch.js').read_text(encoding='utf-8')
           assert "createElement('script')" not in pack and 'v107RestoreBinderAfterCatalog' in pack
@@ -113,6 +113,7 @@ jobs:
           function renderSettings(){}function save(){}function toast(){}function escapeHtml(x){return String(x)}function v08RefreshModePill(){}function $(sel){return null}
           function openingPackImage(setId){return'base-'+setId}
           function v08MarketAssets(){return[{type:'sealed',productId:'me02.5-display'},{type:'sealed',productId:'me03-display'},{type:'booster',setId:'me04'}]}
+          var v4MarketAssetResults=function(){return[]};
           function v05OfflineManifest(){return['base-resource']}
           var v08HourInfo=function(){},v08DailyEvent=function(){},v08SwitchMode=function(){};
           vm.runInThisContext(fs.readFileSync('cardsim-v03/app/src/main/assets/v108fix.js','utf8'));
@@ -122,6 +123,7 @@ jobs:
           const binder=SETS.me04.products.find(p=>p.mode==='binderUnlock');if(!binder.v108OfficialBinder||!String(binder.image).includes('ultrapro.com'))throw new Error('ME04 binder placeholder not replaced');
           const pack=openingPackImage('me04');if(!pack.includes('chaos-ascendant-booster-a-l-unite'))throw new Error('ME04 opening still reuses bad shop art');
           const market=v08MarketAssets('');if(market.some(a=>a.productId==='me02.5-display'))throw new Error('retired display leaked into marketplace');
+          const legacyAlias=v4MarketAssetResults('');if(legacyAlias.some(a=>a.productId==='me02.5-display'))throw new Error('retired display leaked through legacy marketplace alias');
           const offline=v05OfflineManifest('me04');if(!offline.includes(pack))throw new Error('opening pack art missing from offline manifest');
           const info=v08HourInfo(Date.UTC(2026,7,21,12));if(!['me02.5','me03','me04','me05'].includes(info.setId))throw new Error('legacy set leaked into normal retail');
           let archives=0;for(let day=0;day<80;day++){state.eventCatalog={};const e=v08DailyEvent(day*V08_DAY+1);if(e?.v108Archive){archives++;if(e.setId!=='old')throw new Error('archive event did not select archive')}}
