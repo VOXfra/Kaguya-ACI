@@ -1,4 +1,4 @@
-// VOX CardSim V1.0.7 UI, save, offline and performance repair
+// VOX CardSim V1.0.8 retail archives and mode-switch repair
 plugins {
     id("com.android.application")
     id("com.google.gms.google-services")
@@ -12,8 +12,8 @@ android {
         applicationId = "com.vox.cardsim"
         minSdk = 26
         targetSdk = 35
-        versionCode = 33
-        versionName = "1.0.7"
+        versionCode = 34
+        versionName = "1.0.8"
     }
 
     compileOptions {
