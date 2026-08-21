@@ -26,6 +26,7 @@
   - ajout de `packArt` au manifeste hors-ligne afin que le vrai sachet reste disponible sans réseau,
   - Héros Transcendants : booster unitaire retiré de la vente directe, bundle converti en produit scellé ×6 et faux display 36 boosters retiré de la boutique comme du Marketplace,
   - Équilibre Parfait, Chaos Ascendant et Nuit Noire : les anciens `lot6` sont désormais des Booster Bundles scellés qui donnent six boosters à l'ouverture,
+  - filtrage Marketplace répercuté aussi sur l'alias historique `v4MarketAssetResults`, pour que les écrans hérités ne puissent pas réintroduire un produit retiré,
   - reconstruction systématique du sélecteur de mode actuel dans les Réglages,
   - `v08SwitchMode` délègue au commutateur de boot robuste au lieu de dépendre d'une ancienne couche UI.
 - `app/src/main/assets/index.html` charge maintenant `v108boot.js` de façon synchrone.
