@@ -35,8 +35,8 @@
   out.push(direct(base,'Holo 1'));
   out.push(direct(base,'Holo 2'));
   if(Math.random()<Number(r.classic||0)){
-   const dep=v116DependencyCards(profile);
-   out.push(dep.length?v116Wrap(pick(dep),pick(dep)?.setId||profile.dependencies?.[0]||setId,'Classic Collection','holo'):direct(base,'Holo 3'));
+   const dep=v116DependencyCards(profile),c=dep.length?pick(dep):null;
+   out.push(c?v116Wrap(c,c.setId||profile.dependencies?.[0]||setId,'Classic Collection','holo'):direct(base,'Holo 3'));
   }else out.push(direct(base,'Holo 3'));
 
   out.push(weighted([
