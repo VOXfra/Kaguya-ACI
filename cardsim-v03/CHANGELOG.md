@@ -1,5 +1,37 @@
 # Changelog — VOX Card Sim
 
+## 2026-08-21 — V1.0.9 R2 : mode Créatif fiable et packs hors ligne 151 / Paldea / Obsidiennes / Eevee
+
+### Pourquoi
+- Sur Android, le changement de mode pouvait sembler fonctionner puis revenir immédiatement en Réaliste après le rechargement.
+- La cause était un conflit de persistance pendant le `reload` : le slot cible était écrit dans `localStorage`, mais l'état vivant conservait encore le mode source. Le listener `pagehide` exécutait alors un dernier `save()` et pouvait réécrire Réaliste juste avant le redémarrage.
+- Les téléchargements hors ligne de `151`, `Évolutions à Paldea`, `Flammes Obsidiennes` et `Eevee Heroes` pouvaient afficher « Les données de cette collection ne sont pas encore chargées » alors que leurs datasets sont déjà embarqués dans l'APK.
+- L'ancien manifeste hors ligne de ces collections mélangeait scans, endpoints API, metadata historiques et images produits. Pour Eevee Heroes, il pouvait même construire `META_BASE/undefined`, ressource inutile et invalide.
+
+### Quoi
+- Ajout de `app/src/main/assets/v109hotfix.js` chargé après `v109fix.js`.
+- Le changement de mode est maintenant atomique :
+  - le mode source est sauvegardé une dernière fois,
+  - le slot cible est chargé en mémoire,
+  - `state.gameMode` et l'état vivant basculent sur le mode cible avant le `reload`,
+  - un éventuel `save()` tardif de `pagehide` ne peut donc plus rétablir le mode précédent.
+- Les quatre collections historiques natives (`sv03.5`, `sv03`, `sv02`, `s6a`) disposent d'un chemin hors ligne dédié :
+  - réhydratation automatique depuis les données embarquées si leur état runtime n'est pas encore prêt,
+  - manifeste réduit aux scans réellement nécessaires et aux énergies,
+  - suppression des endpoints metadata/API/produits inutiles dans ce chemin,
+  - aucune URL `META_BASE/undefined` pour Eevee Heroes.
+- `v109boot.js` charge désormais le hotfix R2 après la couche V1.0.9 principale.
+
+### Comment
+1. Test baseline sur la V1.0.9 signée : le code de changement de mode écrivait bien le slot cible mais ne remplaçait jamais l'état vivant avant le reload ; le test reproduit donc le retour au mode source lors d'un `save()` tardif.
+2. Test baseline hors ligne : aucun mécanisme de réhydratation n'existait pour les quatre collections historiques au moment du clic sur « Télécharger ».
+3. Ajout d'un test simulant `Réaliste -> Créatif -> save() pagehide` : le slot Créatif reste maintenant actif et son contenu n'est plus écrasé par le slot Réaliste.
+4. Ajout d'un test des quatre manifests historiques : 151, Paldea, Obsidiennes et Eevee produisent chacun un manifeste de scans valide à partir des datasets embarqués.
+
+### Passages modifiés — état précédent
+- Avant R2, `v108BootSwitchMode()` écrivait `voxCardSimV08_activeMode` et le slot cible, puis lançait `location.reload()` sans charger le slot cible dans `state`; un `save()` déclenché entre les deux pouvait restaurer Réaliste.
+- Avant R2, `v083offline.js` exigeait que `state.sets[setId]` soit déjà initialisé et utilisait le manifeste historique générique, même pour les datasets pourtant embarqués dans l'APK.
+
 ## 2026-08-21 — V1.0.9 : boutique réellement liée à la collection, visuels 2026 embarqués et Nuit Noire hors ligne
 
 ### Pourquoi
