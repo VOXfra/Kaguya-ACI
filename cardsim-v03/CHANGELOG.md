@@ -3,10 +3,11 @@
 ## 2026-08-21 — V1.0.9 : boutique réellement liée à la collection, visuels 2026 embarqués et Nuit Noire hors ligne
 
 ### Pourquoi
-- La V1.0.8 avait bien limité la rotation commerciale aux collections 2026, mais le rendu historique de la boutique continuait d'ignorer la collection cliquée en mode Réaliste/Ludique : sélectionner une extension 2024 ou 2025 pouvait donc laisser affichés les produits de la collection 2026 de rotation, donnant l'impression que les mêmes boosters étaient utilisés partout.
+- La V1.0.8 avait bien limité la rotation commerciale aux collections 2026, mais le rendu historique de la boutique continuait d'ignorer la collection cliquée en mode Réaliste/Ludique : sélectionner une extension 2024 ou 2025 pouvait laisser affichés les produits de la collection 2026 de rotation, donnant l'impression que les mêmes boosters étaient utilisés partout.
 - Les onglets d'années historiques restaient visibles dans la boutique alors que ces collections doivent être réservées au Marketplace ou aux rares offres Archive.
-- Les visuels produits 2026 restaient majoritairement chargés depuis des boutiques externes. Un lien cassé, un anti-hotlink ou une photo modifiée côté marchand pouvait encore produire un mauvais détourage, une mauvaise image ou une erreur de téléchargement hors ligne.
-- Le téléchargement hors ligne de Héros Transcendants signalait encore une erreur et Nuit Noire jusqu'à seize erreurs. Le manifeste V1.0.8 ajoutait notamment un visuel d'ouverture distant supplémentaire, et Nuit Noire demandait systématiquement les scans `high.webp` alors que certains de ces endpoints TCGdex ne sont pas fiables pour le pack Android.
+- Les visuels produits 2026 restaient chargés depuis des boutiques externes au runtime, ce qui exposait encore l'application aux liens cassés, anti-hotlink et changements d'images.
+- Le téléchargement hors ligne de Héros Transcendants signalait encore une erreur et Nuit Noire jusqu'à seize erreurs.
+- Le diagnostic CI a identifié précisément les erreurs Nuit Noire : les scans français TCGdex `075` à `089` renvoient tous `404`, et le logo TCGdex de `me05` renvoie lui aussi `404`. Le vieux manifeste pouvait également ajouter une URL `META_BASE/undefined` inutile parce que Nuit Noire n'utilise pas le même fichier metadata historique que les anciens sets.
 
 ### Quoi
 - Ajout de `app/src/main/assets/v109boot.js` :
@@ -18,32 +19,36 @@
   - un accès explicite `Archives · Marketplace` remplace cette ambiguïté,
   - `renderProducts()` affiche réellement les produits de la collection 2026 choisie et ne retombe plus automatiquement sur la collection de rotation,
   - chaque extension 2026 utilise son propre visuel de booster pour la boutique et l'ouverture,
-  - les visuels de boosters, bundles, ETB, displays, portfolios et du Build & Battle Nuit Noire sont référencés comme ressources locales `img/v109/*` embarquées dans l'APK,
-  - le manifeste hors ligne ignore les anciennes URL de visuels produits V1.0.8 puisque ces images sont maintenant déjà dans l'APK,
-  - pour Nuit Noire, les scans hors ligne utilisent `low.webp` au lieu de forcer `high.webp`, afin d'éviter les endpoints HD indisponibles tout en gardant l'ensemble des 120 cartes disponible sans réseau.
+  - boosters, bundles, ETB, displays, portfolios, Build & Battle Nuit Noire et logo Nuit Noire sont des ressources locales `img/v109/*` embarquées dans l'APK,
+  - le manifeste hors ligne Nuit Noire est reconstruit spécialement et ne reprend plus les anciennes URL produits, le logo TCGdex cassé ni `META_BASE/undefined`,
+  - les 15 scans français Nuit Noire absents de TCGdex (`075` à `089`) sont téléchargés depuis des scans français vérifiés pendant le build, embarqués dans l'APK puis injectés dans `pitch_black_embed.js`,
+  - les 105 autres scans Nuit Noire et les images d'énergie utilisées hors ligne sont vérifiés par la CI avant signature.
 - `app/src/main/assets/index.html` charge maintenant `v109boot.js` juste après le garde-fou V1.0.8.
 - `app/build.gradle.kts` passe à `versionCode 35` / `versionName 1.0.9`.
 - Le workflow Android V1.0.9 :
   - télécharge les visuels produits 2026 au build et les embarque dans l'APK,
   - vérifie que les quatre boosters 2026 ont quatre fichiers réellement distincts,
-  - contrôle que chaque ressource téléchargée est bien une image,
-  - vérifie les 120 scans Nuit Noire utilisés hors ligne et bloque la release au moindre scan inaccessible,
-  - exécute des smoke tests sur la navigation boutique 2026, les paquets distincts, le Build & Battle Nuit Noire et le nettoyage du manifeste hors ligne,
-  - construit puis signe `VOX_CardSim_v1.0.9.apk` avec la clé de release existante.
+  - contrôle que chaque ressource produit téléchargée est bien une image,
+  - embarque et contrôle exactement les 15 scans Nuit Noire manquants,
+  - vérifie toutes les ressources réseau restantes utilisées par Nuit Noire hors ligne,
+  - contrôle la présence des ressources V1.0.9 dans l'APK,
+  - construit, signe et vérifie `VOX_CardSim_v1.0.9.apk` avec la clé de release existante.
 
 ### Comment
 1. Reproduction à partir des captures V1.0.8 : sélection d'une extension 2024 dans la barre de collection alors que `renderProducts()` continuait de prendre `v08HourInfo().setId`, donc Chaos Ascendant restait affiché.
 2. Séparation du contexte `collection consultée` et du contexte `collection achetée en boutique`, avec un état dédié `voxCardSimV109_shopSet2026`.
-3. Remplacement du rendu boutique hérité par un rendu V1.0.9 explicitement limité aux quatre collections 2026 disponibles.
+3. Remplacement du rendu boutique hérité par un rendu V1.0.9 explicitement limité aux collections 2026 disponibles.
 4. Épinglage des visuels produits au moment du build pour supprimer la dépendance runtime aux photos de marchands.
-5. Nettoyage du manifeste hors ligne des visuels désormais locaux et bascule Nuit Noire vers les scans TCGdex `low.webp`.
-6. Validation CI stricte de la disponibilité des 120 scans Nuit Noire avant toute construction/signature de l'APK.
+5. Premier contrôle exhaustif Nuit Noire : détection des quinze `404` TCGdex continus sur `075–089`.
+6. Ajout des quinze scans français de remplacement dans l'APK, puis second contrôle exhaustif : détection du logo TCGdex `me05` lui aussi en `404`.
+7. Embarquement d'un logo Nuit Noire local et suppression de ce dernier endpoint du manifeste hors ligne.
+8. Nouvelle validation complète : génération des données, quatre boosters distincts, quinze scans FR locaux, toutes les ressources Nuit Noire restantes, contrats JS, build Android, inspection APK, signature et vérification ont tous réussi.
 
 ### Passages modifiés — état précédent
 - Avant V1.0.9, le `renderProducts()` hérité de V0.8 masquait le sélecteur boutique en mode non créatif et choisissait toujours `v08HourInfo().setId` ; un clic sur une extension historique pouvait donc modifier `state.activeSet` sans modifier les produits affichés.
 - Avant V1.0.9, `v107fix.js` injectait le même sélecteur année/collection dans tous les écrans, y compris la boutique, alors que les collections antérieures à 2026 ne sont pas censées y être vendues librement.
 - Avant V1.0.9, V1.0.8 utilisait encore des URL HTTP externes dans `V108_OPENING_PACK_ART`, `V108_BINDER_ART` et dans les photos produits héritées de V1.0.6.
-- Avant V1.0.9, le manifeste hors ligne V1.0.8 ajoutait le visuel distant `packArt` et Nuit Noire demandait les scans `high.webp`, ce qui pouvait provoquer les téléchargements incomplets observés.
+- Avant V1.0.9, le manifeste hors ligne V1.0.8 ajoutait des ressources externes qui n'étaient pas nécessaires au pack hors ligne et reposait sur des endpoints TCGdex FR inexistants pour une partie de Nuit Noire.
 
 ## 2026-08-21 — V1.0.8 : boutique 2026, produits réels, offres Archive rares et changement de mode robuste
 
