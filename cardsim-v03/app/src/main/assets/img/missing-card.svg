@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 744 1039" role="img" aria-label="Scan français indisponible">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#121a25"/>
+      <stop offset="1" stop-color="#080d14"/>
+    </linearGradient>
+  </defs>
+  <rect width="744" height="1039" rx="42" fill="url(#bg)"/>
+  <rect x="22" y="22" width="700" height="995" rx="31" fill="none" stroke="#2c3b50" stroke-width="4"/>
+  <g fill="none" stroke="#65758c" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" opacity=".9">
+    <rect x="203" y="248" width="338" height="252" rx="24"/>
+    <path d="M242 453l94-102 75 71 55-53 37 39"/>
+    <circle cx="453" cy="315" r="31"/>
+    <path d="M305 584h134M270 632h204"/>
+  </g>
+  <text x="372" y="735" text-anchor="middle" fill="#e9edf4" font-family="sans-serif" font-size="42" font-weight="700">Scan FR indisponible</text>
+  <text x="372" y="790" text-anchor="middle" fill="#8d9aae" font-family="sans-serif" font-size="25">La carte reste enregistrée dans la collection.</text>
+</svg>
