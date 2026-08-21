@@ -1,5 +1,30 @@
 # Changelog — VOX Card Sim
 
+## 2026-08-21 — V1.0.9 R3 : scans Nuit Noire embarqués réellement affichés
+
+### Pourquoi
+- Les captures Android montrent que certaines cartes Nuit Noire, notamment `Albia` et `Bridjet`, étaient tirées correctement mais leur image restait cassée pendant l'ouverture.
+- Le diagnostic sur l'APK R2 a confirmé que les quinze fichiers français `075.webp` à `089.webp` étaient bien présents et valides dans `assets/img/v109/me05_cards/`.
+- La régression venait d'une ancienne couche V0.9.3 : pour toutes les cartes `me05`, elle normalisait l'image en ajoutant `/high.webp` à un chemin de base. Cette logique est correcte pour les URL TCGdex distantes, mais transformait par exemple le fichier local `img/v109/me05_cards/078.webp` en `img/v109/me05_cards/078/high.webp`, qui n'existe pas.
+- Les quinze cartes locales `075–089` pouvaient donc être touchées, même si seules certaines apparaissaient dans un booster donné.
+
+### Quoi
+- `v109hotfix.js` passe au hotfix R3.
+- Ajout d'un résolveur dédié pour les cartes Nuit Noire marquées `v109BundledFrenchScan` : il retourne directement `img/v109/me05_cards/NNN.webp` sans suffixe supplémentaire.
+- `v093Me05Image()` est enveloppé afin que les quinze scans locaux ne puissent plus être transformés en faux sous-chemins `/high.webp` ou `/low.webp`.
+- `v093RepairMe05Data()` est également enveloppé : si une ancienne couche relance l'auto-réparation plus tard, les champs `imageSmall` et `imageLarge` des quinze cartes sont immédiatement restaurés vers le fichier APK réel.
+- `cardImg()` possède enfin un garde-fou global pour que l'ouverture, le classeur, l'inventaire, les modales et le résumé utilisent toujours le fichier local correct.
+
+### Comment
+1. Extraction de l'APK R2 et contrôle des quinze ressources : `075.webp` à `089.webp` sont toutes présentes et reconnues comme images WebP valides.
+2. Reproduction du chemin fautif avec Albia (`078`) et Bridjet (`079`) : l'ancienne couche produit `img/v109/me05_cards/078/high.webp` et `.../079/high.webp`.
+3. Test R3 avec les mêmes objets : `cardImg()` et `v093Me05Image()` renvoient maintenant exactement `img/v109/me05_cards/078.webp` et `079.webp`.
+4. Vérification qu'une carte Nuit Noire distante standard conserve bien son URL `high.webp` habituelle.
+
+### Passages modifiés — état précédent
+- Avant R3, `v093Me05Image()` traitait sans distinction une URL distante TCGdex et un fichier local embarqué.
+- Avant R3, `v093RepairMe05Data()` pouvait écraser les chemins locaux injectés par V1.0.9 et recréer un chemin inexistant quelques instants plus tard.
+
 ## 2026-08-21 — V1.0.9 R2 : mode Créatif fiable et packs hors ligne 151 / Paldea / Obsidiennes / Eevee
 
 ### Pourquoi
@@ -122,7 +147,7 @@
 3. Smoke test avant modification pour confirmer que les sets legacy étaient exclus des offres du jour.
 4. Ajout d'une couche de boot indépendante afin que le sélecteur de mode soit disponible même si l'UI récente n'est pas encore chargée.
 5. Ajout d'une couche V1.0.8 additive pour verrouiller la boutique sur 2026 sans modifier les sauvegardes existantes.
-6. Validation syntaxique `node --check` et smoke tests sur la rotation 2026, la rareté des Archives, les produits 2026, l'exclusion du faux display ME2.5, le manifeste hors-ligne et l'écriture du mode cible.
+6. Validation syntaxique `node --check` et smoke tests sur la rotation 2026, la rareté des Archives, les produits 2026, l'exclusion du faux display ME2.5, le manifeste hors-ligne et le garde-fou de mode, puis produit un APK signé `VOX_CardSim_v1.0.8.apk`.
 7. Après le premier lancement de la PR, diagnostic du check V0.9.1 : les tests fonctionnels passaient, puis le workflow échouait uniquement sur ses `grep` exigeant encore la version `0.9.1`. Le workflow obsolète a donc été retiré plutôt que de conserver un faux check rouge permanent.
 
 ### Passages modifiés — état précédent
