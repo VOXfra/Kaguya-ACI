@@ -47,7 +47,7 @@ jobs:
           idx=json.loads((a/'v111_collection_index.json').read_text(encoding='utf-8'))
           s=idx['stats']
           assert idx['schema']==111 and idx['language']=='fr', idx
-          assert 'graphql' in idx['source'].lower(), idx['source']
+          assert idx['source']=='TCGdex REST enrichi', idx['source']
           assert s['discovered']>=50, s
           assert s['imported']==s['discovered'], s
           assert s['cards']>=5000, s
@@ -56,6 +56,11 @@ jobs:
           assert len(ids)==len(set(ids)), 'duplicate set ids'
           for required in ['sv03.5','sv03','sv02','me02.5','me03','me04','me05']:
               assert required in ids, required
+
+          # Le catalogue universel doit garder les collections partielles visibles,
+          # mais aucune collection ne peut disparaître silencieusement.
+          assert all(x.get('file') and x.get('contentHash') for x in idx['sets'])
+          assert all(x.get('status') in ('ready','partial') for x in idx['sets'])
 
           text=(a/'pitch_black_embed.js').read_text(encoding='utf-8')
           m=re.search(r'window\.V090_PITCH_BLACK_DATA=(.*);\s*$',text,re.S); assert m
