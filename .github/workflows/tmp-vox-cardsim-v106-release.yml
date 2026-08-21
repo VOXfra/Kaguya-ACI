@@ -1,0 +1,274 @@
+name: VOX CardSim V1.0.9 Correct Products Offline Build
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'cardsim-v03/**'
+      - '.github/workflows/tmp-vox-cardsim-v106-release.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate validated embedded card data
+        shell: bash
+        run: |
+          set -euo pipefail
+          A=cardsim-v03/app/src/main/assets
+          mkdir -p "$A/img" "$A/img/v109" "$A/img/v109/me05_cards"
+          python cardsim-v03/tools/generate_v110_data.py
+          python cardsim-v03/tools/generate_v105_catalog.py
+
+          curl -Lf --retry 3 'https://archives.bulbagarden.net/media/upload/thumb/1/1f/S6a_Eevee_Heroes_Logo.png/1200px-S6a_Eevee_Heroes_Logo.png' -o "$A/img/eevee_logo.png"
+          curl -Lf --retry 3 'https://tcgplayer-cdn.tcgplayer.com/product/565350_400w.jpg' -o "$A/img/eevee_booster.jpg"
+          curl -Lf --retry 3 'https://tcgplayer-cdn.tcgplayer.com/product/565351_400w.jpg' -o "$A/img/eevee_box.jpg"
+          curl -Lf --retry 3 'https://d2j6dbq0eux0bg.cloudfront.net/images/51000416/4098527801.jpg' -o "$A/img/binder_151.jpg"
+          curl -Lf --retry 3 'https://matraws.dk/cdn/shop/files/ultra-pro-charizard-pokemon-obsidian-flames-9-pocket-portfolio-mappe-kortspil-643.webp?crop=center&height=1200&v=1707377473&width=1200' -o "$A/img/binder_obsidian.webp"
+          curl -Lf --retry 3 'https://kawaiicollector.com.au/cdn/shop/files/Paldea-Evolved-Portfolio-Large_1200x1200.png?v=1693561546' -o "$A/img/binder_paldea.png"
+          curl -Lf --retry 3 'https://s3-ap-northeast-1.amazonaws.com/jiraffe-magi/prod/images/item/9644364/1.jpg' -o "$A/img/binder_eevee.jpg"
+
+      - name: Pin real 2026 product artwork in APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          D=cardsim-v03/app/src/main/assets/img/v109
+          UA='Mozilla/5.0 VOX-CardSim/1.0.9'
+          get(){ curl -Lf --retry 4 --retry-all-errors -A "$UA" "$1" -o "$D/$2"; test -s "$D/$2"; }
+
+          get 'https://www.guizettefamily.com/wp-content/uploads/2025/11/booster-EV2.5-.png' me025_booster.png
+          get 'https://lootboxjeux.fr/cdn/shop/files/ME2-5_Bundle_FR.webp?v=1774695267&width=640' me025_bundle.webp
+          get 'https://www.destocktcg.fr/assets/uploads/products/etb-heros-transcendants-coffret-dresseur-delite-pokemon-fr-me2-5-6920c6bc4d1eb.jpg' me025_etb.jpg
+          get 'https://ultrapro.com/cdn/shop/files/16823_9PktPort_PKM_ME2-Spread.png?v=1770245317&width=900' me025_binder.png
+
+          get 'https://www.ultrajeux.com/images/produits/normal/32272-cartes-a-collectionner-pokemon-me03-mega-evolution-equilibre-parfait.jpg' me03_booster.jpg
+          get 'https://www.pokezenith.com/1226-large_default/pokemon-bundle-de-6-boosters-me03-equilibre-parfait.jpg' me03_bundle.jpg
+          get 'https://www.comptoir-tcg.fr/cdn/shop/files/etb-equilibre-parfait-coffret-dresseur-delite-pokemon-fr-me03-me3-69a1c9477a52e.jpg?v=1773936847&width=1445' me03_etb.jpg
+          get 'https://kuro-star.com/cdn/shop/files/ME03-Display1site.webp?v=1772416349&width=416' me03_display.webp
+          get 'https://ultrapro.com/cdn/shop/files/16724_Port_9PKT_PKM_ME03_Spread_8c227ea2-7b85-4064-8d1e-6e6e501a5665.jpg?v=1775585796&width=900' me03_binder.jpg
+
+          get 'https://shop.cmay-collections.com/cdn/shop/files/booster-pokemon-me04-chaos-ascendant-fr.png?v=1774942680&width=1024' me04_booster.png
+          get 'https://cdn1.philibertnet.com/857453-thickbox_default/pokemon-me04-chaos-ascendant-bundle-6-boosters-0196214140356.jpg' me04_bundle.jpg
+          get 'https://www.destocktcg.fr/assets/uploads/products/coffret-dresseur-delite-pokemon-chaos-ascendant-etb-mega-evolution-me04-me4-69d76624c4008.jpg' me04_etb.jpg
+          get 'https://www.pokezenith.com/img/p/1/4/2/1/1421.jpg' me04_display.jpg
+          get 'https://ultrapro.com/cdn/shop/files/16726_Port_9PKT_PKM_ME04_Spread.png?v=1781223280&width=900' me04_binder.png
+
+          get 'https://www.destocktcg.fr/assets/uploads/products/booster-me05-mega-evolution-nuit-noire-pokemon-fr-me5-6a03178ac0c68.jpg' me05_booster.jpg
+          get 'https://www.destocktcg.fr/assets/uploads/products/bundle-me05-lot-de-6-boosters-nuit-noire-pokemon-fr-mega-evolution-me5-6a031a8a49231.jpg' me05_bundle.jpg
+          get 'https://www.bcd-jeux.fr/85783-large_default/pokemon-me05-nuit-noire-etb-zarude-pokemon.jpg' me05_etb.jpg
+          get 'https://cdn1.philibertnet.com/864878/pokemon-me05-nuit-noire-boite-de-36-boosters-2100001360900.jpg' me05_display.jpg
+          get 'https://www.princedist.com/cdn/shop/files/bnb_64e0c1de-ddc6-40e8-b88f-94e7f5100bfa_1024x1024.png?v=1778183927' me05_build.png
+          get 'https://ultrapro.com/cdn/shop/files/16922_9PKTPort_PKM_ME05_Spread.png?v=1784320169&width=900' me05_binder.png
+          get 'https://hikarudistribution.com/cdn/shop/articles/logo_nuit_noire_ME05_f1773200-bc42-4c73-a268-2a5c10ae4ecf.png?v=1777881909&width=1600' me05_logo.png
+
+          # Une même image de booster pour plusieurs extensions est désormais un échec de build.
+          test "$(sha256sum "$D"/me025_booster.png "$D"/me03_booster.jpg "$D"/me04_booster.png "$D"/me05_booster.jpg | awk '{print $1}' | sort -u | wc -l)" -eq 4
+          for f in "$D"/*; do [ -d "$f" ] && continue; file "$f" | grep -Eiq 'image|bitmap|webp|jpeg|png'; done
+
+      - name: Pin the 15 missing French Nuit Noire scans
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,re,urllib.request,urllib.parse
+          from pathlib import Path
+
+          A=Path('cardsim-v03/app/src/main/assets')
+          D=A/'img'/'v109'/'me05_cards';D.mkdir(parents=True,exist_ok=True)
+          handles={
+            75:'pkm-me05-075-cloche-tenebreuse',76:'pkm-me05-076-carriere-fossile',
+            77:'pkm-me05-077-combat-final-de-gladio',78:'pkm-me05-078-albia',
+            79:'pkm-me05-079-bridjet',80:'pkm-me05-080-vitalite-d-ondine',
+            81:'pkm-me05-081-sbire-du-clan-derouillard',82:'pkm-me05-082-bombe-geniale',
+            83:'pkm-me05-083-energie-obscur-sombre',84:'pkm-me05-084-energie-electrique-voltaique',
+            85:'pkm-me05-085-mimantis',86:'pkm-me05-086-carmadura',
+            87:'pkm-me05-087-poissirene',88:'pkm-me05-088-oratoria',89:'pkm-me05-089-elecsprint',
+          }
+          headers={'User-Agent':'Mozilla/5.0 VOX-CardSim/1.0.9','Accept':'application/json,image/avif,image/webp,image/png,image/jpeg,*/*'}
+          def request(url):
+              return urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=35)
+          def product_image(data):
+              for x in [data.get('featured_image')]+list(data.get('images') or []):
+                  if isinstance(x,dict):x=x.get('src') or x.get('url')
+                  if isinstance(x,str) and x.strip():return 'https:'+x.strip() if x.strip().startswith('//') else x.strip()
+              raise RuntimeError('product image missing')
+
+          local={}
+          for n,handle in handles.items():
+              with request(f'https://lorenzone.fr/products/{handle}.js') as r:data=json.loads(r.read().decode('utf-8'))
+              src=product_image(data)
+              with request(src) as r:
+                  blob=r.read();ctype=(r.headers.get('Content-Type') or '').split(';')[0].lower()
+              if len(blob)<12000:raise RuntimeError(f'{n}: invalid scan ({len(blob)} bytes)')
+              ext={'image/png':'png','image/webp':'webp','image/jpeg':'jpg','image/jpg':'jpg'}.get(ctype)
+              if not ext:
+                  path=urllib.parse.urlparse(src).path.lower();ext='png' if path.endswith('.png') else 'webp' if path.endswith('.webp') else 'jpg'
+              rel=f'img/v109/me05_cards/{n:03d}.{ext}';(A/rel).write_bytes(blob);local[n]=rel
+
+          p=A/'pitch_black_embed.js';text=p.read_text(encoding='utf-8')
+          m=re.search(r'window\.V090_PITCH_BLACK_DATA=(.*);\s*$',text,re.S)
+          if not m:raise RuntimeError('pitch_black payload missing')
+          payload=json.loads(m.group(1));cards=payload.get('cards') or []
+          if len(cards)!=120:raise RuntimeError(f'Nuit Noire card count {len(cards)}/120')
+          touched=[]
+          for c in cards:
+              n=int(str(c.get('localId') or '0').lstrip('0') or '0')
+              if n in local:
+                  c['image']='';c['imageSmall']=local[n];c['imageLarge']=local[n];c['v109BundledFrenchScan']=True;touched.append(n)
+          if sorted(touched)!=list(range(75,90)):raise RuntimeError(f'fallback patch mismatch {touched}')
+          p.write_text("'use strict';\nwindow.V090_PITCH_BLACK_DATA="+json.dumps(payload,ensure_ascii=False,separators=(',',':'))+';\n',encoding='utf-8')
+          (A/'v109_me05_scan_fallbacks.json').write_text(json.dumps({str(k):v for k,v in sorted(local.items())},ensure_ascii=False,indent=2),encoding='utf-8')
+          PY
+          test "$(find cardsim-v03/app/src/main/assets/img/v109/me05_cards -type f | wc -l)" -eq 15
+          for f in cardsim-v03/app/src/main/assets/img/v109/me05_cards/*; do file "$f" | grep -Eiq 'image|bitmap|webp|jpeg|png'; done
+
+      - name: Validate every Nuit Noire offline resource
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,re,time,urllib.request
+          from concurrent.futures import ThreadPoolExecutor,as_completed
+          from pathlib import Path
+
+          A=Path('cardsim-v03/app/src/main/assets')
+          text=(A/'pitch_black_embed.js').read_text(encoding='utf-8')
+          m=re.search(r'window\.V090_PITCH_BLACK_DATA=(.*);\s*$',text,re.S);assert m
+          cards=json.loads(m.group(1))['cards'];assert len(cards)==120
+          local=[];remote=[]
+          for c in cards:
+              if c.get('v109BundledFrenchScan'):
+                  p=A/c['imageLarge'];assert p.is_file() and p.stat().st_size>12000,(c['localId'],p);local.append(int(c['localId']))
+              else:
+                  base=str(c.get('image') or '').rstrip('/');assert base.startswith('https://'),(c['localId'],base);remote.append(base+'/high.webp')
+          assert local==list(range(75,90)),local
+          assert len(remote)==105,len(remote)
+          # Logo et produits sont locaux dans l'APK. Seuls scans HD restants + énergies passent par HTTP.
+          for n in range(1,9):
+              remote += [f'https://images.pokemontcg.io/sve/{n}_hires.png',f'https://images.pokemontcg.io/sve/{n}.png']
+
+          def check(url):
+              last=None
+              for i in range(4):
+                  try:
+                      req=urllib.request.Request(url,headers={'User-Agent':'VOX-CardSim/1.0.9','Range':'bytes=0-2047'})
+                      with urllib.request.urlopen(req,timeout=25) as r:
+                          if 200<=r.status<300 and r.read(1):return
+                  except Exception as e:last=e;time.sleep(.35*(i+1))
+              raise RuntimeError(f'{url}: {last}')
+
+          bad=[]
+          with ThreadPoolExecutor(max_workers=16) as ex:
+              fs=[ex.submit(check,u) for u in remote]
+              for f in as_completed(fs):
+                  try:f.result()
+                  except Exception as e:bad.append(str(e))
+          if bad:raise RuntimeError('Nuit Noire offline failures:\n'+'\n'.join(sorted(bad)))
+          print(f'Nuit Noire offline HD OK: 15 scans FR embarqués + {len(remote)} ressources réseau validées')
+          PY
+
+      - name: Validate V1.0.9 source and runtime contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          A=cardsim-v03/app/src/main/assets
+          for f in "$A"/*.js; do node --check "$f"; done
+          grep -q 'versionCode = 35' cardsim-v03/app/build.gradle.kts
+          grep -q 'versionName = "1.0.9"' cardsim-v03/app/build.gradle.kts
+          grep -q '<script src="v108boot.js"></script><script src="v109boot.js"></script>' "$A/index.html"
+          grep -q "V109_VERSION='1.0.9'" "$A/v109fix.js"
+          grep -q "V109_ME05_LOGO='img/v109/me05_logo.png'" "$A/v109fix.js"
+          grep -q 'COLLECTIONS 2026' "$A/v109fix.js"
+          grep -q "base+'/high.webp'" "$A/v109fix.js"
+          grep -q 'v109BundledFrenchScan' "$A/pitch_black_embed.js"
+
+          python - <<'PY'
+          from pathlib import Path
+          q=Path('cardsim-v03/app/src/main/assets/v109fix.js').read_text(encoding='utf-8')
+          assert "'me02.5':{pack:'img/v109/me025_booster.png'" in q
+          assert "'me03':{pack:'img/v109/me03_booster.jpg'" in q
+          assert "'me04':{pack:'img/v109/me04_booster.png'" in q
+          assert "'me05':{pack:'img/v109/me05_booster.jpg'" in q
+          assert "renderProducts=function()" in q and 'v109ShopSet()' in q
+          assert "state.activeSet==='me05'" in q and 'V109_ME05_LOGO' in q
+          assert 'META_BASE' not in q[q.index("v05OfflineManifest=function(setId)"):]
+          assert "base+'/high.webp'" in q[q.index("v05OfflineManifest=function(setId)"):]
+          print('V1.0.9 source contracts OK')
+          PY
+
+      - name: Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          S="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"; test -x "$S"
+          if [ ! -d "$ANDROID_HOME/platforms/android-35" ] || [ ! -d "$ANDROID_HOME/build-tools/35.0.0" ]; then
+            yes | "$S" --licenses >/dev/null || true
+            "$S" 'platforms;android-35' 'build-tools;35.0.0'
+          fi
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+          cache-read-only: true
+          cache-cleanup: on-success
+
+      - name: Clean release build without Gradle cache
+        working-directory: cardsim-v03
+        run: |
+          rm -rf app/build .gradle
+          gradle clean :app:assembleRelease --no-daemon --no-build-cache --rerun-tasks
+
+      - name: Inspect unsigned APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=cardsim-v03/app/build/outputs/apk/release/app-release-unsigned.apk; test -f "$APK"
+          for f in v108boot.js v108fix.js v109boot.js v109fix.js v105_catalog_embed.js; do unzip -l "$APK" | grep -q "assets/$f"; done
+          for f in me025_booster.png me03_booster.jpg me04_booster.png me05_booster.jpg me05_build.png me05_binder.png me05_logo.png; do unzip -l "$APK" | grep -q "assets/img/v109/$f"; done
+          test "$(unzip -l "$APK" | grep -c 'assets/img/v109/me05_cards/')" -eq 15
+          unzip -p "$APK" assets/v109fix.js | grep -q "V109_VERSION='1.0.9'"
+          unzip -p "$APK" assets/v109fix.js | grep -q "base+'/high.webp'"
+          unzip -p "$APK" assets/pitch_black_embed.js | grep -q 'v109BundledFrenchScan'
+          SIZE=$(unzip -p "$APK" assets/v105_catalog_embed.js | wc -c); test "$SIZE" -gt 1000000
+
+      - name: Restore permanent signing key
+        uses: actions/download-artifact@v4
+        with:
+          name: VOX-CardSim-signing-key-v04-baseline
+          path: ${{ runner.temp }}/signing
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 32137945543
+
+      - name: Sign and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          SP="$(sed -n 's/^Store password: //p' "$RUNNER_TEMP/signing/signing-info.txt")"
+          KP="$(sed -n 's/^Key password: //p' "$RUNNER_TEMP/signing/signing-info.txt")"
+          OUT="$RUNNER_TEMP/VOX_CardSim_v1.0.9.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$RUNNER_TEMP/signing/vox-cardsim-release.jks" --ks-key-alias vox-cardsim --ks-pass "pass:$SP" --key-pass "pass:$KP" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$OUT" cardsim-v03/app/build/outputs/apk/release/app-release-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$OUT"
+          sha256sum "$OUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VOX-CardSim-v1.0.9-correct-products-offline
+          path: ${{ runner.temp }}/VOX_CardSim_v1.0.9.apk
+          if-no-files-found: error

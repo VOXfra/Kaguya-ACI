@@ -1,0 +1,35 @@
+/* V0.5 — stronger foil, offline packs, sorting, seller profile */
+
+/* Holo renderer */
+.v05-holo{--hx:34%;--hy:26%;position:relative;overflow:hidden;isolation:isolate}
+.v05-holo>img{position:relative;z-index:1}
+.v05-holo .holo-spectrum,.v05-holo .holo-glare,.v05-holo .holo-texture{position:absolute;inset:-2%;z-index:2;pointer-events:none;border-radius:inherit;transition:background-position .08s linear,opacity .15s linear;transform:translateZ(0)}
+.v05-holo .holo-spectrum{background:
+ linear-gradient(118deg,transparent 12%,rgba(255,55,105,.58) 25%,rgba(255,221,64,.64) 37%,rgba(67,255,196,.62) 49%,rgba(75,154,255,.65) 61%,rgba(188,83,255,.62) 73%,transparent 88%),
+ conic-gradient(from 215deg at var(--hx) var(--hy),rgba(255,255,255,.08),rgba(255,66,135,.38),rgba(255,235,89,.35),rgba(67,255,211,.38),rgba(67,145,255,.38),rgba(207,81,255,.38),rgba(255,255,255,.08));
+ background-size:185% 185%,155% 155%;background-position:calc(var(--hx) * .55) calc(var(--hy) * .55),var(--hx) var(--hy);mix-blend-mode:color-dodge;opacity:.78;filter:saturate(1.6) contrast(1.12);animation:holoPulse 2.8s ease-in-out infinite alternate}
+.v05-holo .holo-glare{background:radial-gradient(circle at var(--hx) var(--hy),rgba(255,255,255,.92) 0%,rgba(255,255,255,.36) 11%,rgba(170,225,255,.15) 24%,transparent 46%);mix-blend-mode:screen;opacity:.78}
+.v05-holo .holo-texture{background:repeating-linear-gradient(122deg,transparent 0 7px,rgba(255,255,255,.18) 8px,transparent 10px),repeating-radial-gradient(circle at 30% 35%,rgba(255,255,255,.28) 0 1px,transparent 1.7px 8px);mix-blend-mode:overlay;opacity:.16}
+.v05-holo-reverse .holo-spectrum{opacity:.58;filter:saturate(1.8) contrast(1.18)}
+.v05-holo-reverse .holo-glare{opacity:.64}
+.v05-holo-textured .holo-spectrum{opacity:.88;filter:saturate(1.8) contrast(1.2)}
+.v05-holo-textured .holo-texture{opacity:.43;background:repeating-linear-gradient(34deg,rgba(255,255,255,.2) 0 1px,transparent 1px 6px),repeating-linear-gradient(146deg,rgba(255,255,255,.12) 0 1px,transparent 1px 8px)}
+.v05-holo-cosmos .holo-spectrum{opacity:.42}
+.v05-holo-cosmos .holo-texture{opacity:.8;background:radial-gradient(circle at 18% 22%,#fff 0 1px,transparent 2px),radial-gradient(circle at 70% 32%,#fff 0 1.5px,transparent 3px),radial-gradient(circle at 42% 76%,#fff 0 1px,transparent 2.5px),radial-gradient(circle at 82% 68%,#fff 0 1px,transparent 2.5px);background-size:71px 83px,113px 97px,89px 127px,139px 111px;mix-blend-mode:screen}
+@keyframes holoPulse{from{opacity:.6;filter:saturate(1.35) brightness(.95)}to{opacity:.9;filter:saturate(1.9) brightness(1.18)}}
+.modal-visual.v05-holo{border-radius:18px}
+.modal-visual.v05-holo .holo-spectrum,.modal-visual.v05-holo .holo-glare,.modal-visual.v05-holo .holo-texture{inset:0}
+
+/* Offline settings */
+.settings-divider{height:1px;background:#293544;margin:22px 0 18px}.offline-settings h3{font-size:16px;margin:8px 0 4px}.offline-settings>p{font-size:10px;line-height:1.5;color:var(--muted);margin:0 0 10px}.offline-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid #202b39}.offline-row strong,.offline-row small{display:block}.offline-row strong{font-size:12px}.offline-row small{font-size:9px;color:var(--muted);margin-top:4px;line-height:1.35}.offline-row button{flex:none;min-width:88px}
+
+/* Seller profile */
+.profile-help{color:var(--muted);font-size:10px;line-height:1.5;margin:0 0 15px}.profile-field{display:block;font-size:10px;font-weight:800;color:#aeb9c8;margin:12px 0}.profile-field input{display:block;width:100%;box-sizing:border-box;margin-top:6px;background:#0b1118;color:#fff;border:1px solid #2a3748;border-radius:12px;padding:12px;font:inherit;font-size:12px;outline:none}.profile-field input:focus{border-color:#d7a72e}.avatar-picker{display:flex;gap:7px;flex-wrap:wrap;margin-top:7px}.avatar-picker button{width:38px;height:38px;border-radius:11px;border:1px solid #293748;background:#111925;color:#fff;font-size:17px}.avatar-picker button.active{border-color:#e2b342;box-shadow:0 0 0 2px #e2b34230;background:#231d10}.form-error{display:block;color:#ff7d7d;margin-top:9px;min-height:14px}.create-profile-card{text-align:center;padding:26px 18px}.create-profile-card h3{margin:10px 0 4px}.create-profile-card p{color:var(--muted);font-size:10px;line-height:1.5;max-width:310px;margin:0 auto 14px}.profile-placeholder{width:58px;height:58px;border-radius:50%;display:grid;place-items:center;margin:auto;background:#151f2b;border:1px dashed #53647a;font-size:27px;color:#d9b550}.profile-emoji{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:#17202c;border:1px solid #314052;font-size:19px;flex:none}.profile-emoji.big{width:48px;height:48px;font-size:24px}.seller-profile-card{gap:12px}.seller-profile-card>div{flex:1}.seller-profile-card>button{margin-left:auto}
+
+/* Inventory sorting */
+.inventory-sort{display:flex;align-items:center;justify-content:flex-end;gap:9px;margin:4px 0 11px}.inventory-sort span{font-size:9px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:900}.inventory-sort select{appearance:none;background:#111923;color:#dce4ee;border:1px solid #2a3748;border-radius:11px;padding:10px 31px 10px 11px;font-size:10px;font-weight:800;background-image:linear-gradient(45deg,transparent 50%,#8492a6 50%),linear-gradient(135deg,#8492a6 50%,transparent 50%);background-position:calc(100% - 16px) 14px,calc(100% - 11px) 14px;background-size:5px 5px;background-repeat:no-repeat}.inventory-card-copy small{display:block;color:#9eacbd;font-size:9px;margin-top:4px}.energy-row{opacity:.9}
+
+/* Market filter chips can now hold 3 sets */
+.market-filter{overflow-x:auto;display:flex!important;flex-wrap:nowrap!important;scrollbar-width:none}.market-filter::-webkit-scrollbar{display:none}.market-filter button{white-space:nowrap;flex:none}
+
+@media(max-width:470px){.offline-row{align-items:flex-start}.offline-row button{min-width:82px}.inventory-sort{justify-content:space-between}.inventory-sort select{max-width:225px}.seller-profile-card{align-items:center}}
