@@ -93,16 +93,26 @@ renderProducts=function(){
 const v109RenderSetSwitchesBase=renderSetSwitches;
 renderSetSwitches=function(){const r=v109RenderSetSwitchesBase();v109RenderShopSwitch();return r};
 
-/* Nettoyage du manifeste hors-ligne : les images produit V1.0.9 sont locales dans
-   l'APK. On retire donc les anciennes URL V1.0.8. Pour Nuit Noire, les scans
-   offline utilisent la variante low.webp : plusieurs high.webp TCGdex renvoient
-   une erreur alors que les scans low correspondants sont disponibles. */
+/* Les données, prix et produits Nuit Noire sont déjà embarqués. Le vieux manifeste
+   V0.5 ajoutait encore META_BASE/undefined, les fiches API et des photos produits
+   distantes : autant de téléchargements inutiles et fragiles. V1.0.9 construit donc
+   un manifeste ME05 minimal : logo + scans non embarqués + énergies. Les 15 scans
+   FR absents de TCGdex sont épinglés dans l'APK au build et ont une imageSmall locale. */
 const v109OfflineManifestBase=v05OfflineManifest;
+function v109Https(out,u){u=String(u||'').trim();if(/^https:\/\//i.test(u))out.add(u)}
 v05OfflineManifest=function(setId){
+ if(setId==='me05'){
+  const cfg=SETS.me05,set=state.sets.me05,cards=cardsFor('me05');if(!cfg||!set||cards.length!==120)throw new Error(`me05-not-ready-${cards.length}`);
+  const urls=new Set(),logo=String(set.logo||'').trim();if(logo)v109Https(urls,/\.(webp|png|jpe?g)(\?|$)/i.test(logo)?logo:logo+'.webp');
+  for(const c of cards){
+   const base=String(c?.image||'').trim();if(base)v109Https(urls,/\.(webp|png|jpe?g)(\?|$)/i.test(base)?base:base+'/low.webp');
+   else v109Https(urls,c?.imageSmall||c?.imageLarge||'');
+  }
+  for(const e of ENERGY||[]){v109Https(urls,e.image);v109Https(urls,e.thumb)}
+  return [...urls];
+ }
  let arr=v109OfflineManifestBase(setId)||[];const old=typeof V108_OPENING_PACK_ART==='object'?new Set(Object.values(V108_OPENING_PACK_ART)):new Set();
- arr=arr.filter(u=>/^https:\/\//i.test(String(u||''))&&!old.has(u));
- if(setId==='me05')arr=arr.map(u=>String(u).replace('/high.webp','/low.webp'));
- return [...new Set(arr)];
+ arr=arr.filter(u=>/^https:\/\//i.test(String(u||''))&&!old.has(u));return [...new Set(arr)];
 };
 
 const v109Style=document.createElement('style');v109Style.textContent=`
