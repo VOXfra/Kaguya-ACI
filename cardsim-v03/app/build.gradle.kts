@@ -1,4 +1,4 @@
-// VOX Card Sim V1.1.0 — import universel, hors-ligne persistant et grading physique
+// VOX Card Sim V1.1.1 — catalogue complet Android + import universel + hors-ligne persistant
 plugins {
     id("com.android.application")
     id("com.google.gms.google-services")
@@ -12,8 +12,8 @@ android {
         applicationId = "com.vox.cardsim"
         minSdk = 26
         targetSdk = 35
-        versionCode = 36
-        versionName = "1.1.0"
+        versionCode = 37
+        versionName = "1.1.1"
     }
 
     compileOptions {
