@@ -1,16 +1,21 @@
 'use strict';
-/* VOX Card Sim V1.1.6 — correctif ciblé Célébrations.
+/* VOX Card Sim V1.1.6 — derniers correctifs de collation.
 
-   Le moteur V1.1.6 interdit volontairement les doublons dans les boosters
-   classiques pour éviter des collations impossibles. Célébrations est un cas
-   particulier : son mini-set principal est distribué en boosters de quatre cartes
-   et une même carte du set principal peut apparaître plusieurs fois dans un pack.
-   Le verrou global d'unicité vidait donc parfois le dernier pool.
-
-   On ne relâche PAS l'unicité des autres extensions. Seule cette fonction utilise
-   des tirages avec remise, conformément à la nature du booster Célébrations.
+   1. Quelques entrées TCGdex appartiennent à une série physique mais ne sont pas
+      des extensions à booster aléatoire : Bienvenue à Kalos (xy0), Wizards Black
+      Star Promos (basep) et W Promotional (wp). Elles restent dans le catalogue
+      de cartes mais ne doivent jamais recevoir un générateur de booster.
+   2. Célébrations est un mini-set de quatre cartes où des doublons du set principal
+      peuvent réellement coexister. On autorise donc le tirage avec remise pour CE
+      booster uniquement, sans relâcher l'unicité des autres familles.
 */
 (function(){
+ try{
+  if(typeof V116_DATA==='object'&&V116_DATA?.sets){
+   for(const sid of ['xy0','basep','wp'])delete V116_DATA.sets[sid];
+  }
+ }catch(e){console.warn('V1.1.6 non-booster exclusion',e)}
+
  if(typeof v116Celebrations!=='function')return;
  v116Celebrations=function(setId,profile){
   const p=v116Pools(setId),out=[],r=profile.rates||{},base=p.all.filter(Boolean);
