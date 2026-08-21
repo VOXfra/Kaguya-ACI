@@ -27,7 +27,7 @@ function v108BundleProduct(cfg){return cfg?.products?.find(p=>Number(p.opens)===
 const V108_OPENING_PACK_ART={
  'me02.5':'https://www.hamacards.com/wp-content/uploads/booster_me2.5_2.webp',
  'me03':'https://www.mondes-fantastiques.com/43376-large_default/pokemon-equilibre-parfait-booster.jpg',
- 'me04':'https://www.bcd-jeux.fr/83735-pdt_771/pokemon-me04-chaos-ascendant-booster-a-lunite-pokemon.jpg',
+ 'me04':'https://www.bcd-jeux.fr/83735-pdt_771/pokemon-me04-chaos-ascendant-booster-a-l-unite-pokemon.jpg',
  'me05':'https://www.agorajeux.com/57889-large_default/pokemon-me05-booster-nuit-noire.jpg'
 };
 const V108_BINDER_ART={
