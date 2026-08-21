@@ -47,6 +47,7 @@ public class MainActivity extends Activity {
 
     private WebView web;
     private OfflineBridge offlineBridge;
+    private OfflineQueueBridge offlineQueueBridge;
     private OnlineBridge onlineBridge;
     private String pendingExportJson;
 
@@ -64,8 +65,10 @@ public class MainActivity extends Activity {
         web.getSettings().setAllowUniversalAccessFromFileURLs(true);
 
         offlineBridge = new OfflineBridge();
+        offlineQueueBridge = new OfflineQueueBridge(this);
         onlineBridge = new OnlineBridge(this, web);
         web.addJavascriptInterface(offlineBridge, "VOXNative");
+        web.addJavascriptInterface(offlineQueueBridge, "VOXOffline");
         web.addJavascriptInterface(onlineBridge, "VOXOnline");
         web.setWebViewClient(new CacheWebViewClient());
         web.setWebChromeClient(new WebChromeClient());
