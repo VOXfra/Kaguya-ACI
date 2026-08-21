@@ -1,0 +1,173 @@
+name: VOX CardSim V1.1.0 Universal Catalog Build
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'cardsim-v03/**'
+      - '.github/workflows/tmp-vox-cardsim-v106-release.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate and validate Card Sim release data
+        shell: bash
+        run: |
+          set -euo pipefail
+          A=cardsim-v03/app/src/main/assets
+          mkdir -p "$A/img" "$A/img/v109" "$A/img/v109/me05_cards"
+
+          python cardsim-v03/tools/generate_v110_data.py
+          python cardsim-v03/tools/generate_v105_catalog.py
+          python cardsim-v03/tools/import_all_collections_release.py --lang fr
+          python cardsim-v03/tools/fetch_release_assets.py
+
+          for f in "$A"/*.js; do node --check "$f"; done
+          python -m py_compile \
+            cardsim-v03/tools/import_all_collections.py \
+            cardsim-v03/tools/import_all_collections_release.py \
+            cardsim-v03/tools/fetch_release_assets.py
+
+          python - <<'PY'
+          import json,re
+          from pathlib import Path
+          a=Path('cardsim-v03/app/src/main/assets')
+          idx=json.loads((a/'v111_collection_index.json').read_text(encoding='utf-8'))
+          s=idx['stats']
+          assert idx['schema']==111 and idx['language']=='fr', idx
+          assert 'graphql' in idx['source'].lower(), idx['source']
+          assert s['discovered']>=50, s
+          assert s['imported']==s['discovered'], s
+          assert s['cards']>=5000, s
+          assert s['failed']==0, s
+          ids=[x['id'] for x in idx['sets']]
+          assert len(ids)==len(set(ids)), 'duplicate set ids'
+          for required in ['sv03.5','sv03','sv02','me02.5','me03','me04','me05']:
+              assert required in ids, required
+
+          text=(a/'pitch_black_embed.js').read_text(encoding='utf-8')
+          m=re.search(r'window\.V090_PITCH_BLACK_DATA=(.*);\s*$',text,re.S); assert m
+          cards=json.loads(m.group(1))['cards']; assert len(cards)==120
+          local=[int(c['localId']) for c in cards if c.get('v109BundledFrenchScan')]
+          assert local==list(range(75,90)), local
+          for c in cards:
+              if c.get('v109BundledFrenchScan'):
+                  p=a/c['imageLarge']; assert p.is_file() and p.stat().st_size>12000,(c['localId'],p)
+          print('Universal catalog:', s)
+          print('Nuit Noire local scan contract OK')
+          PY
+
+          grep -q 'versionCode = 36' cardsim-v03/app/build.gradle.kts
+          grep -q 'versionName = "1.1.0"' cardsim-v03/app/build.gradle.kts
+          grep -q 'androidx.work:work-runtime:2.10.1' cardsim-v03/app/build.gradle.kts
+          grep -q 'com.google.guava:listenablefuture:1.0' cardsim-v03/app/build.gradle.kts
+          grep -q 'FOREGROUND_SERVICE_DATA_SYNC' cardsim-v03/app/src/main/AndroidManifest.xml
+          grep -q 'foregroundServiceType="dataSync"' cardsim-v03/app/src/main/AndroidManifest.xml
+          grep -q 'v111_collection_index.js' "$A/index.html"
+          grep -q 'v111boot.js' "$A/index.html"
+          grep -q "V111_VERSION='1.1.0'" "$A/v111fix.js"
+          grep -q 'v111condition.js' "$A/v111boot.js"
+          grep -q 'v111conditionfix.js' "$A/v111boot.js"
+          grep -q 'v111perf.js' "$A/v111boot.js"
+          grep -q 'MISE À JOUR DISPONIBLE' "$A/v111fix.js"
+          grep -q 'Tout télécharger' "$A/v111fix.js"
+          grep -q 'Tout mettre à jour' "$A/v111fix.js"
+          grep -q 'WorkManager' cardsim-v03/app/src/main/java/com/vox/cardsim/OfflineQueueBridge.java
+          grep -q 'OfflinePackWorker' cardsim-v03/app/src/main/java/com/vox/cardsim/OfflineQueueBridge.java
+
+      - name: Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          S="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$S"
+          if [ ! -d "$ANDROID_HOME/platforms/android-35" ] || [ ! -d "$ANDROID_HOME/build-tools/35.0.0" ]; then
+            yes | "$S" --licenses >/dev/null || true
+            "$S" 'platforms;android-35' 'build-tools;35.0.0'
+          fi
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+          cache-read-only: true
+          cache-cleanup: on-success
+
+      - name: Clean release build without Gradle cache
+        working-directory: cardsim-v03
+        run: |
+          rm -rf app/build .gradle
+          gradle clean :app:assembleRelease --no-daemon --no-build-cache --rerun-tasks
+
+      - name: Inspect unsigned APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=cardsim-v03/app/build/outputs/apk/release/app-release-unsigned.apk
+          test -s "$APK"
+          for f in \
+            v108boot.js v108fix.js v109boot.js v109fix.js v109hotfix.js \
+            v111boot.js v111fix.js v111condition.js v111conditionfix.js v111perf.js \
+            v111_collection_index.js v111_collection_index.json; do
+            unzip -l "$APK" | grep -q "assets/$f"
+          done
+          for f in \
+            me025_booster.png me03_booster.jpg me04_booster.png me05_booster.jpg \
+            me05_build.png me05_binder.png me05_logo.png; do
+            unzip -l "$APK" | grep -q "assets/img/v109/$f"
+          done
+          test "$(unzip -l "$APK" | grep -c 'assets/img/v109/me05_cards/')" -eq 15
+          COUNT=$(unzip -l "$APK" | grep -c 'assets/catalog/fr/')
+          test "$COUNT" -gt 50
+          unzip -p "$APK" assets/v111fix.js | grep -q "V111_VERSION='1.1.0'"
+
+      - name: Restore permanent signing key
+        uses: actions/download-artifact@v4
+        with:
+          name: VOX-CardSim-signing-key-v04-baseline
+          path: ${{ runner.temp }}/signing
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 32137945543
+
+      - name: Sign and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          SP="$(sed -n 's/^Store password: //p' "$RUNNER_TEMP/signing/signing-info.txt")"
+          KP="$(sed -n 's/^Key password: //p' "$RUNNER_TEMP/signing/signing-info.txt")"
+          OUT="$RUNNER_TEMP/VOX_CardSim_v1.1.0.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+            --ks "$RUNNER_TEMP/signing/vox-cardsim-release.jks" \
+            --ks-key-alias vox-cardsim \
+            --ks-pass "pass:$SP" \
+            --key-pass "pass:$KP" \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out "$OUT" \
+            cardsim-v03/app/build/outputs/apk/release/app-release-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$OUT"
+          sha256sum "$OUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VOX-CardSim-v1.1.0-universal-offline
+          path: ${{ runner.temp }}/VOX_CardSim_v1.1.0.apk
+          if-no-files-found: error
