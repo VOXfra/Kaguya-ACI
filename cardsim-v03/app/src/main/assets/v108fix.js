@@ -74,6 +74,14 @@ openingPackImage=function(setId){const p=v108UnitProduct(SETS[setId]);return p?.
 const v108MarketAssetsBase=v08MarketAssets;
 v08MarketAssets=function(query){const arr=v108MarketAssetsBase(query);return Array.isArray(arr)?arr.filter(a=>a.type!=='sealed'||!productById(a.productId)?.marketHidden):arr};
 
+/* Les scans dédiés à l'ouverture doivent aussi faire partie du pack hors-ligne.
+   V1.0.7 ne connaissait que product.image et aurait sinon oublié packArt. */
+const v108OfflineManifestBase=v05OfflineManifest;
+v05OfflineManifest=function(setId){
+ const arr=v108OfflineManifestBase(setId)||[],pack=V108_OPENING_PACK_ART[setId];
+ return pack&&!arr.includes(pack)?[...arr,pack]:arr;
+};
+
 /* ---------- BOUTIQUE : rotation normale exclusivement 2026 ---------- */
 v08HourInfo=function(now=Date.now()){
  const ids=v108RetailIds(),step=typeof V105_ROTATION_MS==='number'?V105_ROTATION_MS:15*60*1000,slot=Math.floor(now/step),day=Math.floor(now/V08_DAY);
