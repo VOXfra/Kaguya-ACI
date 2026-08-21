@@ -31,6 +31,9 @@ dependencies {
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
     // WorkManager persiste les téléchargements hors ligne lorsque l'écran est éteint
-    // ou que l'Activity n'est plus au premier plan.
+    // ou que l'Activity n'est plus au premier plan. Son API Java publique expose
+    // ListenableFuture : la dépendance légère ci-dessous rend ce contrat explicite
+    // au compilateur sans embarquer l'implémentation Guava complète.
     implementation("androidx.work:work-runtime:2.10.1")
+    implementation("com.google.guava:listenablefuture:1.0")
 }
