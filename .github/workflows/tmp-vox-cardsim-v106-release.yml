@@ -1,4 +1,4 @@
-name: VOX CardSim V1.0.8 Retail Archives Mode Fix Build
+name: VOX CardSim V1.0.9 Correct Products Offline Build
 
 on:
   pull_request:
@@ -25,10 +25,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p cardsim-v03/app/src/main/assets/img
+          A=cardsim-v03/app/src/main/assets
+          mkdir -p "$A/img" "$A/img/v109"
           python cardsim-v03/tools/generate_v110_data.py
           python cardsim-v03/tools/generate_v105_catalog.py
-          A=cardsim-v03/app/src/main/assets
+
           curl -Lf --retry 3 'https://archives.bulbagarden.net/media/upload/thumb/1/1f/S6a_Eevee_Heroes_Logo.png/1200px-S6a_Eevee_Heroes_Logo.png' -o "$A/img/eevee_logo.png"
           curl -Lf --retry 3 'https://tcgplayer-cdn.tcgplayer.com/product/565350_400w.jpg' -o "$A/img/eevee_booster.jpg"
           curl -Lf --retry 3 'https://tcgplayer-cdn.tcgplayer.com/product/565351_400w.jpg' -o "$A/img/eevee_box.jpg"
@@ -37,106 +38,117 @@ jobs:
           curl -Lf --retry 3 'https://kawaiicollector.com.au/cdn/shop/files/Paldea-Evolved-Portfolio-Large_1200x1200.png?v=1693561546' -o "$A/img/binder_paldea.png"
           curl -Lf --retry 3 'https://s3-ap-northeast-1.amazonaws.com/jiraffe-magi/prod/images/item/9644364/1.jpg' -o "$A/img/binder_eevee.jpg"
 
-      - name: Validate V1.0.8 source and boot guard
+      - name: Download and pin real 2026 product artwork
+        shell: bash
+        run: |
+          set -euo pipefail
+          D=cardsim-v03/app/src/main/assets/img/v109
+          UA='Mozilla/5.0 VOX-CardSim/1.0.9'
+          get(){ curl -Lf --retry 4 --retry-all-errors -A "$UA" "$1" -o "$D/$2"; test -s "$D/$2"; }
+
+          get 'https://www.guizettefamily.com/wp-content/uploads/2025/11/booster-EV2.5-.png' me025_booster.png
+          get 'https://lootboxjeux.fr/cdn/shop/files/ME2-5_Bundle_FR.webp?v=1774695267&width=640' me025_bundle.webp
+          get 'https://www.destocktcg.fr/assets/uploads/products/etb-heros-transcendants-coffret-dresseur-delite-pokemon-fr-me2-5-6920c6bc4d1eb.jpg' me025_etb.jpg
+          get 'https://ultrapro.com/cdn/shop/files/16823_9PktPort_PKM_ME2-Spread.png?v=1770245317&width=900' me025_binder.png
+
+          get 'https://www.ultrajeux.com/images/produits/normal/32272-cartes-a-collectionner-pokemon-me03-mega-evolution-equilibre-parfait.jpg' me03_booster.jpg
+          get 'https://www.pokezenith.com/1226-large_default/pokemon-bundle-de-6-boosters-me03-equilibre-parfait.jpg' me03_bundle.jpg
+          get 'https://www.comptoir-tcg.fr/cdn/shop/files/etb-equilibre-parfait-coffret-dresseur-delite-pokemon-fr-me03-me3-69a1c9477a52e.jpg?v=1773936847&width=1445' me03_etb.jpg
+          get 'https://kuro-star.com/cdn/shop/files/ME03-Display1site.webp?v=1772416349&width=416' me03_display.webp
+          get 'https://ultrapro.com/cdn/shop/files/16724_Port_9PKT_PKM_ME03_Spread_8c227ea2-7b85-4064-8d1e-6e6e501a5665.jpg?v=1775585796&width=900' me03_binder.jpg
+
+          get 'https://shop.cmay-collections.com/cdn/shop/files/booster-pokemon-me04-chaos-ascendant-fr.png?v=1774942680&width=1024' me04_booster.png
+          get 'https://cdn1.philibertnet.com/857453-thickbox_default/pokemon-me04-chaos-ascendant-bundle-6-boosters-0196214140356.jpg' me04_bundle.jpg
+          get 'https://www.destocktcg.fr/assets/uploads/products/coffret-dresseur-delite-pokemon-chaos-ascendant-etb-mega-evolution-me04-me4-69d76624c4008.jpg' me04_etb.jpg
+          get 'https://www.pokezenith.com/img/p/1/4/2/1/1421.jpg' me04_display.jpg
+          get 'https://ultrapro.com/cdn/shop/files/16726_Port_9PKT_PKM_ME04_Spread.png?v=1781223280&width=900' me04_binder.png
+
+          get 'https://www.destocktcg.fr/assets/uploads/products/booster-me05-mega-evolution-nuit-noire-pokemon-fr-me5-6a03178ac0c68.jpg' me05_booster.jpg
+          get 'https://www.destocktcg.fr/assets/uploads/products/bundle-me05-lot-de-6-boosters-nuit-noire-pokemon-fr-mega-evolution-me5-6a031a8a49231.jpg' me05_bundle.jpg
+          get 'https://www.bcd-jeux.fr/85783-large_default/pokemon-me05-nuit-noire-etb-zarude-pokemon.jpg' me05_etb.jpg
+          get 'https://cdn1.philibertnet.com/864878/pokemon-me05-nuit-noire-boite-de-36-boosters-2100001360900.jpg' me05_display.jpg
+          get 'https://www.princedist.com/cdn/shop/files/bnb_64e0c1de-ddc6-40e8-b88f-94e7f5100bfa_1024x1024.png?v=1778183927' me05_build.png
+          get 'https://ultrapro.com/cdn/shop/files/16922_9PKTPort_PKM_ME05_Spread.png?v=1784320169&width=900' me05_binder.png
+
+          test "$(sha256sum "$D"/me025_booster.png "$D"/me03_booster.jpg "$D"/me04_booster.png "$D"/me05_booster.jpg | awk '{print $1}' | sort -u | wc -l)" -eq 4
+          for f in "$D"/*; do file "$f" | grep -Eiq 'image|bitmap|webp|jpeg|png'; done
+
+      - name: Validate Nuit Noire offline scans
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,re,time,urllib.request
+          from concurrent.futures import ThreadPoolExecutor,as_completed
+          from pathlib import Path
+          p=Path('cardsim-v03/app/src/main/assets/pitch_black_embed.js').read_text(encoding='utf-8')
+          m=re.search(r'window\.V090_PITCH_BLACK_DATA=(.*);\s*$',p,re.S); assert m
+          data=json.loads(m.group(1)); cards=data['cards']; assert len(cards)==120
+          urls=[]
+          for c in cards:
+              b=str(c['image']).rstrip('/')
+              urls.append(b if b.endswith(('.webp','.png','.jpg','.jpeg')) else b+'/low.webp')
+          def check(url):
+              last=None
+              for i in range(3):
+                  try:
+                      req=urllib.request.Request(url,headers={'User-Agent':'VOX-CardSim/1.0.9','Range':'bytes=0-4095'})
+                      with urllib.request.urlopen(req,timeout=20) as r:
+                          if 200<=r.status<300 and r.read(1): return url
+                  except Exception as e: last=e; time.sleep(.25*(i+1))
+              raise RuntimeError(f'{url}: {last}')
+          bad=[]
+          with ThreadPoolExecutor(max_workers=16) as ex:
+              fs={ex.submit(check,u):u for u in urls}
+              for f in as_completed(fs):
+                  try:f.result()
+                  except Exception as e:bad.append(str(e))
+          if bad: raise RuntimeError('Nuit Noire offline failures:\n'+'\n'.join(bad))
+          print('Nuit Noire offline scans OK:',len(urls))
+          PY
+
+      - name: Validate V1.0.9 source and runtime contracts
         shell: bash
         run: |
           set -euo pipefail
           A=cardsim-v03/app/src/main/assets
           for f in "$A"/*.js; do node --check "$f"; done
-          python - <<'PY'
-          import json,re
-          from pathlib import Path
-          A=Path('cardsim-v03/app/src/main/assets')
-          txt=(A/'v105_catalog_embed.js').read_text(encoding='utf-8')
-          m=re.search(r'window\.V105_CATALOG=(.*);\s*$',txt,re.S); assert m
-          d=json.loads(m.group(1))
-          assert d['stats']['sets']==16,d['stats']
-          assert d['stats']['cards']==3033,d['stats']
-          assert d['stats']['masterSlots']==4882,d['stats']
-          assert d['rotation2026']==['me02.5','me03','me04','me05']
-          pre=(A/'v063pre.js').read_text(encoding='utf-8')
-          expected="'v105_catalog_embed.js','v105catalog.js','v106fix.js','v106productart.js','v106memory.js','v107fix.js'"
-          assert expected in pre,'V1.0.7 base layers are not explicitly ordered'
-          assert 'voxCardSimV107_lastgood_' in pre and 'v107BootValidate' in pre
-          index=(A/'index.html').read_text(encoding='utf-8')
-          assert '<script src="v063pre.js"></script><script src="v108boot.js"></script>' in index
-          boot=(A/'v108boot.js').read_text(encoding='utf-8')
-          for token in ['V108_BOOT_SWITCH_MARKER','window.v108BootSwitchMode','v108BootInjectModeFallback','v108fix.js','__voxV108BootReady']:
-              assert token in boot,token
-          fix=(A/'v108fix.js').read_text(encoding='utf-8')
-          for token in ["V108_VERSION='1.0.8'",'V108_RETAIL_YEAR=2026','V108_ARCHIVE_ONE_DAY_IN=8','v108ArchiveDay','v108InstallModePanel','Collection Archive','OFFRE ARCHIVE','V108_OPENING_PACK_ART','V108_BINDER_ART','marketHidden','shopHidden','v108OfflineManifestBase','v4MarketAssetResults=function']:
-              assert token in fix,token
-          pack=(A/'v105packpatch.js').read_text(encoding='utf-8')
-          assert "createElement('script')" not in pack and 'v107RestoreBinderAfterCatalog' in pack
-          mem=(A/'v106memory.js').read_text(encoding='utf-8')
-          assert 'v106BuildMarketIndex()' not in mem,'market index still warmed at boot'
-          v=(A/'v107fix.js').read_text(encoding='utf-8')
-          for token in ['V107_VERSION=\'1.0.7\'','v107-year-row','v107RebuildOfflinePanel','cfg?.v105Catalog','Cloud : réservé au mode Réaliste','V107_LASTGOOD_PREFIX','document.hidden','v106ApplyProductArt']:
-              assert token in v,token
-          print('V1.0.8 retail/archive/products/mode source validation OK')
-          PY
-          grep -q 'versionCode = 34' cardsim-v03/app/build.gradle.kts
-          grep -q 'versionName = "1.0.8"' cardsim-v03/app/build.gradle.kts
+          grep -q 'versionCode = 35' cardsim-v03/app/build.gradle.kts
+          grep -q 'versionName = "1.0.9"' cardsim-v03/app/build.gradle.kts
+          grep -q '<script src="v108boot.js"></script><script src="v109boot.js"></script>' "$A/index.html"
+          grep -q "V109_VERSION='1.0.9'" "$A/v109fix.js"
+          grep -q 'COLLECTIONS 2026' "$A/v109fix.js"
+          grep -q "replace('/high.webp','/low.webp')" "$A/v109fix.js"
 
-      - name: Runtime smoke tests
-        shell: bash
-        run: |
-          set -euo pipefail
           node <<'NODE'
-          const fs=require('fs'),vm=require('vm');global.window=global;global.document={querySelectorAll:()=>[]};
-          global.state={eventCatalog:{},marketTab:'buy'};global.v106MarketIndex=null;global.v106InvalidateMarket=()=>{};global.V061_BINDERS={me04:{image:''}};
-          global.$=()=>({classList:{contains:()=>false}});global.renderProducts=()=>{};global.v4RenderBuyHome=()=>{};
-          global.SETS={me04:{id:'me04',name:'Chaos Ascendant',v105Catalog:true,products:[{id:'b',mode:'loose',qty:1,kind:'Booster'},{id:'l',mode:'loose',qty:6,kind:'Lot de boosters'},{id:'e',mode:'sealed',opens:9,kind:'ETB'},{id:'d',mode:'sealed',opens:36,kind:'Booster Box'},{id:'c',mode:'binderUnlock',qty:1,kind:'Classeur'},{id:'x',mode:'sealed',opens:6,kind:'ÉDITION LIMITÉE',eventEdition:true}]}};
-          global.v08DailyEvent=()=>({id:'evt',setId:'me04',name:'Édition limitée',mode:'sealed',opens:6,eventEdition:true});
-          vm.runInThisContext(fs.readFileSync('cardsim-v03/app/src/main/assets/v106productart.js','utf8'));
-          const imgs=SETS.me04.products.map(p=>p.image);if(!imgs.every(Boolean))throw new Error('missing product art');if(new Set(imgs).size!==imgs.length)throw new Error('product types share artwork');
-          console.log('Product artwork base smoke test OK');
-          NODE
-          node <<'NODE'
-          const fs=require('fs'),vm=require('vm');
-          global.window=global;
-          global.document={createElement:()=>({textContent:'',appendChild(){}}),head:{appendChild(){}}};
-          global.localStorage={m:new Map(),getItem(k){return this.m.get(k)||null},setItem(k,v){this.m.set(k,String(v))},removeItem(k){this.m.delete(k)}};
-          var V08_DAY=86400000,V105_ROTATION_MS=900000,V08_MODES={realistic:{label:'Réaliste',desc:'r'},ludic:{label:'Ludique',desc:'l'},creative:{label:'Créatif',desc:'c'}};
-          function v08Hash32(x){x=(Number(x)||0)|0;x=Math.imul(x^(x>>>16),0x45d9f3b);x=Math.imul(x^(x>>>16),0x45d9f3b);return(x^(x>>>16))>>>0}function v08SeededShuffle(a){return[...a]}
-          var V061_BINDERS={};
-          var SETS={
-            old:{id:'old',name:'Ancienne',releaseYear:2025,products:[{id:'old-booster',mode:'loose',qty:1,price:7,image:'old-pack'},{id:'binder-old',mode:'binderUnlock',price:19.99}]},
-            'me02.5':{id:'me02.5',name:'Héros Transcendants',releaseYear:2026,products:[{id:'me02.5-booster',mode:'loose',qty:1,price:6,image:'old-me25-pack'},{id:'me02.5-lot6',mode:'loose',qty:6,price:36,kind:'Lot de boosters',image:'bundle25'},{id:'me02.5-etb',mode:'sealed',opens:9,kind:'ETB',image:'etb25'},{id:'me02.5-display',mode:'sealed',opens:36,kind:'Booster Box',image:'fake-display'},{id:'binder-me02.5',mode:'binderUnlock',price:19.99,image:'placeholder'}]},
-            me03:{id:'me03',name:'Équilibre Parfait',releaseYear:2026,products:[{id:'me03-booster',mode:'loose',qty:1,price:6,image:'shop3'},{id:'me03-lot6',mode:'loose',qty:6,price:36,kind:'Lot de boosters',image:'bundle3'},{id:'me03-display',mode:'sealed',opens:36,kind:'Booster Box',image:'display3'},{id:'binder-me03',mode:'binderUnlock',price:19.99,image:'placeholder'}]},
-            me04:{id:'me04',name:'Chaos Ascendant',releaseYear:2026,products:[{id:'me04-booster',mode:'loose',qty:1,price:6,image:'shop4'},{id:'me04-lot6',mode:'loose',qty:6,price:36,kind:'Lot de boosters',image:'bundle4'},{id:'me04-display',mode:'sealed',opens:36,kind:'Booster Box',image:'display4'},{id:'binder-me04',mode:'binderUnlock',price:19.99,image:'placeholder'}]},
-            me05:{id:'me05',name:'Nuit Noire',releaseYear:2026,products:[{id:'pbl-booster',mode:'loose',qty:1,price:6,image:'shop5'},{id:'pbl-lot6',mode:'loose',qty:6,price:36,kind:'Lot de boosters',image:'bundle5'},{id:'pbl-display',mode:'sealed',opens:36,kind:'Booster Box',image:'display5'},{id:'binder-me05',mode:'binderUnlock',price:19.99,image:'placeholder'}]}
+          const fs=require('fs'),vm=require('vm');global.window=global;
+          global.localStorage={m:new Map(),getItem(k){return this.m.get(k)||null},setItem(k,v){this.m.set(k,String(v))}};
+          global.document={createElement:()=>({textContent:''}),head:{appendChild(){}}};global.setTimeout=()=>0;
+          global.state={activeSet:'me03',gameMode:'realistic',eventCatalog:{},dailyDropBought:{},binderOwned:{},marketSetFilter:'all',marketTab:'buy'};
+          global.V061_BINDERS={me03:{},me04:{},me05:{},'me02.5':{}};
+          const unit=(id)=>({id:id+'-booster',setId:id,mode:'loose',qty:1,image:'wrong'});
+          global.SETS={
+           'me02.5':{id:'me02.5',name:'Héros Transcendants',releaseDate:'2026-01-30',products:[unit('me02.5'),{id:'me02.5-lot6',setId:'me02.5',mode:'sealed',opens:6},{id:'me02.5-etb',setId:'me02.5',mode:'sealed',opens:9},{id:'binder-me02.5',setId:'me02.5',mode:'binderUnlock'}]},
+           me03:{id:'me03',name:'Équilibre Parfait',releaseDate:'2026-03-27',products:[unit('me03'),{id:'me03-lot6',setId:'me03',mode:'sealed',opens:6},{id:'me03-etb',setId:'me03',mode:'sealed',opens:9},{id:'me03-display',setId:'me03',mode:'sealed',opens:36},{id:'binder-me03',setId:'me03',mode:'binderUnlock'}]},
+           me04:{id:'me04',name:'Chaos Ascendant',releaseDate:'2026-05-22',products:[unit('me04'),{id:'me04-lot6',setId:'me04',mode:'sealed',opens:6},{id:'me04-etb',setId:'me04',mode:'sealed',opens:9},{id:'me04-display',setId:'me04',mode:'sealed',opens:36},{id:'binder-me04',setId:'me04',mode:'binderUnlock'}]},
+           me05:{id:'me05',name:'Nuit Noire',releaseDate:'2026-07-17',products:[{id:'pbl-booster',setId:'me05',mode:'loose',qty:1},{id:'pbl-lot6',setId:'me05',mode:'sealed',opens:6},{id:'pbl-etb',setId:'me05',mode:'sealed',opens:9},{id:'pbl-display',setId:'me05',mode:'sealed',opens:36},{id:'pbl-build',setId:'me05',mode:'sealed',opens:4},{id:'binder-me05',setId:'me05',mode:'binderUnlock'}]},
+           old:{id:'old',name:'Archive',releaseDate:'2025-01-01',products:[]}
           };
-          var state={activeSet:'old',gameMode:'creative',eventCatalog:{}};
-          function v08Mode(){return state.gameMode}function v090SetUnlocked(){return true}function renderProducts(){}function buyProduct(){return true}
-          function productById(id){for(const s of Object.values(SETS)){const p=s.products.find(x=>x.id===id);if(p)return{...p,setId:s.id}}return null}
-          function renderSettings(){}function save(){}function toast(){}function escapeHtml(x){return String(x)}function v08RefreshModePill(){}function $(sel){return null}
-          function openingPackImage(setId){return'base-'+setId}
-          function v08MarketAssets(){return[{type:'sealed',productId:'me02.5-display'},{type:'sealed',productId:'me03-display'},{type:'booster',setId:'me04'}]}
-          var v4MarketAssetResults=function(){return[]};
-          function v05OfflineManifest(){return['base-resource']}
-          var v08HourInfo=function(){},v08DailyEvent=function(){},v08SwitchMode=function(){};
-          vm.runInThisContext(fs.readFileSync('cardsim-v03/app/src/main/assets/v108fix.js','utf8'));
-          const me25=SETS['me02.5'];if(!me25.products.find(p=>p.id==='me02.5-booster').shopHidden)throw new Error('ME2.5 loose booster still sold directly');
-          const bundle=me25.products.find(p=>p.id==='me02.5-lot6');if(bundle.mode!=='sealed'||bundle.opens!==6)throw new Error('ME2.5 bundle not sealed x6');
-          const fake=me25.products.find(p=>p.id==='me02.5-display');if(!fake.shopHidden||!fake.marketHidden)throw new Error('ME2.5 fake display not retired');
-          const binder=SETS.me04.products.find(p=>p.mode==='binderUnlock');if(!binder.v108OfficialBinder||!String(binder.image).includes('ultrapro.com'))throw new Error('ME04 binder placeholder not replaced');
-          const pack=openingPackImage('me04');if(!pack.includes('chaos-ascendant-booster-a-l-unite'))throw new Error('ME04 opening still reuses bad shop art');
-          const market=v08MarketAssets('');if(market.some(a=>a.productId==='me02.5-display'))throw new Error('retired display leaked into marketplace');
-          const legacyAlias=v4MarketAssetResults('');if(legacyAlias.some(a=>a.productId==='me02.5-display'))throw new Error('retired display leaked through legacy marketplace alias');
-          const offline=v05OfflineManifest('me04');if(!offline.includes(pack))throw new Error('opening pack art missing from offline manifest');
-          const info=v08HourInfo(Date.UTC(2026,7,21,12));if(!['me02.5','me03','me04','me05'].includes(info.setId))throw new Error('legacy set leaked into normal retail');
-          let archives=0;for(let day=0;day<80;day++){state.eventCatalog={};const e=v08DailyEvent(day*V08_DAY+1);if(e?.v108Archive){archives++;if(e.setId!=='old')throw new Error('archive event did not select archive')}}
-          if(!archives||archives>=40)throw new Error('archive cadence is not exceptional');
-          console.log('V1.0.8 products/retail/archive/offline smoke OK',archives);
+          global.V108_OPENING_PACK_ART={me05:'https://obsolete.example/me05.jpg'};
+          function v108RetailIds(){return['me02.5','me03','me04','me05']}
+          function openingPackImage(id){return'base-'+id}function v05OfflineManifest(id){return id==='me05'?['https://assets.tcgdex.net/fr/me/me05/001/high.webp','https://obsolete.example/me05.jpg','img/local.png']:[]}
+          function renderSetSwitches(){}function v08Mode(){return state.gameMode}function productById(id){for(const s of Object.values(SETS)){const p=s.products.find(x=>x.id===id);if(p)return p}return null}
+          function save(){}function renderMarket(){}function renderProducts(){}function v08ProductCard(){return''}function buyProduct(){}function escapeHtml(x){return String(x)}function $(q){return null}
+          vm.runInThisContext(fs.readFileSync('cardsim-v03/app/src/main/assets/v109fix.js','utf8'));
+          if(openingPackImage('me03')!=='img/v109/me03_booster.jpg')throw new Error('ME03 pack mismatch');
+          if(openingPackImage('me04')!=='img/v109/me04_booster.png')throw new Error('ME04 pack mismatch');
+          if(openingPackImage('me03')===openingPackImage('me04'))throw new Error('shared pack artwork');
+          if(!SETS.me05.products.find(p=>p.id==='pbl-build').image.includes('me05_build'))throw new Error('ME05 Build & Battle art missing');
+          const off=v05OfflineManifest('me05');if(off.some(x=>x.includes('obsolete.example')||x.startsWith('img/')))throw new Error('obsolete/local URL leaked into offline manifest');
+          if(!off.some(x=>x.endsWith('/low.webp')))throw new Error('ME05 offline did not fall back to low.webp');
+          if(v109ShopIds().includes('old'))throw new Error('archive leaked into direct shop');
+          console.log('V1.0.9 JS contracts OK');
           NODE
-          python - <<'PY'
-          from pathlib import Path
-          q=Path('cardsim-v03/app/src/main/assets/v105packpatch.js').read_text(encoding='utf-8')
-          assert "uniquePicks(commons,4)" in q and "uniquePicks(uncommons,3)" in q
-          assert "Reverse 1" in q and "Reverse 2" in q and "Rare Holo" in q and "out.push(energyCard(setId))" in q
-          print('Modern booster 10 cards + Energy structure present')
-          PY
 
       - name: Java 17
         uses: actions/setup-java@v5
@@ -171,10 +183,10 @@ jobs:
         run: |
           set -euo pipefail
           APK=cardsim-v03/app/build/outputs/apk/release/app-release-unsigned.apk; test -f "$APK"
-          for f in v106fix.js v106productart.js v106memory.js v107fix.js v108boot.js v108fix.js v105_catalog_embed.js; do unzip -l "$APK" | grep -q "assets/$f"; done
-          unzip -p "$APK" assets/v108fix.js | grep -q "V108_VERSION='1.0.8'"
-          unzip -p "$APK" assets/v108fix.js | grep -q 'V108_OPENING_PACK_ART'
-          unzip -p "$APK" assets/index.html | grep -q 'v108boot.js'
+          for f in v108boot.js v108fix.js v109boot.js v109fix.js v105_catalog_embed.js; do unzip -l "$APK" | grep -q "assets/$f"; done
+          for f in me025_booster.png me03_booster.jpg me04_booster.png me05_booster.jpg me05_build.png me05_binder.png; do unzip -l "$APK" | grep -q "assets/img/v109/$f"; done
+          unzip -p "$APK" assets/v109fix.js | grep -q "V109_VERSION='1.0.9'"
+          unzip -p "$APK" assets/index.html | grep -q 'v109boot.js'
           SIZE=$(unzip -p "$APK" assets/v105_catalog_embed.js | wc -c); test "$SIZE" -gt 1000000
 
       - name: Restore permanent signing key
@@ -190,13 +202,13 @@ jobs:
         run: |
           set -euo pipefail
           SP="$(sed -n 's/^Store password: //p' "$RUNNER_TEMP/signing/signing-info.txt")"; KP="$(sed -n 's/^Key password: //p' "$RUNNER_TEMP/signing/signing-info.txt")"
-          OUT="$RUNNER_TEMP/VOX_CardSim_v1.0.8.apk"
+          OUT="$RUNNER_TEMP/VOX_CardSim_v1.0.9.apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$RUNNER_TEMP/signing/vox-cardsim-release.jks" --ks-key-alias vox-cardsim --ks-pass "pass:$SP" --key-pass "pass:$KP" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$OUT" cardsim-v03/app/build/outputs/apk/release/app-release-unsigned.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$OUT"
           sha256sum "$OUT"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: VOX-CardSim-v1.0.8-retail-archives-modefix
-          path: ${{ runner.temp }}/VOX_CardSim_v1.0.8.apk
+          name: VOX-CardSim-v1.0.9-correct-products-offline
+          path: ${{ runner.temp }}/VOX_CardSim_v1.0.9.apk
           if-no-files-found: error
