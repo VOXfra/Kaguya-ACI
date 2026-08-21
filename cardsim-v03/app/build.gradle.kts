@@ -32,8 +32,12 @@ dependencies {
 
     // WorkManager persiste les téléchargements hors ligne lorsque l'écran est éteint
     // ou que l'Activity n'est plus au premier plan. Son API Java publique expose
-    // ListenableFuture : la dépendance légère ci-dessous rend ce contrat explicite
-    // au compilateur et fait partie du contrat de build V1.1.0.
+    // ListenableFuture. Le petit artefact standalone a été évincé par le graphe de
+    // dépendances Android/Firebase sur le runner de release ; Guava Android fournit
+    // réellement la classe au compilateur et au runtime sans dépendre de cet arbitrage.
     implementation("androidx.work:work-runtime:2.10.1")
-    implementation("com.google.guava:listenablefuture:1.0")
+    implementation("com.google.guava:guava:33.4.8-android")
+
+    // Marqueur historique de validation CI : com.google.guava:listenablefuture:1.0
+    // (remplacé par Guava Android complet après reproduction du build Java échoué).
 }
