@@ -6,6 +6,7 @@
 - Les collections antérieures à 2026 ne doivent pas être disponibles librement dans la boutique : elles doivent rester des collections d'archive, accessibles par le Marketplace et, exceptionnellement, par une offre du jour.
 - En mode Créatif, les anciennes collections pouvaient encore exposer directement des produits historiques hérités des versions 2021/2023.
 - Après un changement de difficulté/mode, il pouvait arriver que l'utilisateur voie le vieux menu de réglages avant le chargement des couches UI récentes, ce qui supprimait temporairement le sélecteur de mode et pouvait bloquer un nouveau changement.
+- L'ancien workflow V0.9.1 se déclenchait encore sur chaque modification de `cardsim-v03/**` et échouait mécaniquement dès que la version Android n'était plus `0.9.1`, créant un faux échec CI sur les versions modernes.
 
 ### Quoi
 - Ajout de `app/src/main/assets/v108boot.js` :
@@ -22,7 +23,8 @@
   - `v08SwitchMode` délègue au commutateur de boot robuste au lieu de dépendre d'une ancienne couche UI.
 - `app/src/main/assets/index.html` charge maintenant `v108boot.js` de façon synchrone.
 - `app/build.gradle.kts` passe à `versionCode 34` / `versionName 1.0.8`.
-- Le workflow Android valide les nouveaux scripts, la restriction 2026, la cadence Archive, le garde-fou de mode et produit un APK signé `VOX_CardSim_v1.0.8.apk`.
+- Le workflow Android V1.0.8 valide les nouveaux scripts, la restriction 2026, la cadence Archive, le garde-fou de mode et produit un APK signé `VOX_CardSim_v1.0.8.apk`.
+- Suppression du workflow PR obsolète `.github/workflows/tmp-vox-cardsim-v091-energy.yml` : ses validations figées sur `versionCode 24` / `versionName 0.9.1` n'étaient plus compatibles avec les versions actuelles.
 
 ### Comment
 1. Reproduction baseline : le catalogue V1.0.5 renvoyait uniquement le classeur pour les sets `legacy` et les offres quotidiennes V1.0.5 ne choisissaient que `rotation2026`.
@@ -31,9 +33,11 @@
 4. Ajout d'une couche V1.0.8 additive pour verrouiller la boutique sur 2026 sans modifier les sauvegardes existantes.
 5. Validation syntaxique `node --check` des deux nouveaux scripts et smoke tests locaux sur la rotation 2026, la rareté des Archives et l'écriture du mode cible.
 6. Validation CI étendue avant construction/signature de l'APK.
+7. Après le premier lancement de la PR, diagnostic du check V0.9.1 : les tests fonctionnels passaient, puis le workflow échouait uniquement sur ses `grep` exigeant encore la version `0.9.1`. Le workflow obsolète a donc été retiré plutôt que de conserver un faux check rouge permanent.
 
 ### Passages modifiés — état précédent
 - Avant V1.0.8, `v105catalog.js` définissait les anciennes collections `legacy` avec seulement un classeur dans `products`, tandis que les collections historiques déjà présentes avant V1.0.5 pouvaient encore exposer leurs anciens produits en mode Créatif.
 - Avant V1.0.8, `v105catalog.js` remplaçait `v08DailyEvent()` par une sélection basée uniquement sur `v105RetailIds()`, donc une ancienne collection ne pouvait jamais revenir via l'offre du jour.
 - Avant V1.0.8, le sélecteur de mode dépendait des couches `v08ui.js` / `v084mode.js` chargées après le démarrage ; le HTML de base des Réglages ne proposait aucun changement de difficulté.
 - Avant V1.0.8, `index.html` enchaînait directement `v063pre.js` puis `v03c.js`, sans garde-fou UI synchrone entre les deux.
+- Avant V1.0.8, le workflow `tmp-vox-cardsim-v091-energy.yml` se déclenchait sur tout `cardsim-v03/**` et imposait encore `versionCode = 24` / `versionName = "0.9.1"`.
