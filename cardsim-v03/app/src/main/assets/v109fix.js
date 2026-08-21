@@ -105,9 +105,9 @@ renderSetSwitches=function(){const r=v109RenderSetSwitchesBase();v109RenderShopS
 /* Les données, prix et produits Nuit Noire sont déjà embarqués. Le vieux manifeste
    V0.5 ajoutait encore META_BASE/undefined, les fiches API et des photos produits
    distantes : autant de téléchargements inutiles et fragiles. V1.0.9 construit donc
-   un manifeste ME05 minimal : uniquement les scans non embarqués et les énergies.
-   Les 15 scans FR absents de TCGdex sont épinglés dans l'APK au build et ont une
-   imageSmall locale. Le logo Nuit Noire est lui aussi déjà embarqué. */
+   un manifeste ME05 minimal : scans HD réellement utilisés par cardImg() + énergies.
+   Les 15 scans FR absents de TCGdex sont épinglés dans l'APK au build. Le logo
+   Nuit Noire est lui aussi déjà embarqué. */
 const v109OfflineManifestBase=v05OfflineManifest;
 function v109Https(out,u){u=String(u||'').trim();if(/^https:\/\//i.test(u))out.add(u)}
 v05OfflineManifest=function(setId){
@@ -115,8 +115,8 @@ v05OfflineManifest=function(setId){
   const cfg=SETS.me05,set=state.sets.me05,cards=cardsFor('me05');if(!cfg||!set||cards.length!==120)throw new Error(`me05-not-ready-${cards.length}`);
   const urls=new Set();
   for(const c of cards){
-   const base=String(c?.image||'').trim();if(base)v109Https(urls,/\.(webp|png|jpe?g)(\?|$)/i.test(base)?base:base+'/low.webp');
-   else v109Https(urls,c?.imageSmall||c?.imageLarge||'');
+   const base=String(c?.image||'').trim();if(base)v109Https(urls,/\.(webp|png|jpe?g)(\?|$)/i.test(base)?base:base+'/high.webp');
+   else v109Https(urls,c?.imageLarge||c?.imageSmall||'');
   }
   for(const e of ENERGY||[]){v109Https(urls,e.image);v109Https(urls,e.thumb)}
   return [...urls];
