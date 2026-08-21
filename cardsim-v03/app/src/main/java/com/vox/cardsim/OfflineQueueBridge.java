@@ -20,8 +20,10 @@ import androidx.work.WorkManager;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.security.MessageDigest;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
@@ -48,6 +50,39 @@ public final class OfflineQueueBridge {
                 && activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             activity.runOnUiThread(() -> activity.requestPermissions(
                     new String[]{Manifest.permission.POST_NOTIFICATIONS}, 407));
+        }
+    }
+
+    /**
+     * Lit un fichier JSON du catalogue directement depuis les assets de l'APK.
+     *
+     * Le runtime V1.1 charge les vieilles collections à la demande pour ne pas
+     * garder 20 000+ cartes en RAM. `fetch(file:///android_asset/...)` n'est pas
+     * fiable selon les versions de WebView ; ce pont supprime cette dépendance.
+     * Les deux paramètres sont strictement validés afin qu'aucun chemin arbitraire
+     * des assets Android ne puisse être lu depuis JavaScript.
+     */
+    @JavascriptInterface
+    public String readCatalogFile(String lang, String fileName) {
+        try {
+            String language = lang == null ? "" : lang.trim().toLowerCase(Locale.US);
+            String file = fileName == null ? "" : fileName.trim();
+            if (!language.matches("^[a-z]{2}(?:-[a-z]{2})?$")) return "";
+            if (!file.matches("^[A-Za-z0-9._-]+\\.json$")) return "";
+
+            String assetPath = "catalog/" + language + "/" + file;
+            try (InputStream in = appContext.getAssets().open(assetPath);
+                 ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+                byte[] buffer = new byte[16384];
+                int n;
+                while ((n = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, n);
+                    if (out.size() > 8 * 1024 * 1024) return "";
+                }
+                return out.toString("UTF-8");
+            }
+        } catch (Exception e) {
+            return "";
         }
     }
 
