@@ -1,4 +1,4 @@
-name: VOX CardSim V1.1.4 Physical Catalog Stable Boosters
+name: VOX CardSim V1.1.5 Verified Physical Products
 
 on:
   pull_request:
@@ -22,24 +22,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Generate and validate V1.1.4 data
+      - name: Generate and validate V1.1.5 data
         shell: bash
         run: |
           set -euo pipefail
           A=cardsim-v03/app/src/main/assets
           mkdir -p "$A/img" "$A/img/v109" "$A/img/v109/me05_cards"
-          rm -rf "$A/catalog/fr"
+          rm -rf "$A/catalog/fr" "$A/img/v115/products"
 
           python cardsim-v03/tools/generate_v110_data.py
           python cardsim-v03/tools/generate_v105_catalog.py
           python cardsim-v03/tools/import_physical_collections_release.py --lang fr
           python cardsim-v03/tools/fetch_release_assets.py
+          python cardsim-v03/tools/import_verified_sealed_products.py
 
           for f in "$A"/*.js; do node --check "$f"; done
           python -m py_compile \
             cardsim-v03/tools/import_all_collections.py \
             cardsim-v03/tools/import_all_collections_release.py \
             cardsim-v03/tools/import_physical_collections_release.py \
+            cardsim-v03/tools/import_verified_sealed_products.py \
             cardsim-v03/tools/fetch_release_assets.py
 
           python - <<'PY'
@@ -53,7 +55,7 @@ jobs:
           assert len(sets)>=180, len(sets)
           assert all(x.get('seriesId')!='tcgp' for x in sets), 'Pokémon TCG Pocket leaked into physical catalog'
           ids={x['id'] for x in sets}
-          for required in ['base1','neo1','sv03.5','me02.5','me03','me04','me05']:
+          for required in ['base1','neo1','sm8','sv03.5','me02.5','me03','me04','me05']:
               assert required in ids, required
           assert 'A1' not in ids and 'P-A' not in ids, 'digital Pocket IDs leaked'
           for x in sets:
@@ -66,22 +68,38 @@ jobs:
           files=list((a/'catalog'/'fr').glob('*.json'))
           assert len(files)==len(sets),(len(files),len(sets))
 
+          sealed=json.loads((a/'v115_sealed_catalog.json').read_text(encoding='utf-8'))
+          ss=sealed['stats']; products=[p for rows in sealed['sets'].values() for p in rows]
+          assert sealed['schema']==115 and sealed['language']=='fr', sealed
+          assert ss['setsWithVerifiedProducts']>=100, ss
+          assert ss['products']>=100 and ss['localImages']>=100, ss
+          assert 'sm8' in sealed['sets'] and any(p.get('mode')=='loose' for p in sealed['sets']['sm8']), sealed['sets'].get('sm8')
+          assert not any('pack créatif' in str(p.get('name','')).casefold() for p in products)
+          assert not any(str(p.get('id','')).startswith('v114-creative-pack-') for p in products)
+          for p in products:
+              if p.get('image'):
+                  assert (a/p['image']).is_file(),p
+
           text=(a/'pitch_black_embed.js').read_text(encoding='utf-8')
           m=re.search(r'window\.V090_PITCH_BLACK_DATA=(.*);\s*$',text,re.S); assert m
           cards=json.loads(m.group(1))['cards']; assert len(cards)==120
           assert [int(c['localId']) for c in cards if c.get('v109BundledFrenchScan')]==list(range(75,90))
           print('Physical catalog:',s,'sets=',len(sets))
+          print('Verified products:',ss)
           PY
 
           test -s "$A/img/missing-card.svg"
-          grep -q 'versionCode = 40' cardsim-v03/app/build.gradle.kts
-          grep -q 'versionName = "1.1.4"' cardsim-v03/app/build.gradle.kts
-          grep -q "V114_VERSION='1.1.4'" "$A/v114fix.js"
-          grep -q 'v114fix.js' "$A/v111boot.js"
+          grep -q 'versionCode = 41' cardsim-v03/app/build.gradle.kts
+          grep -q 'versionName = "1.1.5"' cardsim-v03/app/build.gradle.kts
+          grep -q "V115_VERSION='1.1.5'" "$A/v115fix.js"
+          grep -q 'v115fix.js' "$A/v111boot.js"
+          grep -q 'v115_sealed_catalog.js' "$A/index.html"
           grep -q 'v114early.js' "$A/index.html"
           grep -q 'position:absolute!important' "$A/v114fix.js"
           grep -q 'position:absolute!important' "$A/v114early.js"
-          grep -q 'Pack créatif' "$A/v114fix.js"
+          grep -q 'Aucun produit physique vérifié' "$A/v115fix.js"
+          grep -q 'Scrydex' cardsim-v03/tools/import_verified_sealed_products.py
+          grep -q 'SealedDex' cardsim-v03/tools/import_verified_sealed_products.py
           grep -q 'DIGITAL_SERIES_IDS = {"tcgp"}' cardsim-v03/tools/import_physical_collections_release.py
           grep -q 'readCatalogFile' cardsim-v03/app/src/main/java/com/vox/cardsim/OfflineQueueBridge.java
           grep -q 'WorkManager' cardsim-v03/app/src/main/java/com/vox/cardsim/OfflineQueueBridge.java
@@ -123,17 +141,19 @@ jobs:
           test -s "$APK"
           for f in v108boot.js v108fix.js v109boot.js v109fix.js v109hotfix.js \
             v111boot.js v111fix.js v111catalogfix.js v111condition.js v111conditionfix.js v111perf.js \
-            v112fix.js v113fix.js v114early.js v114fix.js v111_collection_index.js v111_collection_index.json; do
+            v112fix.js v113fix.js v114early.js v114fix.js v115fix.js v115_sealed_catalog.js \
+            v115_sealed_catalog.json v111_collection_index.js v111_collection_index.json; do
             unzip -l "$APK" | grep -q "assets/$f"
           done
-          unzip -p "$APK" assets/v114fix.js | grep -q "V114_VERSION='1.1.4'"
+          unzip -p "$APK" assets/v115fix.js | grep -q "V115_VERSION='1.1.5'"
           unzip -p "$APK" assets/v114fix.js | grep -q 'position:absolute!important'
-          unzip -p "$APK" assets/index.html | grep -q 'v114early.js'
+          unzip -p "$APK" assets/index.html | grep -q 'v115_sealed_catalog.js'
           EXPECTED=$(unzip -p "$APK" assets/v111_collection_index.json | python -c 'import json,sys; print(len(json.load(sys.stdin)["sets"]))')
           COUNT=$(unzip -l "$APK" | grep -c 'assets/catalog/fr/.*\.json')
           test "$COUNT" -eq "$EXPECTED"
           ! unzip -l "$APK" | grep -q 'assets/catalog/fr/A1.json'
           test "$(unzip -l "$APK" | grep -c 'assets/img/v109/me05_cards/')" -eq 15
+          test "$(unzip -l "$APK" | grep -c 'assets/img/v115/products/')" -ge 100
 
       - name: Restore permanent signing key
         uses: actions/download-artifact@v4
@@ -149,7 +169,7 @@ jobs:
           set -euo pipefail
           SP="$(sed -n 's/^Store password: //p' "$RUNNER_TEMP/signing/signing-info.txt")"
           KP="$(sed -n 's/^Key password: //p' "$RUNNER_TEMP/signing/signing-info.txt")"
-          OUT="$RUNNER_TEMP/VOX_CardSim_v1.1.4.apk"
+          OUT="$RUNNER_TEMP/VOX_CardSim_v1.1.5.apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
             --ks "$RUNNER_TEMP/signing/vox-cardsim-release.jks" \
             --ks-key-alias vox-cardsim \
@@ -162,6 +182,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: VOX-CardSim-v1.1.4-physical-stable
-          path: ${{ runner.temp }}/VOX_CardSim_v1.1.4.apk
+          name: VOX-CardSim-v1.1.5-verified-products
+          path: ${{ runner.temp }}/VOX_CardSim_v1.1.5.apk
           if-no-files-found: error
