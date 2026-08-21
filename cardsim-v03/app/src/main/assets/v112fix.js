@@ -176,8 +176,9 @@ v4RenderBuyHome=function(){
    scans que la source FR ne possède pas encore. */
 const v112CardImgBase=cardImg;
 cardImg=function(c,q='high'){
+ if(c?.v112MissingScan)return V112_MISSING_SCAN;
  let u='';try{u=String(v112CardImgBase(c,q)||'')}catch{}
- if(!u||/\bundefined\b|\bnull\b/i.test(u))return c?.imageLarge||c?.imageSmall||V112_MISSING_SCAN;
+ if(!u||/\bundefined\b|\bnull\b/i.test(u)||u.includes('missing-card.svg/'))return c?.imageLarge||c?.imageSmall||V112_MISSING_SCAN;
  return u;
 };
 
@@ -206,4 +207,12 @@ document.head.appendChild(v112Style);
 
 /* Rejoue le sélecteur après réconciliation des anciennes configurations. */
 try{renderSetSwitches()}catch(e){console.warn('V1.1.2 initial selector',e)}
+
+/* Le set déjà actif au démarrage passe lui aussi immédiatement par le chargeur
+   canonique. Sans ça l'utilisateur pouvait voir l'ancien dataset jusqu'au premier
+   changement manuel de collection. */
+const v112InitialSet=state.activeSet;
+if(v112Entry(v112InitialSet)&&!v112Unavailable(v112InitialSet)){
+ v111HydrateSet(v112InitialSet).then(ok=>{if(ok)v112RenderAfterSelect(v112InitialSet)});
+}
 window.__voxV112Ready=true;
