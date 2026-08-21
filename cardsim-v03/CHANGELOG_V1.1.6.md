@@ -15,14 +15,19 @@
 - Les profils `structure-only`, actuellement utilisés lorsqu'on connaît le format physique mais pas une répartition de raretés suffisamment fiable, bloquent volontairement l'ouverture au lieu d'inventer un taux.
 - Les anciens cas spéciaux conservés hors catalogue français (par exemple Eevee Heroes) continuent d'utiliser leur générateur dédié existant plutôt que le fallback moderne générique.
 - Le moteur V1.1.6 ne revient au vieux `generatePack()` que pour un set sans profil V1.1.6 ; la CI interdit ce fallback pour tous les boosters physiques vérifiés du catalogue V1.1.5.
+- Correctif final Célébrations : les quatre cartes du mini-booster utilisent un tirage avec remise, car une carte du set principal peut réellement apparaître plusieurs fois dans le même booster. Le verrou anti-doublon reste strict pour toutes les autres familles.
+- `xy0` (Bienvenue à Kalos), `basep` (Wizards Black Star Promos) et `wp` (W Promotional) restent visibles comme collections de cartes mais sont explicitement exclus du moteur d'ouverture : ce ne sont pas des extensions à boosters aléatoires et leur attribuer une collation par époque serait faux.
 
 ## Validation
-- Nouveau test `test_v116_collation_runtime.js` : charge les vrais JSON du build, exécute chaque profil exploitable 250 fois, vérifie la longueur de chaque booster, les cartes nulles, les dépendances et l'absence de fallback générique.
+- Nouveau test `test_v116_collation_runtime.js` : charge les vrais JSON du build, injecte le catalogue V1.1.6, exécute le moteur et son hotfix final, puis génère chaque profil exploitable 250 fois.
+- Chaque génération vérifie la longueur du booster, l'absence de carte nulle, la disponibilité des dépendances et l'absence de retour au vieux générateur générique.
 - Le générateur refuse le build si un produit `mode=loose` vérifié n'a aucun profil de collation.
+- Les premiers passages CI ont volontairement bloqué sur des défauts réels du nouvel audit : harness qui n'injectait pas ses profils, Célébrations trop strict sur les doublons et fausses entrées booster pour des produits promotionnels. Ces cas sont maintenant couverts explicitement au lieu d'être masqués.
 - L'APK est inspecté après Gradle pour vérifier la présence du catalogue de profils et du moteur V1.1.6 avant signature.
 
 ## État précédent modifié
 - V1.1.5 : vrais produits physiques et vrais artworks, mais collation générique pour la majorité des collections importées.
+- Première implémentation V1.1.6 : anti-doublon global appliqué aussi à Célébrations et profil automatique attribué à quelques entrées promotionnelles non distribuées en boosters aléatoires.
 - V1.1.4 : correction de la pile d'ouverture et suppression des collections numériques Pocket, sans audit global de collation.
 
 ## Version Android
