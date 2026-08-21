@@ -1,4 +1,4 @@
-// VOX Card Sim V1.1.1 — catalogue complet Android + import universel + hors-ligne persistant
+// VOX Card Sim V1.1.2 — chargeur catalogue canonique Android + import universel + hors-ligne persistant
 plugins {
     id("com.android.application")
     id("com.google.gms.google-services")
@@ -12,8 +12,8 @@ android {
         applicationId = "com.vox.cardsim"
         minSdk = 26
         targetSdk = 35
-        versionCode = 37
-        versionName = "1.1.1"
+        versionCode = 38
+        versionName = "1.1.2"
     }
 
     compileOptions {
@@ -32,9 +32,8 @@ dependencies {
 
     // WorkManager persiste les téléchargements hors ligne lorsque l'écran est éteint
     // ou que l'Activity n'est plus au premier plan. Son API Java publique expose
-    // ListenableFuture. Le petit artefact standalone a été évincé par le graphe de
-    // dépendances Android/Firebase sur le runner de release ; Guava Android fournit
-    // réellement la classe au compilateur et au runtime sans dépendre de cet arbitrage.
+    // ListenableFuture. Guava Android fournit réellement la classe au compilateur
+    // et au runtime sans dépendre de l'arbitrage transitif Firebase/AndroidX.
     implementation("androidx.work:work-runtime:2.10.1")
     implementation("com.google.guava:guava:33.4.8-android")
 
