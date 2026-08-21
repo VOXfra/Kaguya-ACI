@@ -73,6 +73,7 @@ openingPackImage=function(setId){const p=v108UnitProduct(SETS[setId]);return p?.
    mais il ne doit plus apparaître comme un produit réel dans le Marketplace. */
 const v108MarketAssetsBase=v08MarketAssets;
 v08MarketAssets=function(query){const arr=v108MarketAssetsBase(query);return Array.isArray(arr)?arr.filter(a=>a.type!=='sealed'||!productById(a.productId)?.marketHidden):arr};
+v4MarketAssetResults=function(query){return v08MarketAssets(query)};
 
 /* Les scans dédiés à l'ouverture doivent aussi faire partie du pack hors-ligne.
    V1.0.7 ne connaissait que product.image et aurait sinon oublié packArt. */
