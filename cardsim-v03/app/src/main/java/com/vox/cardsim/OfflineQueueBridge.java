@@ -10,34 +10,40 @@ import android.webkit.JavascriptInterface;
 
 import androidx.work.Constraints;
 import androidx.work.Data;
+import androidx.work.ExistingPeriodicWorkPolicy;
 import androidx.work.ExistingWorkPolicy;
 import androidx.work.NetworkType;
 import androidx.work.OneTimeWorkRequest;
+import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkManager;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.security.MessageDigest;
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 
 /** Pont WebView dédié aux téléchargements hors ligne persistants V1.1. */
 public final class OfflineQueueBridge {
-    private final Context context;
+    private static final String AUTO_WORK = "vox-offline-auto-update";
+    private final Activity activity;
+    private final Context appContext;
     private final SharedPreferences prefs;
     private final WorkManager workManager;
 
-    public OfflineQueueBridge(Context context) {
-        this.context = context.getApplicationContext();
-        this.prefs = context.getSharedPreferences("vox_offline", Context.MODE_PRIVATE);
-        this.workManager = WorkManager.getInstance(context);
+    public OfflineQueueBridge(Activity activity) {
+        this.activity = activity;
+        this.appContext = activity.getApplicationContext();
+        this.prefs = appContext.getSharedPreferences("vox_offline", Context.MODE_PRIVATE);
+        this.workManager = WorkManager.getInstance(appContext);
+        refreshAutoSchedule();
     }
 
     @JavascriptInterface
     public void requestNotificationPermission() {
-        if (!(context instanceof Activity)) return;
-        Activity activity = (Activity) context;
         if (Build.VERSION.SDK_INT >= 33
                 && activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             activity.runOnUiThread(() -> activity.requestPermissions(
@@ -49,9 +55,8 @@ public final class OfflineQueueBridge {
     public void downloadPack(String setId, String urlsJson, boolean force) {
         try {
             if (setId == null || setId.trim().isEmpty()) return;
-            // Valide le JSON avant de le persister : le Worker ne recevra jamais un manifeste tronqué.
-            new org.json.JSONArray(urlsJson);
-            File dir = new File(context.getFilesDir(), "offline_manifests");
+            new JSONArray(urlsJson); // refuse un manifeste tronqué avant mise en file
+            File dir = new File(appContext.getFilesDir(), "offline_manifests");
             if (!dir.exists() && !dir.mkdirs()) throw new Exception("Dossier de manifestes inaccessible");
             File target = new File(dir, sha256(setId) + ".json");
             try (FileOutputStream out = new FileOutputStream(target, false)) {
@@ -65,11 +70,10 @@ public final class OfflineQueueBridge {
                     .remove("pack_error_" + setId)
                     .apply();
 
-            Constraints constraints = new Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .build();
+            Constraints constraints = networkConstraints();
             Data input = new Data.Builder()
                     .putString(OfflinePackWorker.KEY_SET_ID, setId)
+                    .putString(OfflinePackWorker.KEY_LANG, "fr")
                     .putBoolean(OfflinePackWorker.KEY_FORCE, force)
                     .build();
             OneTimeWorkRequest work = new OneTimeWorkRequest.Builder(OfflinePackWorker.class)
@@ -89,6 +93,10 @@ public final class OfflineQueueBridge {
 
     @JavascriptInterface
     public void downloadAll(String lang, boolean updateOnly) {
+        enqueueAll(lang, updateOnly, true);
+    }
+
+    private void enqueueAll(String lang, boolean updateOnly, boolean replace) {
         String language = (lang == null || lang.trim().isEmpty()) ? "fr" : lang.trim().toLowerCase(Locale.US);
         prefs.edit()
                 .putBoolean("bulk_running", true)
@@ -97,21 +105,63 @@ public final class OfflineQueueBridge {
                 .putInt("bulk_failed", 0)
                 .putLong("bulk_started_at", System.currentTimeMillis())
                 .apply();
-        Constraints constraints = new Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
-                .build();
         Data input = new Data.Builder()
                 .putBoolean(OfflinePackWorker.KEY_ALL, true)
                 .putBoolean(OfflinePackWorker.KEY_UPDATE_ONLY, updateOnly)
                 .putString(OfflinePackWorker.KEY_LANG, language)
                 .build();
         OneTimeWorkRequest work = new OneTimeWorkRequest.Builder(OfflinePackWorker.class)
-                .setConstraints(constraints)
+                .setConstraints(networkConstraints())
                 .setInputData(input)
                 .addTag("vox-offline")
                 .addTag("vox-offline-all")
                 .build();
-        workManager.enqueueUniqueWork("vox-offline-all", ExistingWorkPolicy.REPLACE, work);
+        workManager.enqueueUniqueWork(
+                "vox-offline-all",
+                replace ? ExistingWorkPolicy.REPLACE : ExistingWorkPolicy.KEEP,
+                work
+        );
+    }
+
+    @JavascriptInterface
+    public boolean autoUpdateEnabled() {
+        return prefs.getBoolean("auto_update", false);
+    }
+
+    @JavascriptInterface
+    public void setAutoUpdate(boolean enabled) {
+        prefs.edit().putBoolean("auto_update", enabled).apply();
+        refreshAutoSchedule();
+        if (enabled) {
+            requestNotificationPermission();
+            // Premier contrôle immédiatement ; les suivants sont quotidiens.
+            enqueueAll("fr", true, false);
+        }
+    }
+
+    private void refreshAutoSchedule() {
+        if (!prefs.getBoolean("auto_update", false)) {
+            workManager.cancelUniqueWork(AUTO_WORK);
+            return;
+        }
+        Data input = new Data.Builder()
+                .putBoolean(OfflinePackWorker.KEY_ALL, true)
+                .putBoolean(OfflinePackWorker.KEY_UPDATE_ONLY, true)
+                .putString(OfflinePackWorker.KEY_LANG, "fr")
+                .build();
+        PeriodicWorkRequest periodic = new PeriodicWorkRequest.Builder(OfflinePackWorker.class, 24, TimeUnit.HOURS)
+                .setConstraints(networkConstraints())
+                .setInputData(input)
+                .addTag("vox-offline")
+                .addTag("vox-offline-auto")
+                .build();
+        workManager.enqueueUniquePeriodicWork(AUTO_WORK, ExistingPeriodicWorkPolicy.UPDATE, periodic);
+    }
+
+    private Constraints networkConstraints() {
+        // CONNECTED autorise Wi-Fi et données mobiles. L'utilisateur peut toujours
+        // couper les mises à jour auto ; les transferts restent reprenables par Android.
+        return new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build();
     }
 
     @JavascriptInterface
@@ -126,6 +176,7 @@ public final class OfflineQueueBridge {
             o.put("total", prefs.getInt("pack_total_" + setId, 0));
             o.put("failed", prefs.getInt("pack_failed_" + setId, 0));
             o.put("bytes", prefs.getLong("pack_bytes_" + setId, 0));
+            o.put("catalogHash", prefs.getString("pack_catalog_hash_" + setId, ""));
             o.put("error", prefs.getString("pack_error_" + setId, ""));
             return o.toString();
         } catch (Exception e) {
