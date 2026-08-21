@@ -64,7 +64,7 @@ jobs:
           for token in ['V108_BOOT_SWITCH_MARKER','window.v108BootSwitchMode','v108BootInjectModeFallback','v108fix.js','__voxV108BootReady']:
               assert token in boot,token
           fix=(A/'v108fix.js').read_text(encoding='utf-8')
-          for token in ["V108_VERSION='1.0.8'",'V108_RETAIL_YEAR=2026','V108_ARCHIVE_ONE_DAY_IN=8','v108ArchiveDay','v108InstallModePanel','Collection Archive','OFFRE ARCHIVE']:
+          for token in ["V108_VERSION='1.0.8'",'V108_RETAIL_YEAR=2026','V108_ARCHIVE_ONE_DAY_IN=8','v108ArchiveDay','v108InstallModePanel','Collection Archive','OFFRE ARCHIVE','V108_OPENING_PACK_ART','V108_BINDER_ART','marketHidden','shopHidden','v108OfflineManifestBase']:
               assert token in fix,token
           pack=(A/'v105packpatch.js').read_text(encoding='utf-8')
           assert "createElement('script')" not in pack and 'v107RestoreBinderAfterCatalog' in pack
@@ -73,7 +73,7 @@ jobs:
           v=(A/'v107fix.js').read_text(encoding='utf-8')
           for token in ['V107_VERSION=\'1.0.7\'','v107-year-row','v107RebuildOfflinePanel','cfg?.v105Catalog','Cloud : réservé au mode Réaliste','V107_LASTGOOD_PREFIX','document.hidden','v106ApplyProductArt']:
               assert token in v,token
-          print('V1.0.8 retail/archive/mode source validation OK')
+          print('V1.0.8 retail/archive/products/mode source validation OK')
           PY
           grep -q 'versionCode = 34' cardsim-v03/app/build.gradle.kts
           grep -q 'versionName = "1.0.8"' cardsim-v03/app/build.gradle.kts
@@ -90,23 +90,43 @@ jobs:
           global.v08DailyEvent=()=>({id:'evt',setId:'me04',name:'Édition limitée',mode:'sealed',opens:6,eventEdition:true});
           vm.runInThisContext(fs.readFileSync('cardsim-v03/app/src/main/assets/v106productart.js','utf8'));
           const imgs=SETS.me04.products.map(p=>p.image);if(!imgs.every(Boolean))throw new Error('missing product art');if(new Set(imgs).size!==imgs.length)throw new Error('product types share artwork');
-          console.log('Product artwork smoke test OK');
+          console.log('Product artwork base smoke test OK');
           NODE
           node <<'NODE'
           const fs=require('fs'),vm=require('vm');
-          global.window=global;global.document={createElement:()=>({textContent:'',appendChild(){}}),head:{appendChild(){}}};
+          global.window=global;
+          global.document={createElement:()=>({textContent:'',appendChild(){}}),head:{appendChild(){}}};
           global.localStorage={m:new Map(),getItem(k){return this.m.get(k)||null},setItem(k,v){this.m.set(k,String(v))},removeItem(k){this.m.delete(k)}};
           var V08_DAY=86400000,V105_ROTATION_MS=900000,V08_MODES={realistic:{label:'Réaliste',desc:'r'},ludic:{label:'Ludique',desc:'l'},creative:{label:'Créatif',desc:'c'}};
           function v08Hash32(x){x=(Number(x)||0)|0;x=Math.imul(x^(x>>>16),0x45d9f3b);x=Math.imul(x^(x>>>16),0x45d9f3b);return(x^(x>>>16))>>>0}function v08SeededShuffle(a){return[...a]}
-          var SETS={old:{id:'old',name:'Ancienne',releaseYear:2025,products:[{id:'binder-old',mode:'binderUnlock',price:19.99}]},y26:{id:'y26',name:'2026',releaseYear:2026,products:[{id:'y26-booster',mode:'loose',qty:1,price:5.99,image:'pack'},{id:'binder-y26',mode:'binderUnlock',price:19.99}]}};
+          var V061_BINDERS={};
+          var SETS={
+            old:{id:'old',name:'Ancienne',releaseYear:2025,products:[{id:'old-booster',mode:'loose',qty:1,price:7,image:'old-pack'},{id:'binder-old',mode:'binderUnlock',price:19.99}]},
+            'me02.5':{id:'me02.5',name:'Héros Transcendants',releaseYear:2026,products:[{id:'me02.5-booster',mode:'loose',qty:1,price:6,image:'old-me25-pack'},{id:'me02.5-lot6',mode:'loose',qty:6,price:36,kind:'Lot de boosters',image:'bundle25'},{id:'me02.5-etb',mode:'sealed',opens:9,kind:'ETB',image:'etb25'},{id:'me02.5-display',mode:'sealed',opens:36,kind:'Booster Box',image:'fake-display'},{id:'binder-me02.5',mode:'binderUnlock',price:19.99,image:'placeholder'}]},
+            me03:{id:'me03',name:'Équilibre Parfait',releaseYear:2026,products:[{id:'me03-booster',mode:'loose',qty:1,price:6,image:'shop3'},{id:'me03-lot6',mode:'loose',qty:6,price:36,kind:'Lot de boosters',image:'bundle3'},{id:'me03-display',mode:'sealed',opens:36,kind:'Booster Box',image:'display3'},{id:'binder-me03',mode:'binderUnlock',price:19.99,image:'placeholder'}]},
+            me04:{id:'me04',name:'Chaos Ascendant',releaseYear:2026,products:[{id:'me04-booster',mode:'loose',qty:1,price:6,image:'shop4'},{id:'me04-lot6',mode:'loose',qty:6,price:36,kind:'Lot de boosters',image:'bundle4'},{id:'me04-display',mode:'sealed',opens:36,kind:'Booster Box',image:'display4'},{id:'binder-me04',mode:'binderUnlock',price:19.99,image:'placeholder'}]},
+            me05:{id:'me05',name:'Nuit Noire',releaseYear:2026,products:[{id:'pbl-booster',mode:'loose',qty:1,price:6,image:'shop5'},{id:'pbl-lot6',mode:'loose',qty:6,price:36,kind:'Lot de boosters',image:'bundle5'},{id:'pbl-display',mode:'sealed',opens:36,kind:'Booster Box',image:'display5'},{id:'binder-me05',mode:'binderUnlock',price:19.99,image:'placeholder'}]}
+          };
           var state={activeSet:'old',gameMode:'creative',eventCatalog:{}};
-          function v08Mode(){return state.gameMode}function v090SetUnlocked(){return true}function renderProducts(){}function buyProduct(){return true}function productById(id){return Object.values(SETS).flatMap(s=>s.products.map(p=>({...p,setId:s.id}))).find(p=>p.id===id)}function renderSettings(){}function save(){}function toast(){}function escapeHtml(x){return String(x)}function v08RefreshModePill(){}function $(sel){return null}
+          function v08Mode(){return state.gameMode}function v090SetUnlocked(){return true}function renderProducts(){}function buyProduct(){return true}
+          function productById(id){for(const s of Object.values(SETS)){const p=s.products.find(x=>x.id===id);if(p)return{...p,setId:s.id}}return null}
+          function renderSettings(){}function save(){}function toast(){}function escapeHtml(x){return String(x)}function v08RefreshModePill(){}function $(sel){return null}
+          function openingPackImage(setId){return'base-'+setId}
+          function v08MarketAssets(){return[{type:'sealed',productId:'me02.5-display'},{type:'sealed',productId:'me03-display'},{type:'booster',setId:'me04'}]}
+          function v05OfflineManifest(){return['base-resource']}
           var v08HourInfo=function(){},v08DailyEvent=function(){},v08SwitchMode=function(){};
           vm.runInThisContext(fs.readFileSync('cardsim-v03/app/src/main/assets/v108fix.js','utf8'));
-          const info=v08HourInfo(Date.UTC(2026,7,21,12));if(info.setId!=='y26')throw new Error('legacy set leaked into normal retail');
-          let archives=0;for(let day=0;day<80;day++){state.eventCatalog={};const e=v08DailyEvent(day*V08_DAY+1);if(e?.v108Archive){archives++;if(e.setId!=='old')throw new Error('archive event picked a 2026 set')}}
+          const me25=SETS['me02.5'];if(!me25.products.find(p=>p.id==='me02.5-booster').shopHidden)throw new Error('ME2.5 loose booster still sold directly');
+          const bundle=me25.products.find(p=>p.id==='me02.5-lot6');if(bundle.mode!=='sealed'||bundle.opens!==6)throw new Error('ME2.5 bundle not sealed x6');
+          const fake=me25.products.find(p=>p.id==='me02.5-display');if(!fake.shopHidden||!fake.marketHidden)throw new Error('ME2.5 fake display not retired');
+          const binder=SETS.me04.products.find(p=>p.mode==='binderUnlock');if(!binder.v108OfficialBinder||!String(binder.image).includes('ultrapro.com'))throw new Error('ME04 binder placeholder not replaced');
+          const pack=openingPackImage('me04');if(!pack.includes('chaos-ascendant-booster-a-l-unite'))throw new Error('ME04 opening still reuses bad shop art');
+          const market=v08MarketAssets('');if(market.some(a=>a.productId==='me02.5-display'))throw new Error('retired display leaked into marketplace');
+          const offline=v05OfflineManifest('me04');if(!offline.includes(pack))throw new Error('opening pack art missing from offline manifest');
+          const info=v08HourInfo(Date.UTC(2026,7,21,12));if(!['me02.5','me03','me04','me05'].includes(info.setId))throw new Error('legacy set leaked into normal retail');
+          let archives=0;for(let day=0;day<80;day++){state.eventCatalog={};const e=v08DailyEvent(day*V08_DAY+1);if(e?.v108Archive){archives++;if(e.setId!=='old')throw new Error('archive event did not select archive')}}
           if(!archives||archives>=40)throw new Error('archive cadence is not exceptional');
-          console.log('V1.0.8 retail/archive smoke OK',archives);
+          console.log('V1.0.8 products/retail/archive/offline smoke OK',archives);
           NODE
           python - <<'PY'
           from pathlib import Path
@@ -151,6 +171,7 @@ jobs:
           APK=cardsim-v03/app/build/outputs/apk/release/app-release-unsigned.apk; test -f "$APK"
           for f in v106fix.js v106productart.js v106memory.js v107fix.js v108boot.js v108fix.js v105_catalog_embed.js; do unzip -l "$APK" | grep -q "assets/$f"; done
           unzip -p "$APK" assets/v108fix.js | grep -q "V108_VERSION='1.0.8'"
+          unzip -p "$APK" assets/v108fix.js | grep -q 'V108_OPENING_PACK_ART'
           unzip -p "$APK" assets/index.html | grep -q 'v108boot.js'
           SIZE=$(unzip -p "$APK" assets/v105_catalog_embed.js | wc -c); test "$SIZE" -gt 1000000
 
