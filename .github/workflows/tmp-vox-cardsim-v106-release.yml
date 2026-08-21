@@ -1,4 +1,4 @@
-name: VOX CardSim V1.1.1 Full Android Catalog Build
+name: VOX CardSim V1.1.2 Canonical Catalog Build
 
 on:
   pull_request:
@@ -59,16 +59,26 @@ jobs:
           years={x.get('year') for x in idx['sets']}
           assert 1999 in years and 2000 in years and 2026 in years, sorted(y for y in years if y)
 
-          # Chaque collection doit avoir son fichier empaquetable, même si TCGdex
-          # la marque partielle. Aucun set découvert ne disparaît silencieusement.
+          # Contrat V1.1.2 : les 200 entrées ont toutes un JSON réel et le nombre
+          # de cartes embarquées correspond exactement au nombre utilisable exposé
+          # au runtime. Les shells à zéro carte restent présents et explicites.
           assert all(x.get('file') and x.get('contentHash') for x in idx['sets'])
           assert all(x.get('status') in ('ready','partial') for x in idx['sets'])
+          zero=[]
           for x in idx['sets']:
               p=a/'catalog'/'fr'/x['file']
               assert p.is_file() and p.stat().st_size>40, (x['id'],p)
               d=json.loads(p.read_text(encoding='utf-8'))
               assert d.get('set',{}).get('id')==x['id'], x['id']
-              assert len(d.get('cards') or [])==int(x.get('cards') or 0), x['id']
+              n=len(d.get('cards') or [])
+              assert n==int(x.get('cards') or 0), (x['id'],n,x.get('cards'))
+              assert n==int(x.get('total') or 0), (x['id'],n,x.get('total'))
+              if n==0:
+                  zero.append(x['id'])
+                  assert x.get('status')=='partial', x
+                  assert int(x.get('sourceTotal') or 0)>0, x
+          assert zero, 'expected explicit source-empty catalog shells'
+          print('Source-empty sets kept visible:', zero)
 
           text=(a/'pitch_black_embed.js').read_text(encoding='utf-8')
           m=re.search(r'window\.V090_PITCH_BLACK_DATA=(.*);\s*$',text,re.S); assert m
@@ -79,12 +89,13 @@ jobs:
               if c.get('v109BundledFrenchScan'):
                   p=a/c['imageLarge']; assert p.is_file() and p.stat().st_size>12000,(c['localId'],p)
           print('Universal catalog:', s)
-          print('Full year range + packaged JSON contract OK')
+          print('Canonical 200-file catalog contract OK')
           print('Nuit Noire local scan contract OK')
           PY
 
-          grep -q 'versionCode = 37' cardsim-v03/app/build.gradle.kts
-          grep -q 'versionName = "1.1.1"' cardsim-v03/app/build.gradle.kts
+          test -s "$A/img/missing-card.svg"
+          grep -q 'versionCode = 38' cardsim-v03/app/build.gradle.kts
+          grep -q 'versionName = "1.1.2"' cardsim-v03/app/build.gradle.kts
           grep -q 'androidx.work:work-runtime:2.10.1' cardsim-v03/app/build.gradle.kts
           grep -q 'com.google.guava:guava:33.4.8-android' cardsim-v03/app/build.gradle.kts
           grep -q 'FOREGROUND_SERVICE_DATA_SYNC' cardsim-v03/app/src/main/AndroidManifest.xml
@@ -93,10 +104,16 @@ jobs:
           grep -q 'v111boot.js' "$A/index.html"
           grep -q "V111_VERSION='1.1.0'" "$A/v111fix.js"
           grep -q "V111_CATALOG_PATCH_VERSION='1.1.1'" "$A/v111catalogfix.js"
+          grep -q "V112_VERSION='1.1.2'" "$A/v112fix.js"
+          grep -q 'v112fix.js' "$A/v111boot.js"
           grep -q 'v111catalogfix.js' "$A/v111boot.js"
           grep -q 'v111condition.js' "$A/v111boot.js"
           grep -q 'v111conditionfix.js' "$A/v111boot.js"
           grep -q 'v111perf.js' "$A/v111boot.js"
+          grep -q 'v112CatalogHydrated' "$A/v112fix.js"
+          grep -q 'v111Imported=function(setId){return !!v112Entry(setId)}' "$A/v112fix.js"
+          grep -q 'v06ResetConfirm=function(){v112RemoveResetUI()}' "$A/v112fix.js"
+          grep -q '#resetProgressBtn{display:none!important}' "$A/v112fix.js"
           grep -q 'MISE À JOUR DISPONIBLE' "$A/v111fix.js"
           grep -q 'Tout télécharger' "$A/v111fix.js"
           grep -q 'Tout mettre à jour' "$A/v111fix.js"
@@ -141,10 +158,11 @@ jobs:
           test -s "$APK"
           for f in \
             v108boot.js v108fix.js v109boot.js v109fix.js v109hotfix.js \
-            v111boot.js v111fix.js v111catalogfix.js v111condition.js v111conditionfix.js v111perf.js \
+            v111boot.js v111fix.js v111catalogfix.js v111condition.js v111conditionfix.js v111perf.js v112fix.js \
             v111_collection_index.js v111_collection_index.json; do
             unzip -l "$APK" | grep -q "assets/$f"
           done
+          unzip -l "$APK" | grep -q 'assets/img/missing-card.svg'
           for f in \
             me025_booster.png me03_booster.jpg me04_booster.png me05_booster.jpg \
             me05_build.png me05_binder.png me05_logo.png; do
@@ -156,7 +174,8 @@ jobs:
           unzip -l "$APK" | grep -q 'assets/catalog/fr/base1.json'
           unzip -l "$APK" | grep -q 'assets/catalog/fr/neo1.json'
           unzip -l "$APK" | grep -q 'assets/catalog/fr/neo2.json'
-          unzip -p "$APK" assets/v111catalogfix.js | grep -q "V111_CATALOG_PATCH_VERSION='1.1.1'"
+          unzip -p "$APK" assets/v112fix.js | grep -q "V112_VERSION='1.1.2'"
+          unzip -p "$APK" assets/v112fix.js | grep -q 'v112CatalogHydrated'
 
       - name: Restore permanent signing key
         uses: actions/download-artifact@v4
@@ -172,7 +191,7 @@ jobs:
           set -euo pipefail
           SP="$(sed -n 's/^Store password: //p' "$RUNNER_TEMP/signing/signing-info.txt")"
           KP="$(sed -n 's/^Key password: //p' "$RUNNER_TEMP/signing/signing-info.txt")"
-          OUT="$RUNNER_TEMP/VOX_CardSim_v1.1.1.apk"
+          OUT="$RUNNER_TEMP/VOX_CardSim_v1.1.2.apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
             --ks "$RUNNER_TEMP/signing/vox-cardsim-release.jks" \
             --ks-key-alias vox-cardsim \
@@ -188,6 +207,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: VOX-CardSim-v1.1.1-full-catalog
-          path: ${{ runner.temp }}/VOX_CardSim_v1.1.1.apk
+          name: VOX-CardSim-v1.1.2-canonical-catalog
+          path: ${{ runner.temp }}/VOX_CardSim_v1.1.2.apk
           if-no-files-found: error
