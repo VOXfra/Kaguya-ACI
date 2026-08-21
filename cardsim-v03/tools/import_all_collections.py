@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
-"""Importeur universel et validant de collections pour VOX Card Sim.
+"""Importeur universel TCGdex pour VOX Card Sim.
 
-L'outil découvre *toutes* les collections exposées par TCGdex pour une langue.
-Il ne contient aucune liste d'extensions codée en dur. Pour chaque carte il garde
-le nom/scan de la langue demandée, puis récupère les métadonnées canoniques
-(rareté, variantes et Cardmarket) afin que le jeu puisse réellement exploiter le
-catalogue.
+Objectif : importer automatiquement toutes les collections disponibles dans une
+langue sans maintenir une liste d'IDs à la main. Le chemin principal utilise
+GraphQL afin de récupérer en quelques requêtes les sets, cartes, raretés,
+variantes et artworks de boosters. Un fallback REST existe si GraphQL est
+indisponible, mais il est marqué comme partiel plutôt que d'inventer les champs
+manquants.
 
-Principe important : aucune donnée n'est inventée pour masquer un trou de source.
-Un set incomplet est importé en état ``partial`` et la CI peut utiliser --strict
-pour refuser sa publication. C'est volontairement plus sûr qu'un faux catalogue.
+La langue est un paramètre (--lang fr par défaut). Le format produit est déjà
+multilingue : ajouter une langue plus tard ne demande pas de changer le runtime.
 """
 from __future__ import annotations
 
 import argparse
-import concurrent.futures
 import hashlib
 import json
 import re
@@ -27,17 +26,22 @@ from pathlib import Path
 from typing import Any
 
 API_ROOT = "https://api.tcgdex.net/v2"
+GRAPHQL_URL = API_ROOT + "/graphql"
 USER_AGENT = "VOX-CardSim-Importer/1.1 (+https://github.com/VOXfra/Kaguya-ACI)"
 LANG_RE = re.compile(r"^[a-z]{2}(?:-[a-z]{2})?$")
+PAGE_SIZE = 40
+
+
+def backoff(attempt: int) -> None:
+    time.sleep(min(12.0, 0.65 * (2 ** attempt)))
 
 
 def request_json(url: str, retries: int = 8) -> Any:
-    """GET JSON robuste : retry exponentiel, Retry-After et timeout borné."""
     last: Exception | None = None
     for attempt in range(retries):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
-            with urllib.request.urlopen(req, timeout=45) as response:
+            with urllib.request.urlopen(req, timeout=50) as response:
                 if not (200 <= response.status < 300):
                     raise RuntimeError(f"HTTP {response.status}")
                 return json.loads(response.read().decode("utf-8"))
@@ -46,15 +50,42 @@ def request_json(url: str, retries: int = 8) -> Any:
             if exc.code not in (408, 425, 429, 500, 502, 503, 504):
                 break
             retry_after = exc.headers.get("Retry-After") if exc.headers else None
-            try:
-                delay = max(float(retry_after), 0.5) if retry_after else 0.0
-            except ValueError:
-                delay = 0.0
-            time.sleep(max(delay, min(12.0, 0.65 * (2**attempt))))
+            if retry_after:
+                try:
+                    time.sleep(max(0.5, float(retry_after)))
+                    continue
+                except ValueError:
+                    pass
+            backoff(attempt)
         except Exception as exc:
             last = exc
-            time.sleep(min(12.0, 0.65 * (2**attempt)))
+            backoff(attempt)
     raise RuntimeError(f"{url}: {last}")
+
+
+def graphql(query: str, variables: dict[str, Any], retries: int = 6) -> dict[str, Any]:
+    body = json.dumps({"query": query, "variables": variables}, separators=(",", ":")).encode("utf-8")
+    last: Exception | None = None
+    for attempt in range(retries):
+        try:
+            req = urllib.request.Request(
+                GRAPHQL_URL,
+                data=body,
+                method="POST",
+                headers={"User-Agent": USER_AGENT, "Accept": "application/json", "Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=90) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            if payload.get("errors"):
+                raise RuntimeError(json.dumps(payload["errors"], ensure_ascii=False)[:1200])
+            data = payload.get("data")
+            if not isinstance(data, dict):
+                raise RuntimeError("Réponse GraphQL sans data")
+            return data
+        except Exception as exc:
+            last = exc
+            backoff(attempt)
+    raise RuntimeError(f"GraphQL TCGdex: {last}")
 
 
 def safe_filename(set_id: str) -> str:
@@ -76,44 +107,39 @@ def norm(value: Any) -> str:
 
 
 def game_rarity(raw: Any) -> str:
-    """Normalise sans perdre la rareté originale, conservée séparément."""
     r = norm(raw)
-    if r == "common":
+    if r in ("common", "commune"):
         return "common"
-    if r == "uncommon":
+    if r in ("uncommon", "peu commune"):
         return "uncommon"
     if "mega hyper" in r:
         return "mhr"
+    if "special illustration" in r or "illustration speciale" in r or "black white" in r:
+        return "sir"
     if "hyper" in r or "gold" in r or "secret rare" in r:
         return "hr"
-    if "special illustration" in r or "black white" in r:
-        return "sir"
     if "shiny ultra" in r:
         return "ur"
     if "ultra" in r or "rainbow" in r:
         return "ur"
-    if "shiny" in r or "illustration" in r or "radiant" in r or "amazing" in r:
+    if "illustration" in r or "shiny" in r or "radiant" in r or "amazing" in r:
         return "ir"
-    if "double" in r or "vmax" in r or "vstar" in r or "ex" in r or "gx" in r:
+    if "double" in r or "vmax" in r or "vstar" in r or r.endswith(" ex") or r.endswith(" gx"):
         return "double"
-    if "rare" in r or "holo" in r or "ace spec" in r or "legend" in r:
-        return "rare"
-    # Les très vieilles nomenclatures varient beaucoup. On préserve rarityRaw et
-    # on classe prudemment dans Rare plutôt que d'inventer un niveau supérieur.
     return "rare"
 
 
 def supply_tier(raw: Any) -> str:
     r = norm(raw)
-    if r == "common":
+    if r in ("common", "commune"):
         return "common"
-    if r == "uncommon":
+    if r in ("uncommon", "peu commune"):
         return "uncommon"
     if "mega hyper" in r:
         return "mhr"
     if "black white" in r:
         return "bwr"
-    if "special illustration" in r:
+    if "special illustration" in r or "illustration speciale" in r:
         return "sir"
     if "hyper" in r or "gold" in r or "secret" in r:
         return "hr"
@@ -127,44 +153,16 @@ def supply_tier(raw: Any) -> str:
         return "ir"
     if "ace spec" in r:
         return "ace"
-    if "double" in r or "vmax" in r or "vstar" in r or " ex" in f" {r}" or " gx" in f" {r}":
+    if "double" in r or "vmax" in r or "vstar" in r or r.endswith(" ex") or r.endswith(" gx"):
         return "double"
     return "rare"
 
 
-def lean_pricing(raw: Any) -> dict[str, Any]:
-    cm = (raw or {}).get("cardmarket") if isinstance(raw, dict) else None
-    cm = cm or {}
-    out: dict[str, Any] = {}
-    for key, value in cm.items():
-        if key == "updated":
-            out[key] = value
-        elif isinstance(value, (int, float)) and (key == "low" or key.startswith("trend") or key.startswith("avg")):
-            out[key] = value
-    return {"cardmarket": out} if out else {}
-
-
-def set_year(detail: dict[str, Any]) -> int | None:
-    release = str(detail.get("releaseDate") or "")
-    if len(release) >= 4 and release[:4].isdigit():
-        year = int(release[:4])
-        if 1990 <= year <= 2100:
-            return year
-    return None
-
-
-def series_info(detail: dict[str, Any]) -> tuple[str, str]:
-    raw = detail.get("serie") or detail.get("series") or {}
-    if isinstance(raw, dict):
-        return str(raw.get("id") or ""), str(raw.get("name") or "")
-    return "", str(raw or "")
-
-
-def variants_of(detail: dict[str, Any]) -> list[str]:
-    raw = detail.get("variants") or {}
+def variants_of(raw: Any) -> list[str]:
+    if not isinstance(raw, dict):
+        return []
     order = ("normal", "holo", "reverse", "firstEdition")
-    variants = [key for key in order if raw.get(key) is True]
-    return variants or ["normal"]
+    return [key for key in order if raw.get(key) is True]
 
 
 def stable_hash(value: Any) -> str:
@@ -172,199 +170,225 @@ def stable_hash(value: Any) -> str:
     return hashlib.sha256(blob).hexdigest()
 
 
+def release_year(value: Any) -> int | None:
+    text = str(value or "")
+    if len(text) >= 4 and text[:4].isdigit():
+        year = int(text[:4])
+        return year if 1990 <= year <= 2100 else None
+    return None
+
+
+GRAPHQL_QUERY = r"""
+query ImportSets($page:Int!,$count:Int!,$lang:String!){
+  sets(pagination:{page:$page,itemsPerPage:$count},sort:{field:"releaseDate",order:"DESC"}) @locale(lang:$lang){
+    id name logo symbol releaseDate
+    cardCount{official total normal holo reverse firstEd}
+    serie{id name}
+    boosters{id name logo artwork_front artwork_back}
+    cards{
+      id localId name image rarity
+      variants{normal holo reverse firstEdition wPromo}
+      boosters{id name logo artwork_front artwork_back}
+    }
+  }
+}
+"""
+
+
+def graphql_sets(lang: str) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    page = 1
+    while True:
+        data = graphql(GRAPHQL_QUERY, {"page": page, "count": PAGE_SIZE, "lang": lang})
+        rows = data.get("sets") or []
+        if not isinstance(rows, list):
+            raise RuntimeError("GraphQL sets n'est pas un tableau")
+        out.extend(x for x in rows if isinstance(x, dict))
+        print(f"  GraphQL page {page}: {len(rows)} set(s)")
+        if len(rows) < PAGE_SIZE:
+            break
+        page += 1
+        if page > 200:
+            raise RuntimeError("Pagination GraphQL anormalement longue")
+    return out
+
+
+def rest_sets(lang: str) -> list[dict[str, Any]]:
+    briefs = request_json(f"{API_ROOT}/{urllib.parse.quote(lang)}/sets")
+    if not isinstance(briefs, list):
+        raise RuntimeError("REST sets n'est pas un tableau")
+    out: list[dict[str, Any]] = []
+    for i, brief in enumerate(briefs, 1):
+        if not isinstance(brief, dict) or not brief.get("id"):
+            continue
+        sid = str(brief["id"])
+        detail = request_json(f"{API_ROOT}/{urllib.parse.quote(lang)}/sets/{urllib.parse.quote(sid)}")
+        detail["__restFallback"] = True
+        out.append(detail)
+        if i % 25 == 0 or i == len(briefs):
+            print(f"  REST sets {i}/{len(briefs)}")
+    return out
+
+
+def normalize_set(lang: str, raw: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    sid = str(raw.get("id") or "").strip()
+    if not sid:
+        raise RuntimeError("set sans id")
+    cc = raw.get("cardCount") or {}
+    source_cards = [x for x in (raw.get("cards") or []) if isinstance(x, dict)]
+    total = int(cc.get("total") or len(source_cards))
+    official = int(cc.get("official") or total)
+    issues: list[str] = []
+    if not source_cards:
+        issues.append("aucune carte")
+    if len(source_cards) != total:
+        issues.append(f"cardCount.total={total}, cartes={len(source_cards)}")
+
+    seen_ids: set[str] = set()
+    seen_local: set[str] = set()
+    cards: list[dict[str, Any]] = []
+    missing_scans = missing_rarity = missing_variants = 0
+    rarity_counts: dict[str, int] = {}
+    for raw_card in source_cards:
+        cid = str(raw_card.get("id") or "").strip()
+        local = str(raw_card.get("localId") or "").strip()
+        name = str(raw_card.get("name") or cid)
+        image = str(raw_card.get("image") or "").strip()
+        rarity_raw = str(raw_card.get("rarity") or "").strip()
+        variants = variants_of(raw_card.get("variants"))
+        if not cid:
+            issues.append("id de carte manquant")
+            continue
+        if cid in seen_ids:
+            issues.append(f"id dupliqué: {cid}")
+            continue
+        seen_ids.add(cid)
+        if not local:
+            issues.append(f"localId manquant: {cid}")
+        elif local in seen_local:
+            issues.append(f"localId dupliqué: {local}")
+        seen_local.add(local)
+        if not image:
+            missing_scans += 1
+        if not rarity_raw:
+            missing_rarity += 1
+        if not variants:
+            missing_variants += 1
+        rarity_key = game_rarity(rarity_raw) if rarity_raw else "unknown"
+        rarity_counts[rarity_key] = rarity_counts.get(rarity_key, 0) + 1
+        card_boosters = []
+        for b in raw_card.get("boosters") or []:
+            if isinstance(b, dict):
+                card_boosters.append({k: str(b.get(k) or "") for k in ("id", "name", "logo", "artwork_front", "artwork_back")})
+        cards.append({
+            "id": cid,
+            "localId": local,
+            "name": name,
+            "image": image,
+            "rarityKey": rarity_key,
+            "rarityRaw": rarity_raw,
+            "supplyTier": supply_tier(rarity_raw) if rarity_raw else "unknown",
+            "variants": variants,
+            "boosters": card_boosters,
+        })
+    cards.sort(key=lambda c: number_key(c["localId"]))
+
+    if missing_scans:
+        issues.append(f"{missing_scans} scan(s) {lang} non référencé(s)")
+    if missing_rarity:
+        issues.append(f"{missing_rarity} rareté(s) absente(s)")
+    if missing_variants:
+        issues.append(f"{missing_variants} variante(s) absente(s)")
+    if raw.get("__restFallback"):
+        issues.append("fallback REST: raretés/variantes non garanties")
+
+    serie = raw.get("serie") or {}
+    boosters = []
+    for b in raw.get("boosters") or []:
+        if isinstance(b, dict):
+            boosters.append({k: str(b.get(k) or "") for k in ("id", "name", "logo", "artwork_front", "artwork_back")})
+    core = {
+        "id": sid,
+        "name": str(raw.get("name") or sid),
+        "logo": str(raw.get("logo") or ""),
+        "symbol": str(raw.get("symbol") or ""),
+        "releaseDate": str(raw.get("releaseDate") or ""),
+        "year": release_year(raw.get("releaseDate")),
+        "seriesId": str(serie.get("id") or "") if isinstance(serie, dict) else "",
+        "seriesName": str(serie.get("name") or "") if isinstance(serie, dict) else str(serie or ""),
+        "official": official,
+        "total": total,
+        "boosters": boosters,
+    }
+    stable = {"schema": 111, "language": lang, "set": core, "cards": cards, "issues": sorted(set(issues))}
+    content_hash = stable_hash(stable)
+    entry = {
+        **core,
+        "cards": len(cards),
+        "file": safe_filename(sid),
+        "status": "ready" if not issues else "partial",
+        "missingScans": missing_scans,
+        "missingRarities": missing_rarity,
+        "missingVariants": missing_variants,
+        "rarities": rarity_counts,
+        "contentHash": content_hash,
+    }
+    payload = {
+        "schema": 111,
+        "language": lang,
+        "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "contentHash": content_hash,
+        "set": entry,
+        "cards": cards,
+        "issues": sorted(set(issues)),
+    }
+    return entry, payload
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Importe toutes les collections TCGdex d'une langue")
     parser.add_argument("--lang", default="fr", help="Langue TCGdex (fr par défaut)")
     parser.add_argument("--assets", default=None, help="Dossier assets Android")
-    parser.add_argument("--workers", type=int, default=24, help="Requêtes simultanées")
     parser.add_argument("--strict", action="store_true", help="Échoue si un set est partiel")
     args = parser.parse_args()
 
     lang = args.lang.strip().lower()
     if not LANG_RE.match(lang):
         raise SystemExit(f"Code langue invalide: {lang}")
-    workers = max(1, min(args.workers, 32))
     root = Path(__file__).resolve().parents[1]
     assets = Path(args.assets).resolve() if args.assets else root / "app" / "src" / "main" / "assets"
     out_dir = assets / "catalog" / lang
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    briefs = request_json(f"{API_ROOT}/{urllib.parse.quote(lang)}/sets")
-    if not isinstance(briefs, list) or not briefs:
+    source = "graphql"
+    try:
+        raw_sets = graphql_sets(lang)
+    except Exception as exc:
+        print(f"GraphQL indisponible ({exc}), fallback REST contrôlé.", file=sys.stderr)
+        source = "rest-fallback"
+        raw_sets = rest_sets(lang)
+    if not raw_sets:
         raise RuntimeError(f"TCGdex {lang}: aucune collection retournée")
-    by_id: dict[str, dict[str, Any]] = {}
-    for item in briefs:
-        if not isinstance(item, dict):
-            continue
-        sid = str(item.get("id") or "").strip()
-        if not sid:
-            continue
-        if sid in by_id:
-            raise RuntimeError(f"TCGdex {lang}: set dupliqué {sid}")
-        by_id[sid] = item
 
-    print(f"Import TCGdex {lang}: {len(by_id)} collections découvertes")
-    set_details: dict[str, dict[str, Any]] = {}
-    failures: list[dict[str, str]] = []
-
-    def fetch_set(sid: str) -> tuple[str, dict[str, Any]]:
-        return sid, request_json(f"{API_ROOT}/{urllib.parse.quote(lang)}/sets/{urllib.parse.quote(sid)}")
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(workers, 16)) as pool:
-        fs = {pool.submit(fetch_set, sid): sid for sid in by_id}
-        for n, future in enumerate(concurrent.futures.as_completed(fs), 1):
-            sid = fs[future]
-            try:
-                got_sid, detail = future.result()
-                set_details[got_sid] = detail
-            except Exception as exc:
-                failures.append({"id": sid, "error": str(exc)})
-            if n % 25 == 0 or n == len(fs):
-                print(f"  sets {n}/{len(fs)}")
-
-    # Déduplique les détails de cartes : certaines promos peuvent être référencées
-    # depuis plusieurs vues, mais une fiche TCGdex ne doit être téléchargée qu'une fois.
-    card_jobs: dict[str, dict[str, Any]] = {}
-    for sid, detail in set_details.items():
-        cards = detail.get("cards") or []
-        for brief in cards:
-            if not isinstance(brief, dict):
-                continue
-            cid = str(brief.get("id") or "").strip()
-            if cid:
-                card_jobs.setdefault(cid, brief)
-
-    details: dict[str, dict[str, Any]] = {}
-    detail_failures: dict[str, str] = {}
-
-    def fetch_card(cid: str) -> tuple[str, dict[str, Any]]:
-        # Les libellés de rareté et de variantes sont beaucoup plus stables en EN.
-        # Si la fiche EN manque, on retente la langue cible avant de déclarer le trou.
-        try:
-            return cid, request_json(f"{API_ROOT}/en/cards/{urllib.parse.quote(cid)}")
-        except Exception:
-            return cid, request_json(f"{API_ROOT}/{urllib.parse.quote(lang)}/cards/{urllib.parse.quote(cid)}")
-
-    print(f"Détails structurés: {len(card_jobs)} cartes uniques")
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-        fs = {pool.submit(fetch_card, cid): cid for cid in card_jobs}
-        for n, future in enumerate(concurrent.futures.as_completed(fs), 1):
-            cid = fs[future]
-            try:
-                got_id, detail = future.result()
-                details[got_id] = detail
-            except Exception as exc:
-                detail_failures[cid] = str(exc)
-            if n % 500 == 0 or n == len(fs):
-                print(f"  cards {n}/{len(fs)}")
-
+    seen: set[str] = set()
     entries: list[dict[str, Any]] = []
     payloads: dict[str, dict[str, Any]] = {}
-    total_cards = total_variants = 0
-    for sid, detail in set_details.items():
-        source_cards = [x for x in (detail.get("cards") or []) if isinstance(x, dict)]
-        declared = detail.get("cardCount") or by_id.get(sid, {}).get("cardCount") or {}
-        official = int(declared.get("official") or 0)
-        total = int(declared.get("total") or len(source_cards))
-        issues: list[str] = []
-        if not source_cards:
-            issues.append("aucune carte")
-        if len(source_cards) != total:
-            issues.append(f"cardCount.total={total}, cartes={len(source_cards)}")
+    failures: list[dict[str, str]] = []
+    for raw in raw_sets:
+        sid = str(raw.get("id") or "")
+        if not sid:
+            continue
+        if sid in seen:
+            failures.append({"id": sid, "error": "set dupliqué"})
+            continue
+        seen.add(sid)
+        try:
+            entry, payload = normalize_set(lang, raw)
+            entries.append(entry)
+            payloads[sid] = payload
+        except Exception as exc:
+            failures.append({"id": sid, "error": str(exc)})
 
-        seen_ids: set[str] = set()
-        seen_local: set[str] = set()
-        cards: list[dict[str, Any]] = []
-        missing_scans = missing_details = 0
-        rarity_counts: dict[str, int] = {}
-        for brief in source_cards:
-            cid = str(brief.get("id") or "").strip()
-            local_id = str(brief.get("localId") or "").strip()
-            if not cid:
-                issues.append("id de carte manquant")
-                continue
-            if cid in seen_ids:
-                issues.append(f"id dupliqué: {cid}")
-                continue
-            seen_ids.add(cid)
-            if not local_id:
-                issues.append(f"localId manquant: {cid}")
-            elif local_id in seen_local:
-                issues.append(f"localId dupliqué: {local_id}")
-            seen_local.add(local_id)
-
-            structured = details.get(cid) or {}
-            if not structured:
-                missing_details += 1
-            image = str(brief.get("image") or "").strip()
-            if not image:
-                missing_scans += 1
-            raw_rarity = str(structured.get("rarity") or "Rare")
-            rarity = game_rarity(raw_rarity)
-            rarity_counts[rarity] = rarity_counts.get(rarity, 0) + 1
-            variants = variants_of(structured)
-            total_variants += len(variants)
-            card = {
-                "id": cid,
-                "localId": local_id,
-                "name": str(brief.get("name") or structured.get("name") or cid),
-                "image": image,
-                "rarityKey": rarity,
-                "rarityRaw": raw_rarity,
-                "supplyTier": supply_tier(raw_rarity),
-                "variants": variants,
-                "pricing": lean_pricing(structured.get("pricing") or {}),
-            }
-            cards.append(card)
-
-        cards.sort(key=lambda c: number_key(c["localId"]))
-        if missing_scans:
-            issues.append(f"{missing_scans} scan(s) {lang} non référencé(s)")
-        if missing_details:
-            issues.append(f"{missing_details} fiche(s) structurée(s) indisponible(s)")
-        if len(cards) != total:
-            issues.append(f"catalogue final={len(cards)}/{total}")
-
-        serie_id, serie_name = series_info(detail)
-        filename = safe_filename(sid)
-        core_set = {
-            "id": sid,
-            "name": str(detail.get("name") or by_id.get(sid, {}).get("name") or sid),
-            "logo": str(detail.get("logo") or by_id.get(sid, {}).get("logo") or ""),
-            "symbol": str(detail.get("symbol") or by_id.get(sid, {}).get("symbol") or ""),
-            "releaseDate": str(detail.get("releaseDate") or ""),
-            "year": set_year(detail),
-            "seriesId": serie_id,
-            "seriesName": serie_name,
-            "official": official,
-            "total": total,
-        }
-        stable_payload = {"schema": 111, "language": lang, "set": core_set, "cards": cards, "issues": sorted(set(issues))}
-        content_hash = stable_hash(stable_payload)
-        entry = {
-            **core_set,
-            "cards": len(cards),
-            "file": filename,
-            "status": "ready" if not issues else "partial",
-            "missingScans": missing_scans,
-            "missingDetails": missing_details,
-            "rarities": rarity_counts,
-            "contentHash": content_hash,
-        }
-        payload = {
-            "schema": 111,
-            "language": lang,
-            "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "contentHash": content_hash,
-            "set": entry,
-            "cards": cards,
-            "issues": sorted(set(issues)),
-        }
-        entries.append(entry)
-        payloads[sid] = payload
-        total_cards += len(cards)
-
-    # Les sets les plus récents sont en premier. Ce tri rend le rendu UI déterministe.
     entries.sort(key=lambda s: (-(s.get("year") or 0), str(s.get("releaseDate") or ""), str(s["name"]).casefold()))
     for entry in entries:
         (out_dir / entry["file"]).write_text(
@@ -377,18 +401,18 @@ def main() -> int:
         "schema": 111,
         "language": lang,
         "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "source": "TCGdex REST v2",
+        "source": f"TCGdex {source}",
         "sets": entries,
         "stats": {
-            "discovered": len(by_id),
+            "discovered": len(raw_sets),
             "imported": len(entries),
             "ready": ready,
             "partial": partial,
             "failed": len(failures),
-            "cards": total_cards,
-            "variants": total_variants,
+            "cards": sum(int(x.get("cards") or 0) for x in entries),
             "missingScans": sum(int(x.get("missingScans") or 0) for x in entries),
-            "missingDetails": sum(int(x.get("missingDetails") or 0) for x in entries),
+            "missingRarities": sum(int(x.get("missingRarities") or 0) for x in entries),
+            "missingVariants": sum(int(x.get("missingVariants") or 0) for x in entries),
         },
         "failures": failures,
     }
@@ -399,16 +423,9 @@ def main() -> int:
     )
     (assets / "v111_import_report.json").write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    if failures:
-        print("Collections impossibles à importer:", file=sys.stderr)
-        for row in failures:
-            print(f"  {row['id']}: {row['error']}", file=sys.stderr)
-    if detail_failures:
-        print(f"Fiches structurées indisponibles: {len(detail_failures)}", file=sys.stderr)
-
     print(
-        f"Catalogue {lang}: {len(entries)}/{len(by_id)} sets, {total_cards} cartes, "
-        f"{ready} complets, {partial} partiels, {len(failures)} set(s) en échec."
+        f"Catalogue {lang}: {len(entries)}/{len(raw_sets)} sets · {index['stats']['cards']} cartes · "
+        f"{ready} complets · {partial} partiels · {len(failures)} échec(s) · source {source}."
     )
     if failures:
         return 2
