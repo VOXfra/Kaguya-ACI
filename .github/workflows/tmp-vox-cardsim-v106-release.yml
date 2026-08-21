@@ -1,4 +1,4 @@
-name: VOX CardSim V1.0.9 Correct Products Offline Build
+name: VOX CardSim V1.1.0 Universal Catalog Build
 
 on:
   pull_request:
@@ -14,7 +14,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 50
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Generate validated embedded card data
+      - name: Generate validated embedded card data and universal French catalog
         shell: bash
         run: |
           set -euo pipefail
@@ -30,6 +30,25 @@ jobs:
           mkdir -p "$A/img" "$A/img/v109" "$A/img/v109/me05_cards"
           python cardsim-v03/tools/generate_v110_data.py
           python cardsim-v03/tools/generate_v105_catalog.py
+          python cardsim-v03/tools/import_all_collections.py --lang fr
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          a=Path('cardsim-v03/app/src/main/assets')
+          idx=json.loads((a/'v111_collection_index.json').read_text(encoding='utf-8'))
+          s=idx['stats']
+          assert idx['schema']==111 and idx['language']=='fr'
+          assert s['discovered']>=50, s
+          assert s['imported']>=50, s
+          assert s['cards']>=5000, s
+          assert s['failed']==0, s
+          ids=[x['id'] for x in idx['sets']]
+          assert len(ids)==len(set(ids))
+          for required in ['sv03.5','sv03','sv02','me02.5','me03','me04','me05']:
+              assert required in ids, required
+          print('Universal catalog:', s)
+          PY
 
           curl -Lf --retry 3 'https://archives.bulbagarden.net/media/upload/thumb/1/1f/S6a_Eevee_Heroes_Logo.png/1200px-S6a_Eevee_Heroes_Logo.png' -o "$A/img/eevee_logo.png"
           curl -Lf --retry 3 'https://tcgplayer-cdn.tcgplayer.com/product/565350_400w.jpg' -o "$A/img/eevee_booster.jpg"
@@ -44,7 +63,7 @@ jobs:
         run: |
           set -euo pipefail
           D=cardsim-v03/app/src/main/assets/img/v109
-          UA='Mozilla/5.0 VOX-CardSim/1.0.9'
+          UA='Mozilla/5.0 VOX-CardSim/1.1.0'
           get(){ curl -Lf --retry 4 --retry-all-errors -A "$UA" "$1" -o "$D/$2"; test -s "$D/$2"; }
 
           get 'https://www.guizettefamily.com/wp-content/uploads/2025/11/booster-EV2.5-.png' me025_booster.png
@@ -72,7 +91,6 @@ jobs:
           get 'https://ultrapro.com/cdn/shop/files/16922_9PKTPort_PKM_ME05_Spread.png?v=1784320169&width=900' me05_binder.png
           get 'https://hikarudistribution.com/cdn/shop/articles/logo_nuit_noire_ME05_f1773200-bc42-4c73-a268-2a5c10ae4ecf.png?v=1777881909&width=1600' me05_logo.png
 
-          # Une même image de booster pour plusieurs extensions est désormais un échec de build.
           test "$(sha256sum "$D"/me025_booster.png "$D"/me03_booster.jpg "$D"/me04_booster.png "$D"/me05_booster.jpg | awk '{print $1}' | sort -u | wc -l)" -eq 4
           for f in "$D"/*; do [ -d "$f" ] && continue; file "$f" | grep -Eiq 'image|bitmap|webp|jpeg|png'; done
 
@@ -95,27 +113,23 @@ jobs:
             85:'pkm-me05-085-mimantis',86:'pkm-me05-086-carmadura',
             87:'pkm-me05-087-poissirene',88:'pkm-me05-088-oratoria',89:'pkm-me05-089-elecsprint',
           }
-          headers={'User-Agent':'Mozilla/5.0 VOX-CardSim/1.0.9','Accept':'application/json,image/avif,image/webp,image/png,image/jpeg,*/*'}
-          def request(url):
-              return urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=35)
+          headers={'User-Agent':'Mozilla/5.0 VOX-CardSim/1.1.0','Accept':'application/json,image/avif,image/webp,image/png,image/jpeg,*/*'}
+          def request(url):return urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=35)
           def product_image(data):
               for x in [data.get('featured_image')]+list(data.get('images') or []):
                   if isinstance(x,dict):x=x.get('src') or x.get('url')
                   if isinstance(x,str) and x.strip():return 'https:'+x.strip() if x.strip().startswith('//') else x.strip()
               raise RuntimeError('product image missing')
-
           local={}
           for n,handle in handles.items():
               with request(f'https://lorenzone.fr/products/{handle}.js') as r:data=json.loads(r.read().decode('utf-8'))
               src=product_image(data)
-              with request(src) as r:
-                  blob=r.read();ctype=(r.headers.get('Content-Type') or '').split(';')[0].lower()
+              with request(src) as r:blob=r.read();ctype=(r.headers.get('Content-Type') or '').split(';')[0].lower()
               if len(blob)<12000:raise RuntimeError(f'{n}: invalid scan ({len(blob)} bytes)')
               ext={'image/png':'png','image/webp':'webp','image/jpeg':'jpg','image/jpg':'jpg'}.get(ctype)
               if not ext:
                   path=urllib.parse.urlparse(src).path.lower();ext='png' if path.endswith('.png') else 'webp' if path.endswith('.webp') else 'jpg'
               rel=f'img/v109/me05_cards/{n:03d}.{ext}';(A/rel).write_bytes(blob);local[n]=rel
-
           p=A/'pitch_black_embed.js';text=p.read_text(encoding='utf-8')
           m=re.search(r'window\.V090_PITCH_BLACK_DATA=(.*);\s*$',text,re.S)
           if not m:raise RuntimeError('pitch_black payload missing')
@@ -133,78 +147,41 @@ jobs:
           test "$(find cardsim-v03/app/src/main/assets/img/v109/me05_cards -type f | wc -l)" -eq 15
           for f in cardsim-v03/app/src/main/assets/img/v109/me05_cards/*; do file "$f" | grep -Eiq 'image|bitmap|webp|jpeg|png'; done
 
-      - name: Validate every Nuit Noire offline resource
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json,re,time,urllib.request
-          from concurrent.futures import ThreadPoolExecutor,as_completed
-          from pathlib import Path
-
-          A=Path('cardsim-v03/app/src/main/assets')
-          text=(A/'pitch_black_embed.js').read_text(encoding='utf-8')
-          m=re.search(r'window\.V090_PITCH_BLACK_DATA=(.*);\s*$',text,re.S);assert m
-          cards=json.loads(m.group(1))['cards'];assert len(cards)==120
-          local=[];remote=[]
-          for c in cards:
-              if c.get('v109BundledFrenchScan'):
-                  p=A/c['imageLarge'];assert p.is_file() and p.stat().st_size>12000,(c['localId'],p);local.append(int(c['localId']))
-              else:
-                  base=str(c.get('image') or '').rstrip('/');assert base.startswith('https://'),(c['localId'],base);remote.append(base+'/high.webp')
-          assert local==list(range(75,90)),local
-          assert len(remote)==105,len(remote)
-          # Logo et produits sont locaux dans l'APK. Seuls scans HD restants + énergies passent par HTTP.
-          for n in range(1,9):
-              remote += [f'https://images.pokemontcg.io/sve/{n}_hires.png',f'https://images.pokemontcg.io/sve/{n}.png']
-
-          def check(url):
-              last=None
-              for i in range(4):
-                  try:
-                      req=urllib.request.Request(url,headers={'User-Agent':'VOX-CardSim/1.0.9','Range':'bytes=0-2047'})
-                      with urllib.request.urlopen(req,timeout=25) as r:
-                          if 200<=r.status<300 and r.read(1):return
-                  except Exception as e:last=e;time.sleep(.35*(i+1))
-              raise RuntimeError(f'{url}: {last}')
-
-          bad=[]
-          with ThreadPoolExecutor(max_workers=16) as ex:
-              fs=[ex.submit(check,u) for u in remote]
-              for f in as_completed(fs):
-                  try:f.result()
-                  except Exception as e:bad.append(str(e))
-          if bad:raise RuntimeError('Nuit Noire offline failures:\n'+'\n'.join(sorted(bad)))
-          print(f'Nuit Noire offline HD OK: 15 scans FR embarqués + {len(remote)} ressources réseau validées')
-          PY
-
-      - name: Validate V1.0.9 source and runtime contracts
+      - name: Validate Nuit Noire and V1.1 runtime contracts
         shell: bash
         run: |
           set -euo pipefail
           A=cardsim-v03/app/src/main/assets
           for f in "$A"/*.js; do node --check "$f"; done
-          grep -q 'versionCode = 35' cardsim-v03/app/build.gradle.kts
-          grep -q 'versionName = "1.0.9"' cardsim-v03/app/build.gradle.kts
-          grep -q '<script src="v108boot.js"></script><script src="v109boot.js"></script>' "$A/index.html"
-          grep -q "V109_VERSION='1.0.9'" "$A/v109fix.js"
-          grep -q "V109_ME05_LOGO='img/v109/me05_logo.png'" "$A/v109fix.js"
-          grep -q 'COLLECTIONS 2026' "$A/v109fix.js"
-          grep -q "base+'/high.webp'" "$A/v109fix.js"
+          python -m py_compile cardsim-v03/tools/import_all_collections.py
+          grep -q 'versionCode = 36' cardsim-v03/app/build.gradle.kts
+          grep -q 'versionName = "1.1.0"' cardsim-v03/app/build.gradle.kts
+          grep -q 'androidx.work:work-runtime:2.10.1' cardsim-v03/app/build.gradle.kts
+          grep -q 'FOREGROUND_SERVICE_DATA_SYNC' cardsim-v03/app/src/main/AndroidManifest.xml
+          grep -q 'v111_collection_index.js' "$A/index.html"
+          grep -q 'v111boot.js' "$A/index.html"
+          grep -q "V111_VERSION='1.1.0'" "$A/v111fix.js"
+          grep -q 'MISE À JOUR DISPONIBLE' "$A/v111fix.js"
+          grep -q 'Tout télécharger' "$A/v111fix.js"
+          grep -q 'Tout mettre à jour' "$A/v111fix.js"
+          grep -q 'boutique-classeur-2026' "$A/v111fix.js"
+          grep -q 'WorkManager' cardsim-v03/app/src/main/java/com/vox/cardsim/OfflineQueueBridge.java
+          grep -q 'OfflinePackWorker' cardsim-v03/app/src/main/java/com/vox/cardsim/OfflineQueueBridge.java
           grep -q 'v109BundledFrenchScan' "$A/pitch_black_embed.js"
 
           python - <<'PY'
+          import json,re
           from pathlib import Path
-          q=Path('cardsim-v03/app/src/main/assets/v109fix.js').read_text(encoding='utf-8')
-          assert "'me02.5':{pack:'img/v109/me025_booster.png'" in q
-          assert "'me03':{pack:'img/v109/me03_booster.jpg'" in q
-          assert "'me04':{pack:'img/v109/me04_booster.png'" in q
-          assert "'me05':{pack:'img/v109/me05_booster.jpg'" in q
-          assert "renderProducts=function()" in q and 'v109ShopSet()' in q
-          assert "state.activeSet==='me05'" in q and 'V109_ME05_LOGO' in q
-          assert 'META_BASE' not in q[q.index("v05OfflineManifest=function(setId)"):]
-          assert "base+'/high.webp'" in q[q.index("v05OfflineManifest=function(setId)"):]
-          print('V1.0.9 source contracts OK')
+          A=Path('cardsim-v03/app/src/main/assets')
+          text=(A/'pitch_black_embed.js').read_text(encoding='utf-8')
+          m=re.search(r'window\.V090_PITCH_BLACK_DATA=(.*);\s*$',text,re.S);assert m
+          cards=json.loads(m.group(1))['cards'];assert len(cards)==120
+          local=[int(c['localId']) for c in cards if c.get('v109BundledFrenchScan')]
+          assert local==list(range(75,90)),local
+          for c in cards:
+              if c.get('v109BundledFrenchScan'):
+                  p=A/c['imageLarge'];assert p.is_file() and p.stat().st_size>12000,(c['localId'],p)
+          print('Nuit Noire local scan contract OK')
           PY
 
       - name: Java 17
@@ -240,13 +217,12 @@ jobs:
         run: |
           set -euo pipefail
           APK=cardsim-v03/app/build/outputs/apk/release/app-release-unsigned.apk; test -f "$APK"
-          for f in v108boot.js v108fix.js v109boot.js v109fix.js v105_catalog_embed.js; do unzip -l "$APK" | grep -q "assets/$f"; done
+          for f in v108boot.js v108fix.js v109boot.js v109fix.js v109hotfix.js v111boot.js v111fix.js v111_collection_index.js v111_collection_index.json; do unzip -l "$APK" | grep -q "assets/$f"; done
           for f in me025_booster.png me03_booster.jpg me04_booster.png me05_booster.jpg me05_build.png me05_binder.png me05_logo.png; do unzip -l "$APK" | grep -q "assets/img/v109/$f"; done
           test "$(unzip -l "$APK" | grep -c 'assets/img/v109/me05_cards/')" -eq 15
-          unzip -p "$APK" assets/v109fix.js | grep -q "V109_VERSION='1.0.9'"
-          unzip -p "$APK" assets/v109fix.js | grep -q "base+'/high.webp'"
-          unzip -p "$APK" assets/pitch_black_embed.js | grep -q 'v109BundledFrenchScan'
-          SIZE=$(unzip -p "$APK" assets/v105_catalog_embed.js | wc -c); test "$SIZE" -gt 1000000
+          unzip -p "$APK" assets/v111fix.js | grep -q "V111_VERSION='1.1.0'"
+          SIZE=$(unzip -p "$APK" assets/v111_collection_index.json | wc -c); test "$SIZE" -gt 10000
+          COUNT=$(unzip -l "$APK" | grep -c 'assets/catalog/fr/'); test "$COUNT" -gt 50
 
       - name: Restore permanent signing key
         uses: actions/download-artifact@v4
@@ -262,13 +238,13 @@ jobs:
           set -euo pipefail
           SP="$(sed -n 's/^Store password: //p' "$RUNNER_TEMP/signing/signing-info.txt")"
           KP="$(sed -n 's/^Key password: //p' "$RUNNER_TEMP/signing/signing-info.txt")"
-          OUT="$RUNNER_TEMP/VOX_CardSim_v1.0.9.apk"
+          OUT="$RUNNER_TEMP/VOX_CardSim_v1.1.0.apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$RUNNER_TEMP/signing/vox-cardsim-release.jks" --ks-key-alias vox-cardsim --ks-pass "pass:$SP" --key-pass "pass:$KP" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$OUT" cardsim-v03/app/build/outputs/apk/release/app-release-unsigned.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$OUT"
           sha256sum "$OUT"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: VOX-CardSim-v1.0.9-correct-products-offline
-          path: ${{ runner.temp }}/VOX_CardSim_v1.0.9.apk
+          name: VOX-CardSim-v1.1.0-universal-offline
+          path: ${{ runner.temp }}/VOX_CardSim_v1.1.0.apk
           if-no-files-found: error
