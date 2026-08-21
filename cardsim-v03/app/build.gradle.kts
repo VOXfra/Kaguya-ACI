@@ -1,4 +1,4 @@
-// VOX CardSim V1.0.9 shop/products/offline repair
+// VOX Card Sim V1.1.0 — import universel, hors-ligne persistant et grading physique
 plugins {
     id("com.android.application")
     id("com.google.gms.google-services")
@@ -12,8 +12,8 @@ android {
         applicationId = "com.vox.cardsim"
         minSdk = 26
         targetSdk = 35
-        versionCode = 35
-        versionName = "1.0.9"
+        versionCode = 36
+        versionName = "1.1.0"
     }
 
     compileOptions {
@@ -29,4 +29,8 @@ dependencies {
     implementation("androidx.credentials:credentials:1.3.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+
+    // WorkManager persiste les téléchargements hors ligne lorsque l'écran est éteint
+    // ou que l'Activity n'est plus au premier plan.
+    implementation("androidx.work:work-runtime:2.10.1")
 }
