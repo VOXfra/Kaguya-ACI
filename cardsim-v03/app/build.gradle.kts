@@ -1,4 +1,4 @@
-// VOX Card Sim V1.1.2 — chargeur catalogue canonique Android + import universel + hors-ligne persistant
+// VOX Card Sim V1.1.3 — boutique Créative complète + catalogue canonique Android + hors-ligne persistant
 plugins {
     id("com.android.application")
     id("com.google.gms.google-services")
@@ -12,8 +12,8 @@ android {
         applicationId = "com.vox.cardsim"
         minSdk = 26
         targetSdk = 35
-        versionCode = 38
-        versionName = "1.1.2"
+        versionCode = 39
+        versionName = "1.1.3"
     }
 
     compileOptions {
