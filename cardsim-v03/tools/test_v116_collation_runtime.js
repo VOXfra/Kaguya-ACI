@@ -33,9 +33,8 @@ let fallbackCalls=0;
 const state={metaReady:{},currentOpening:null};
 for(const sid of cards.keys())state.metaReady[sid]=true;
 
-/* Important : v116fix.js lit window.V116_COLLATION_PROFILES au chargement. Le
-   premier harness oubliait de l'injecter et testait donc involontairement le
-   fallback V1.1.5 au lieu du moteur V1.1.6. */
+/* v116fix.js lit window.V116_COLLATION_PROFILES au chargement. Le harness injecte
+   le catalogue généré puis charge exactement le même hotfix final que l'APK. */
 const ctx={
   console,
   window:null,
@@ -55,15 +54,13 @@ const ctx={
 ctx.window=ctx;
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(A,'v116fix.js'),'utf8'),ctx,{filename:'v116fix.js'});
+vm.runInContext(fs.readFileSync(path.join(A,'v116hotfix.js'),'utf8'),ctx,{filename:'v116hotfix.js'});
 
 const failures=[];
 let tested=0,packs=0,skippedNoSource=0;
 for(const [sid,profile] of Object.entries(profiles.sets||{})){
   if(profile.confidence==='structure-only')continue;
   const source=cards.get(sid)||[];
-  /* Quelques shells historiques existent dans TCGdex FR sans cartes publiées.
-     Ils ne sont pas achetables comme boosters vérifiés. On les ignore dans la
-     simulation au lieu de faire échouer tous les profils suivants. */
   if(!source.length){
     if(verifiedBoosterSets.has(sid))failures.push(`${sid}: booster vérifié mais aucune carte source`);
     else skippedNoSource++;
@@ -76,8 +73,6 @@ for(const [sid,profile] of Object.entries(profiles.sets||{})){
   if(dependencyBroken)continue;
   tested++;
   try{
-    // 250 générations par set font passer des dizaines de milliers de boosters
-    // dans le vrai moteur sans rendre la CI excessivement lente.
     for(let i=0;i<250;i++){
       const pack=ctx.generatePack(sid);
       packs++;
