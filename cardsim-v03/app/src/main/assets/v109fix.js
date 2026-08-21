@@ -8,6 +8,7 @@
    - Les anciennes collections restent réservées au Marketplace / offres Archive. */
 const V109_VERSION='1.0.9';
 const V109_SHOP_SET_KEY='voxCardSimV109_shopSet2026';
+const V109_ME05_LOGO='img/v109/me05_logo.png';
 
 const V109_LOCAL_ART={
  'me02.5':{pack:'img/v109/me025_booster.png',bundle:'img/v109/me025_bundle.webp',etb:'img/v109/me025_etb.jpg',binder:'img/v109/me025_binder.png'},
@@ -53,6 +54,14 @@ v109Patch2026Art();
 const v109OpeningPackImageBase=openingPackImage;
 openingPackImage=function(setId){return V109_LOCAL_ART[setId]?.pack||v109OpeningPackImageBase(setId)};
 
+/* Le logo TCGdex de Nuit Noire renvoie actuellement 404. On garde les données du
+   set, mais l'accueil affiche le logo embarqué dans l'APK afin de ne plus dépendre
+   de cet endpoint cassé. */
+const v109RenderHomeBase=renderHome;
+renderHome=function(){
+ const r=v109RenderHomeBase();if(state.activeSet==='me05'){const logo=$('#setLogo');if(logo){logo.src=V109_ME05_LOGO;logo.alt=SETS.me05?.name||'Nuit Noire'}}return r;
+};
+
 function v109ProductItems(cfg){return (cfg?.products||[]).filter(p=>!p.shopHidden)}
 function v109DecorateStock(grid){
  if(!grid||v08Mode()==='creative')return;
@@ -96,14 +105,15 @@ renderSetSwitches=function(){const r=v109RenderSetSwitchesBase();v109RenderShopS
 /* Les données, prix et produits Nuit Noire sont déjà embarqués. Le vieux manifeste
    V0.5 ajoutait encore META_BASE/undefined, les fiches API et des photos produits
    distantes : autant de téléchargements inutiles et fragiles. V1.0.9 construit donc
-   un manifeste ME05 minimal : logo + scans non embarqués + énergies. Les 15 scans
-   FR absents de TCGdex sont épinglés dans l'APK au build et ont une imageSmall locale. */
+   un manifeste ME05 minimal : uniquement les scans non embarqués et les énergies.
+   Les 15 scans FR absents de TCGdex sont épinglés dans l'APK au build et ont une
+   imageSmall locale. Le logo Nuit Noire est lui aussi déjà embarqué. */
 const v109OfflineManifestBase=v05OfflineManifest;
 function v109Https(out,u){u=String(u||'').trim();if(/^https:\/\//i.test(u))out.add(u)}
 v05OfflineManifest=function(setId){
  if(setId==='me05'){
   const cfg=SETS.me05,set=state.sets.me05,cards=cardsFor('me05');if(!cfg||!set||cards.length!==120)throw new Error(`me05-not-ready-${cards.length}`);
-  const urls=new Set(),logo=String(set.logo||'').trim();if(logo)v109Https(urls,/\.(webp|png|jpe?g)(\?|$)/i.test(logo)?logo:logo+'.webp');
+  const urls=new Set();
   for(const c of cards){
    const base=String(c?.image||'').trim();if(base)v109Https(urls,/\.(webp|png|jpe?g)(\?|$)/i.test(base)?base:base+'/low.webp');
    else v109Https(urls,c?.imageSmall||c?.imageLarge||'');
@@ -116,9 +126,9 @@ v05OfflineManifest=function(setId){
 };
 
 const v109Style=document.createElement('style');v109Style.textContent=`
-#shop .v107-year-row{display:none!important}.v109-shop-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:2px 1px 8px}.v109-shop-head>span{font-size:10px;letter-spacing:1.6px;font-weight:900;color:#f2be40}.v109-shop-head>button{border:0;background:transparent;color:#98a5b8;font-size:10px;font-weight:800;padding:7px}.v109-shop-row{padding-bottom:5px!important}.v109-shop-banner{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:13px 15px;margin:12px 0 16px}.v109-shop-banner>div{display:flex;flex-direction:column;gap:3px}.v109-shop-banner span,.v109-shop-banner small{font-size:10px;letter-spacing:1px;color:#8f9caf}.v109-shop-banner strong,.v109-shop-banner b{color:#f3c653}.product-photo[src^="img/v109/"],#packArt[src^="img/v109/"]{object-fit:contain!important;background:transparent!important}
+#shop .v107-year-row{display:none!important}.v109-shop-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:2px 1px 8px}.v109-shop-head>span{font-size:10px;letter-spacing:1.6px;font-weight:900;color:#f2be40}.v109-shop-head>button{border:0;background:transparent;color:#98a5b8;font-size:10px;font-weight:800;padding:7px}.v109-shop-row{padding-bottom:5px!important}.v109-shop-banner{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:13px 15px;margin:12px 0 16px}.v109-shop-banner>div{display:flex;flex-direction:column;gap:3px}.v109-shop-banner span,.v109-shop-banner small{font-size:10px;letter-spacing:1px;color:#8f9caf}.v109-shop-banner strong,.v109-shop-banner b{color:#f3c653}.product-photo[src^="img/v109/"],#packArt[src^="img/v109/"],#setLogo[src^="img/v109/"]{object-fit:contain!important;background:transparent!important}
 `;
 document.head.appendChild(v109Style);
 
-setTimeout(()=>{try{v109Patch2026Art();v109RenderShopSwitch();if($('#shop')?.classList.contains('active'))renderProducts()}catch(e){console.warn('V1.0.9 refresh',e)}},160);
+setTimeout(()=>{try{v109Patch2026Art();v109RenderShopSwitch();if($('#shop')?.classList.contains('active'))renderProducts();if(state.activeSet==='me05')renderHome()}catch(e){console.warn('V1.0.9 refresh',e)}},160);
 window.__voxV109Ready=true;
