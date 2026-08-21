@@ -1,8 +1,8 @@
 'use strict';
 
-/* V1.0.9 hotfix R2 — changement de mode atomique + packs hors ligne historiques.
-   Cette couche est chargée après v109fix.js pour corriger deux régressions observées
-   sur Android sans toucher aux sauvegardes existantes. */
+/* V1.0.9 hotfix R3 — mode atomique, packs hors ligne historiques et scans Nuit Noire locaux.
+   Cette couche est chargée après v109fix.js. Elle conserve les corrections R2 et
+   répare le chemin d'image des quinze scans français embarqués de Nuit Noire. */
 const V109HF_LEGACY_OFFLINE=new Set(['sv03.5','sv03','sv02','s6a']);
 
 /* ---------- CHANGEMENT DE MODE ----------
@@ -72,8 +72,45 @@ v05DownloadOffline=async function(setId){
  return v109HFDownloadOfflineBase(setId);
 };
 
+/* ---------- NUIT NOIRE : SCANS FRANÇAIS EMBARQUÉS 075–089 ----------
+   V0.9.3 reconstruit historiquement les URL me05 sous la forme <base>/high.webp.
+   Pour une carte distante TCGdex c'est correct, mais les quinze scans de secours
+   V1.0.9 sont de vrais fichiers APK (img/v109/me05_cards/078.webp, etc.).
+   Le vieux réparateur transformait donc par exemple Albia en
+   img/v109/me05_cards/078/high.webp, chemin qui n'existe pas. Tous les scans
+   075–089 étaient potentiellement concernés, pas seulement Albia et Bridjet. */
+function v109HFMe05BundledPath(c){
+ if(!c?.v109BundledFrenchScan)return'';
+ const n=Number.parseInt(String(c.localId||''),10);if(!(n>=75&&n<=89))return'';
+ return `img/v109/me05_cards/${String(n).padStart(3,'0')}.webp`;
+}
+function v109HFRestoreBundledMe05Cards(){
+ let repaired=0;for(const c of cardsFor('me05')||[]){const local=v109HFMe05BundledPath(c);if(!local)continue;c.image='';c.imageSmall=local;c.imageLarge=local;repaired++;}
+ return repaired;
+}
+
+/* Empêche directement v093Me05Image() de suffixer /high.webp à un fichier local. */
+if(typeof v093Me05Image==='function'){
+ const v109HFMe05ImageBase=v093Me05Image;
+ v093Me05Image=function(c,q='high'){const local=v109HFMe05BundledPath(c);return local||v109HFMe05ImageBase(c,q)};
+}
+
+/* Si une ancienne couche rappelle son auto-réparation plus tard (ex. hors-ligne),
+   on restaure immédiatement les chemins locaux après son passage. */
+if(typeof v093RepairMe05Data==='function'){
+ const v109HFMe05RepairBase=v093RepairMe05Data;
+ v093RepairMe05Data=function(){const ok=v109HFMe05RepairBase();v109HFRestoreBundledMe05Cards();return ok};
+}
+
+/* Dernier garde-fou : toute vue utilisant cardImg() (ouverture, classeur, modal,
+   inventaire, résumé) reçoit le fichier APK direct pour ces quinze cartes. */
+const v109HFCardImgBase=cardImg;
+cardImg=function(c,q='high'){const local=v109HFMe05BundledPath(c);return local||v109HFCardImgBase(c,q)};
+v109HFRestoreBundledMe05Cards();
+
 /* Les anciens manifests ajoutaient META_BASE/undefined, les fiches API et des
    photos de produits qui ne sont pas nécessaires au pack de scans. Le nouveau
    manifest historique ne contient que les scans et les énergies réellement utiles. */
-setTimeout(()=>{try{v05RefreshOfflinePanel?.();v108InstallModePanel?.();v08RefreshModePill?.()}catch(e){console.warn('V1.0.9 R2 refresh',e)}},80);
+setTimeout(()=>{try{v05RefreshOfflinePanel?.();v108InstallModePanel?.();v08RefreshModePill?.()}catch(e){console.warn('V1.0.9 R3 refresh',e)}},80);
 window.__voxV109HotfixR2Ready=true;
+window.__voxV109HotfixR3Ready=true;
