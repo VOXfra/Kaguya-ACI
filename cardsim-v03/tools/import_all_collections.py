@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """Importeur universel TCGdex pour VOX Card Sim.
 
-Objectif : importer automatiquement toutes les collections disponibles dans une
-langue sans maintenir une liste d'IDs à la main. Le chemin principal utilise
-GraphQL afin de récupérer en quelques requêtes les sets, cartes, raretés,
-variantes et artworks de boosters. Un fallback REST existe si GraphQL est
-indisponible, mais il est marqué comme partiel plutôt que d'inventer les champs
-manquants.
+Le catalogue ne contient aucune liste d'extensions codée en dur. Il découvre toutes
+les collections exposées par TCGdex pour une langue, puis produit un fichier JSON
+par collection et un index compact pour Android.
 
-La langue est un paramètre (--lang fr par défaut). Le format produit est déjà
-multilingue : ajouter une langue plus tard ne demande pas de changer le runtime.
+Principe de sûreté : une panne de la source riche ne doit jamais être transformée
+en faux succès. GraphQL est le chemin de release car il fournit en une seule passe
+les raretés, variantes et artworks de boosters. Le fallback REST reste disponible
+manuellement pour diagnostic (`--allow-rest-fallback`) mais n'est pas accepté par le
+build de release si les métadonnées riches ne sont pas présentes.
+
+La langue est paramétrable (`--lang fr` par défaut) et le format généré est déjà
+prévu pour l'ajout futur d'autres langues.
 """
 from __future__ import annotations
 
@@ -36,13 +39,16 @@ def backoff(attempt: int) -> None:
     time.sleep(min(12.0, 0.65 * (2 ** attempt)))
 
 
-def request_json(url: str, retries: int = 8) -> Any:
+def request_json(url: str, retries: int = 7) -> Any:
     last: Exception | None = None
     for attempt in range(retries):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
-            with urllib.request.urlopen(req, timeout=50) as response:
-                if not (200 <= response.status < 300):
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=55) as response:
+                if not 200 <= response.status < 300:
                     raise RuntimeError(f"HTTP {response.status}")
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
@@ -50,13 +56,11 @@ def request_json(url: str, retries: int = 8) -> Any:
             if exc.code not in (408, 425, 429, 500, 502, 503, 504):
                 break
             retry_after = exc.headers.get("Retry-After") if exc.headers else None
-            if retry_after:
-                try:
-                    time.sleep(max(0.5, float(retry_after)))
-                    continue
-                except ValueError:
-                    pass
-            backoff(attempt)
+            try:
+                delay = max(0.5, float(retry_after)) if retry_after else 0
+            except ValueError:
+                delay = 0
+            time.sleep(delay or min(12.0, 0.65 * (2 ** attempt)))
         except Exception as exc:
             last = exc
             backoff(attempt)
@@ -72,15 +76,20 @@ def graphql(query: str, variables: dict[str, Any], retries: int = 6) -> dict[str
                 GRAPHQL_URL,
                 data=body,
                 method="POST",
-                headers={"User-Agent": USER_AGENT, "Accept": "application/json", "Content-Type": "application/json"},
+                headers={
+                    "User-Agent": USER_AGENT,
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                },
             )
             with urllib.request.urlopen(req, timeout=90) as response:
                 payload = json.loads(response.read().decode("utf-8"))
-            if payload.get("errors"):
-                raise RuntimeError(json.dumps(payload["errors"], ensure_ascii=False)[:1200])
+            errors = payload.get("errors") or []
+            if errors:
+                raise RuntimeError(json.dumps(errors, ensure_ascii=False)[:1600])
             data = payload.get("data")
             if not isinstance(data, dict):
-                raise RuntimeError("Réponse GraphQL sans data")
+                raise RuntimeError("Réponse GraphQL sans objet data")
             return data
         except Exception as exc:
             last = exc
@@ -161,8 +170,7 @@ def supply_tier(raw: Any) -> str:
 def variants_of(raw: Any) -> list[str]:
     if not isinstance(raw, dict):
         return []
-    order = ("normal", "holo", "reverse", "firstEdition")
-    return [key for key in order if raw.get(key) is True]
+    return [k for k in ("normal", "holo", "reverse", "firstEdition") if raw.get(k) is True]
 
 
 def stable_hash(value: Any) -> str:
@@ -178,9 +186,13 @@ def release_year(value: Any) -> int | None:
     return None
 
 
-GRAPHQL_QUERY = r"""
-query ImportSets($page:Int!,$count:Int!,$lang:String!){
-  sets(pagination:{page:$page,itemsPerPage:$count},sort:{field:"releaseDate",order:"DESC"}) @locale(lang:$lang){
+# TCGdex accepte `@locale(lang: String!)`, mais son implémentation serveur actuelle
+# tente d'utiliser directement la valeur du nœud GraphQL. Une variable `$lang`
+# déclenche donc `value.indexOf is not a function`. Le code langue est validé par
+# LANG_RE puis injecté comme littéral sûr dans le document GraphQL.
+GRAPHQL_QUERY_TEMPLATE = r"""
+query ImportSets($page:Int!,$count:Int!){
+  sets(pagination:{page:$page,itemsPerPage:$count},sort:{field:"releaseDate",order:"DESC"}) @locale(lang:"__LANG__"){
     id name logo symbol releaseDate
     cardCount{official total normal holo reverse firstEd}
     serie{id name}
@@ -196,20 +208,35 @@ query ImportSets($page:Int!,$count:Int!,$lang:String!){
 
 
 def graphql_sets(lang: str) -> list[dict[str, Any]]:
+    if not LANG_RE.fullmatch(lang):
+        raise RuntimeError(f"Langue GraphQL invalide: {lang}")
+    query = GRAPHQL_QUERY_TEMPLATE.replace("__LANG__", lang)
     out: list[dict[str, Any]] = []
+    seen: set[str] = set()
     page = 1
     while True:
-        data = graphql(GRAPHQL_QUERY, {"page": page, "count": PAGE_SIZE, "lang": lang})
+        data = graphql(query, {"page": page, "count": PAGE_SIZE})
         rows = data.get("sets") or []
         if not isinstance(rows, list):
             raise RuntimeError("GraphQL sets n'est pas un tableau")
-        out.extend(x for x in rows if isinstance(x, dict))
-        print(f"  GraphQL page {page}: {len(rows)} set(s)")
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            sid = str(row.get("id") or "").strip()
+            if not sid:
+                raise RuntimeError(f"Set sans ID page {page}")
+            if sid in seen:
+                raise RuntimeError(f"Pagination GraphQL duplique le set {sid}")
+            seen.add(sid)
+            out.append(row)
+        print(f"  GraphQL page {page}: {len(rows)} set(s) · total {len(out)}")
         if len(rows) < PAGE_SIZE:
             break
         page += 1
         if page > 200:
             raise RuntimeError("Pagination GraphQL anormalement longue")
+    if not out:
+        raise RuntimeError("GraphQL n'a retourné aucune collection")
     return out
 
 
@@ -223,11 +250,22 @@ def rest_sets(lang: str) -> list[dict[str, Any]]:
             continue
         sid = str(brief["id"])
         detail = request_json(f"{API_ROOT}/{urllib.parse.quote(lang)}/sets/{urllib.parse.quote(sid)}")
+        if not isinstance(detail, dict):
+            raise RuntimeError(f"REST {sid}: réponse invalide")
         detail["__restFallback"] = True
         out.append(detail)
         if i % 25 == 0 or i == len(briefs):
             print(f"  REST sets {i}/{len(briefs)}")
     return out
+
+
+def booster_row(raw: Any) -> dict[str, str] | None:
+    if not isinstance(raw, dict):
+        return None
+    bid = str(raw.get("id") or "").strip()
+    if not bid:
+        return None
+    return {k: str(raw.get(k) or "") for k in ("id", "name", "logo", "artwork_front", "artwork_back")}
 
 
 def normalize_set(lang: str, raw: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -239,10 +277,11 @@ def normalize_set(lang: str, raw: dict[str, Any]) -> tuple[dict[str, Any], dict[
     total = int(cc.get("total") or len(source_cards))
     official = int(cc.get("official") or total)
     issues: list[str] = []
+    fatal: list[str] = []
     if not source_cards:
-        issues.append("aucune carte")
+        fatal.append("aucune carte")
     if len(source_cards) != total:
-        issues.append(f"cardCount.total={total}, cartes={len(source_cards)}")
+        fatal.append(f"cardCount.total={total}, cartes={len(source_cards)}")
 
     seen_ids: set[str] = set()
     seen_local: set[str] = set()
@@ -252,22 +291,22 @@ def normalize_set(lang: str, raw: dict[str, Any]) -> tuple[dict[str, Any], dict[
     for raw_card in source_cards:
         cid = str(raw_card.get("id") or "").strip()
         local = str(raw_card.get("localId") or "").strip()
-        name = str(raw_card.get("name") or cid)
-        image = str(raw_card.get("image") or "").strip()
-        rarity_raw = str(raw_card.get("rarity") or "").strip()
-        variants = variants_of(raw_card.get("variants"))
         if not cid:
-            issues.append("id de carte manquant")
+            fatal.append("id de carte manquant")
             continue
         if cid in seen_ids:
-            issues.append(f"id dupliqué: {cid}")
+            fatal.append(f"id dupliqué: {cid}")
             continue
         seen_ids.add(cid)
         if not local:
-            issues.append(f"localId manquant: {cid}")
+            fatal.append(f"localId manquant: {cid}")
         elif local in seen_local:
-            issues.append(f"localId dupliqué: {local}")
+            fatal.append(f"localId dupliqué: {local}")
         seen_local.add(local)
+
+        image = str(raw_card.get("image") or "").strip()
+        rarity_raw = str(raw_card.get("rarity") or "").strip()
+        variants = variants_of(raw_card.get("variants"))
         if not image:
             missing_scans += 1
         if not rarity_raw:
@@ -276,14 +315,11 @@ def normalize_set(lang: str, raw: dict[str, Any]) -> tuple[dict[str, Any], dict[
             missing_variants += 1
         rarity_key = game_rarity(rarity_raw) if rarity_raw else "unknown"
         rarity_counts[rarity_key] = rarity_counts.get(rarity_key, 0) + 1
-        card_boosters = []
-        for b in raw_card.get("boosters") or []:
-            if isinstance(b, dict):
-                card_boosters.append({k: str(b.get(k) or "") for k in ("id", "name", "logo", "artwork_front", "artwork_back")})
+        card_boosters = [x for x in (booster_row(b) for b in raw_card.get("boosters") or []) if x]
         cards.append({
             "id": cid,
             "localId": local,
-            "name": name,
+            "name": str(raw_card.get("name") or cid),
             "image": image,
             "rarityKey": rarity_key,
             "rarityRaw": rarity_raw,
@@ -300,13 +336,13 @@ def normalize_set(lang: str, raw: dict[str, Any]) -> tuple[dict[str, Any], dict[
     if missing_variants:
         issues.append(f"{missing_variants} variante(s) absente(s)")
     if raw.get("__restFallback"):
-        issues.append("fallback REST: raretés/variantes non garanties")
+        issues.append("fallback REST: raretés/variantes riches non garanties")
+
+    if fatal:
+        raise RuntimeError("; ".join(sorted(set(fatal))))
 
     serie = raw.get("serie") or {}
-    boosters = []
-    for b in raw.get("boosters") or []:
-        if isinstance(b, dict):
-            boosters.append({k: str(b.get(k) or "") for k in ("id", "name", "logo", "artwork_front", "artwork_back")})
+    boosters = [x for x in (booster_row(b) for b in raw.get("boosters") or []) if x]
     core = {
         "id": sid,
         "name": str(raw.get("name") or sid),
@@ -320,7 +356,13 @@ def normalize_set(lang: str, raw: dict[str, Any]) -> tuple[dict[str, Any], dict[
         "total": total,
         "boosters": boosters,
     }
-    stable = {"schema": 111, "language": lang, "set": core, "cards": cards, "issues": sorted(set(issues))}
+    stable = {
+        "schema": 111,
+        "language": lang,
+        "set": core,
+        "cards": cards,
+        "issues": sorted(set(issues)),
+    }
     content_hash = stable_hash(stable)
     entry = {
         **core,
@@ -349,11 +391,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Importe toutes les collections TCGdex d'une langue")
     parser.add_argument("--lang", default="fr", help="Langue TCGdex (fr par défaut)")
     parser.add_argument("--assets", default=None, help="Dossier assets Android")
-    parser.add_argument("--strict", action="store_true", help="Échoue si un set est partiel")
+    parser.add_argument("--strict", action="store_true", help="Échoue aussi si un set est partiel")
+    parser.add_argument(
+        "--allow-rest-fallback",
+        action="store_true",
+        help="Diagnostic uniquement : autorise le fallback REST si GraphQL est indisponible",
+    )
     args = parser.parse_args()
 
     lang = args.lang.strip().lower()
-    if not LANG_RE.match(lang):
+    if not LANG_RE.fullmatch(lang):
         raise SystemExit(f"Code langue invalide: {lang}")
     root = Path(__file__).resolve().parents[1]
     assets = Path(args.assets).resolve() if args.assets else root / "app" / "src" / "main" / "assets"
@@ -364,7 +411,12 @@ def main() -> int:
     try:
         raw_sets = graphql_sets(lang)
     except Exception as exc:
-        print(f"GraphQL indisponible ({exc}), fallback REST contrôlé.", file=sys.stderr)
+        if not args.allow_rest_fallback:
+            raise RuntimeError(
+                "Import riche TCGdex indisponible. Le build est arrêté plutôt que de produire "
+                f"un catalogue incomplet: {exc}"
+            ) from exc
+        print(f"GraphQL indisponible ({exc}), fallback REST de diagnostic.", file=sys.stderr)
         source = "rest-fallback"
         raw_sets = rest_sets(lang)
     if not raw_sets:
@@ -377,6 +429,7 @@ def main() -> int:
     for raw in raw_sets:
         sid = str(raw.get("id") or "")
         if not sid:
+            failures.append({"id": "?", "error": "set sans id"})
             continue
         if sid in seen:
             failures.append({"id": sid, "error": "set dupliqué"})
@@ -389,10 +442,20 @@ def main() -> int:
         except Exception as exc:
             failures.append({"id": sid, "error": str(exc)})
 
-    entries.sort(key=lambda s: (-(s.get("year") or 0), str(s.get("releaseDate") or ""), str(s["name"]).casefold()))
+    # L'importeur promet toutes les collections découvertes : une seule collection
+    # perdue est donc une erreur de release et jamais un avertissement silencieux.
+    if failures or len(entries) != len(raw_sets):
+        print("Collections non importées :", file=sys.stderr)
+        for row in failures:
+            print(f"  {row['id']}: {row['error']}", file=sys.stderr)
+
+    entries.sort(
+        key=lambda s: (-(s.get("year") or 0), str(s.get("releaseDate") or ""), str(s["name"]).casefold())
+    )
     for entry in entries:
         (out_dir / entry["file"]).write_text(
-            json.dumps(payloads[entry["id"]], ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
+            json.dumps(payloads[entry["id"]], ensure_ascii=False, separators=(",", ":")),
+            encoding="utf-8",
         )
 
     ready = sum(1 for x in entries if x["status"] == "ready")
@@ -419,16 +482,21 @@ def main() -> int:
     compact = json.dumps(index, ensure_ascii=False, separators=(",", ":"))
     (assets / "v111_collection_index.json").write_text(compact, encoding="utf-8")
     (assets / "v111_collection_index.js").write_text(
-        "'use strict';\nwindow.V111_COLLECTION_INDEX=" + compact + ";\n", encoding="utf-8"
+        "'use strict';\nwindow.V111_COLLECTION_INDEX=" + compact + ";\n",
+        encoding="utf-8",
     )
-    (assets / "v111_import_report.json").write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
+    (assets / "v111_import_report.json").write_text(
+        json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
     print(
         f"Catalogue {lang}: {len(entries)}/{len(raw_sets)} sets · {index['stats']['cards']} cartes · "
         f"{ready} complets · {partial} partiels · {len(failures)} échec(s) · source {source}."
     )
-    if failures:
+    if failures or len(entries) != len(raw_sets):
         return 2
+    if source != "graphql" and not args.allow_rest_fallback:
+        return 4
     if args.strict and partial:
         return 3
     return 0
