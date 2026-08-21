@@ -149,12 +149,12 @@ jobs:
           local=[];remote=[]
           for c in cards:
               if c.get('v109BundledFrenchScan'):
-                  p=A/c['imageSmall'];assert p.is_file() and p.stat().st_size>12000,(c['localId'],p);local.append(int(c['localId']))
+                  p=A/c['imageLarge'];assert p.is_file() and p.stat().st_size>12000,(c['localId'],p);local.append(int(c['localId']))
               else:
-                  base=str(c.get('image') or '').rstrip('/');assert base.startswith('https://'),(c['localId'],base);remote.append(base+'/low.webp')
+                  base=str(c.get('image') or '').rstrip('/');assert base.startswith('https://'),(c['localId'],base);remote.append(base+'/high.webp')
           assert local==list(range(75,90)),local
           assert len(remote)==105,len(remote)
-          # Logo et produits sont locaux dans l'APK. Seuls scans restants + énergies passent par HTTP.
+          # Logo et produits sont locaux dans l'APK. Seuls scans HD restants + énergies passent par HTTP.
           for n in range(1,9):
               remote += [f'https://images.pokemontcg.io/sve/{n}_hires.png',f'https://images.pokemontcg.io/sve/{n}.png']
 
@@ -175,7 +175,7 @@ jobs:
                   try:f.result()
                   except Exception as e:bad.append(str(e))
           if bad:raise RuntimeError('Nuit Noire offline failures:\n'+'\n'.join(sorted(bad)))
-          print(f'Nuit Noire offline OK: 15 scans FR embarqués + {len(remote)} ressources réseau validées')
+          print(f'Nuit Noire offline HD OK: 15 scans FR embarqués + {len(remote)} ressources réseau validées')
           PY
 
       - name: Validate V1.0.9 source and runtime contracts
@@ -190,6 +190,7 @@ jobs:
           grep -q "V109_VERSION='1.0.9'" "$A/v109fix.js"
           grep -q "V109_ME05_LOGO='img/v109/me05_logo.png'" "$A/v109fix.js"
           grep -q 'COLLECTIONS 2026' "$A/v109fix.js"
+          grep -q "base+'/high.webp'" "$A/v109fix.js"
           grep -q 'v109BundledFrenchScan' "$A/pitch_black_embed.js"
 
           python - <<'PY'
@@ -202,6 +203,7 @@ jobs:
           assert "renderProducts=function()" in q and 'v109ShopSet()' in q
           assert "state.activeSet==='me05'" in q and 'V109_ME05_LOGO' in q
           assert 'META_BASE' not in q[q.index("v05OfflineManifest=function(setId)"):]
+          assert "base+'/high.webp'" in q[q.index("v05OfflineManifest=function(setId)"):]
           print('V1.0.9 source contracts OK')
           PY
 
@@ -242,6 +244,7 @@ jobs:
           for f in me025_booster.png me03_booster.jpg me04_booster.png me05_booster.jpg me05_build.png me05_binder.png me05_logo.png; do unzip -l "$APK" | grep -q "assets/img/v109/$f"; done
           test "$(unzip -l "$APK" | grep -c 'assets/img/v109/me05_cards/')" -eq 15
           unzip -p "$APK" assets/v109fix.js | grep -q "V109_VERSION='1.0.9'"
+          unzip -p "$APK" assets/v109fix.js | grep -q "base+'/high.webp'"
           unzip -p "$APK" assets/pitch_black_embed.js | grep -q 'v109BundledFrenchScan'
           SIZE=$(unzip -p "$APK" assets/v105_catalog_embed.js | wc -c); test "$SIZE" -gt 1000000
 
