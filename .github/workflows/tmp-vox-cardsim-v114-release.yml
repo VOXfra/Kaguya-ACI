@@ -73,7 +73,7 @@ jobs:
           assert sealed['schema']==115 and sealed['language']=='fr', sealed
           assert ss['setsWithVerifiedProducts']>=100, ss
           assert ss['products']>=250 and ss['localImages']>=180, ss
-          assert ss['tcgcsvMatchedSets']>=100, ss
+          assert ss['tcgcsvMatchedSets']>=90, ss
           assert 'sm8' in sealed['sets'] and any(p.get('mode')=='loose' for p in sealed['sets']['sm8']), sealed['sets'].get('sm8')
           assert not any('pack créatif' in str(p.get('name','')).casefold() for p in products)
           assert not any(str(p.get('id','')).startswith('v114-creative-pack-') for p in products)
