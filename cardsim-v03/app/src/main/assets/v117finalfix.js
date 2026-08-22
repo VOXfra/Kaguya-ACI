@@ -5,6 +5,26 @@
 const V117_FINAL_VERSION='1.1.7';
 const V117_FINAL_HYDRATING=new Map();
 
+/* A French scan remains the first choice. For a genuinely missing TCGdex FR image,
+   the build may attach an explicit English emergency fallback from the canonical
+   same card ID. This prevents blank cards without pretending the French source is
+   complete (the import report still counts the missing French scan). */
+if(typeof v112ImageFields==='function'){
+ const v117FinalImageFieldsBase=v112ImageFields;
+ v112ImageFields=function(x,setId){
+  const r=v117FinalImageFieldsBase(x,setId),f=String(x?.v117FallbackImage||'');
+  if(!f.startsWith('https://'))return r;
+  return{...r,imageSmall:f,imageLarge:f,images:[f],v112MissingScan:false,v117FallbackImageLanguage:x?.v117FallbackImageLanguage||'en'};
+ };
+}
+if(typeof cardImg==='function'){
+ const v117FinalCardImgBase=cardImg;
+ cardImg=function(c,quality='high'){
+  const f=String(c?.v117FallbackImage||'');if(f.startsWith('https://')&&(!c?.imageLarge||String(c.imageLarge).includes('missing-card.svg')))return f;
+  return v117FinalCardImgBase(c,quality);
+ };
+}
+
 async function v117EnsureSet(setId){
  const sid=String(setId||'');if(!sid)return false;
  if(typeof v112Entry!=='function'||!v112Entry(sid))return true;
