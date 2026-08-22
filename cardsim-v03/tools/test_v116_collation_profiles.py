@@ -1,20 +1,27 @@
 #!/usr/bin/env python3
-"""Contrats de non-régression de la collation V1.1.6.
+"""Contrats de non-régression de la collation et du catalogue produit V1.2.x.
 
-Ce test est volontairement écrit avant l'implémentation du nouveau moteur : il
-formalise ce que l'APK doit garantir et empêche le retour silencieux au vieux
-booster Écarlate/Violet de 11 cartes pour toutes les époques.
+La collation est générée avant ce test. La dernière étape matérialise ensuite le
+catalogue Cardmarket officiel : le runtime de collation et l'APK sont ainsi testés
+contre exactement le catalogue boutique final, pas contre une ancienne passe
+TCGplayer intermédiaire.
 """
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
+import finalize_v122_cardmarket
+
 ROOT = Path(__file__).resolve().parents[1]
 A = ROOT / "app" / "src" / "main" / "assets"
 
 
 def main() -> int:
+    # Cardmarket est la source finale du catalogue physique et des prix. Le script
+    # échoue plutôt que de conserver silencieusement un catalogue incomplet.
+    finalize_v122_cardmarket.main()
+
     idx = json.loads((A / "v111_collection_index.json").read_text(encoding="utf-8"))
     sealed = json.loads((A / "v115_sealed_catalog.json").read_text(encoding="utf-8"))
     profiles = json.loads((A / "v116_collation_profiles.json").read_text(encoding="utf-8"))
@@ -22,7 +29,22 @@ def main() -> int:
     assert profiles["schema"] == 116 and profiles["language"] == "fr"
     sets = profiles["sets"]
 
-    # Chaque extension possédant un vrai booster achetable doit avoir un profil.
+    # La boutique doit réellement être la passe Cardmarket finale.
+    assert sealed.get("v122CardmarketFinalized") is True
+    stats = sealed.get("stats") or {}
+    assert stats.get("cardmarketSourcePrimary") is True
+    assert int(stats.get("cardmarketMappedSets") or 0) >= 90, stats
+    assert int(stats.get("cardmarketMappedProducts") or 0) >= 250, stats
+    assert int(stats.get("cardmarketPricedProducts") or 0) > 0, stats
+    for sid in ["base3", "sv03.5", "sv08.5"]:
+        if any(x.get("id") == sid for x in idx.get("sets") or []):
+            rows = sealed.get("sets", {}).get(sid) or []
+            assert rows, f"Cardmarket: aucun produit final pour {sid}"
+            assert any(p.get("v122CardmarketVerified") is True for p in rows), sid
+
+    # Chaque extension possédant un vrai booster directement ouvrable doit avoir
+    # un profil. Les autres produits booster Cardmarket peuvent rester scellés si
+    # leur collation/packaging exact n'est pas assez documenté.
     booster_sets = {
         sid for sid, rows in sealed.get("sets", {}).items()
         if any(p.get("mode") == "loose" for p in rows or [])
@@ -33,6 +55,7 @@ def main() -> int:
     # Contrats de structure historiques et spéciaux vérifiables.
     expected = {
         "base1": ("wotc11", 11),
+        "base3": ("wotc11", 11),
         "neo4": ("wotc11", 11),
         "ecard1": ("ecard9", 9),
         "ex1": ("ex9", 9),
@@ -58,8 +81,6 @@ def main() -> int:
         assert p["family"] == family, (sid, p.get("family"), family)
         assert int(p["cardCount"]) == count, (sid, p.get("cardCount"), count)
 
-    # Tous les profils doivent expliquer leur niveau de certitude. Un taux non
-    # documenté peut être approximé par époque, mais jamais présenté comme exact.
     valid_confidence = {"official", "measured", "empirical", "era-empirical", "structure-only"}
     for sid, p in sets.items():
         assert p.get("confidence") in valid_confidence, (sid, p.get("confidence"))
@@ -68,16 +89,10 @@ def main() -> int:
         for key, value in (p.get("rates") or {}).items():
             assert 0 <= float(value) <= 1, (sid, key, value)
 
-    # Les sous-collections (Galeries, Shiny Vault, Classic Collection) ne sont
-    # jamais ouvertes comme des boosters autonomes : elles alimentent un slot du
-    # set parent lorsque celui-ci le prévoit.
     forbidden = {"cel25cc", "sma", "swsh4.5sv", "swsh9.5tg", "swsh10.5tg", "swsh11.5tg", "swsh12.5tg", "swsh12.5gg"}
     assert not (forbidden & set(sets)), sorted(forbidden & set(sets))
-
-    # Les 185 collections du catalogue restent disponibles pour navigation : ce
-    # moteur ne doit en supprimer aucune de l'index cartes.
     assert len(idx.get("sets") or []) >= 180
-    print(f"V1.1.6 collation: {len(sets)} profils · {len(booster_sets)} sets à booster couverts")
+    print(f"V1.2.x collation: {len(sets)} profils · {len(booster_sets)} boosters Cardmarket directement ouvrables")
     return 0
 
 
