@@ -1,6 +1,6 @@
 'use strict';
-/* V1.2.0 : charge les couches historiques, le catalogue canonique, les produits,
-   la collation 1.1.6, puis les correctifs d'intégrité 1.1.7 et 1.2.0.
+/* V1.2.x : charge les couches historiques, le catalogue canonique, les produits,
+   la collation 1.1.6, puis les correctifs d'intégrité et de progression.
    La séquence est volontairement déclarative : ajouter une couche ne dépend plus
    d'une longue chaîne de callbacks fragile aux parenthèses. */
 (function v111Boot(){
@@ -9,7 +9,7 @@
   'v111fix.js','v111catalogfix.js','v111condition.js','v111conditionfix.js','v111perf.js',
   'v112fix.js','v113fix.js','v114fix.js','v115fix.js','v116_collation_profiles.js',
   'v116fix.js','v116hotfix.js','v116basefix.js','v117_energy_catalog.js','v117fix.js',
-  'v117energyfix.js','v117finalfix.js','v120fix.js'
+  'v117energyfix.js','v117finalfix.js','v120fix.js','v121fix.js'
  ];
  const add=(src,done)=>{
   const s=document.createElement('script');s.src=src;
