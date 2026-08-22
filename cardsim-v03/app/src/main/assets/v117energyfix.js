@@ -7,8 +7,11 @@ function v117EnergyEra(setId){
  const sid=String(setId||''),entry=(typeof v112Entry==='function'?v112Entry(sid):null),cfg=SETS?.[sid]||{},date=String(entry?.releaseDate||cfg.releaseDate||''),year=Number(entry?.year||date.slice(0,4)||cfg.releaseYear||0);
  if(/^me/i.test(sid)||/mega/i.test(String(entry?.seriesId||'')))return'mega';
  if(/^sv/i.test(sid)){
-  if(year>=2025)return'sv2025';
-  if(year>=2024)return'sv2024';
+  /* Énergies 009–016 apparaissent à partir de Couronne Stellaire et restent
+     utilisées jusqu'à Rivalités Destinées. 017–024 commencent avec Foudre Noire /
+     Flamme Blanche, pas simplement au changement d'année 2025. */
+  if(date>='2025-07-18')return'sv2025';
+  if(date>='2024-09-13')return'sv2024';
   return'sv2023';
  }
  if(/^swsh/i.test(sid))return date>='2022-02-25'?'swsh2022':'swsh2020';
