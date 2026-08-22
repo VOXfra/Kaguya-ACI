@@ -22,32 +22,64 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The complete 1.1.6 catalog is a signed, already validated release artifact.
+      # Using it as the immutable French baseline makes 1.2.0 reproducible even
+      # when api.tcgdex.net is temporarily unreachable from GitHub runners.
+      - name: Restore validated V1.1.6 catalog baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: VOX-CardSim-v1.1.6-audited-collation
+          path: ${{ runner.temp }}/v116baseline
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 32521286548
+
       - name: Generate and validate V1.2.0 data
         shell: bash
         run: |
           set -euo pipefail
           A=cardsim-v03/app/src/main/assets
+          BASEAPK="$RUNNER_TEMP/v116baseline/VOX_CardSim_v1.1.6.apk"
+          test -s "$BASEAPK"
           mkdir -p "$A/img" "$A/img/v109" "$A/img/v109/me05_cards"
           rm -rf "$A/catalog/fr" "$A/img/v115/products" "$A/img/v117/energy" "$A/img/v120"
 
-          python cardsim-v03/tools/generate_v110_data.py
-          python cardsim-v03/tools/generate_v105_catalog.py
-          python cardsim-v03/tools/import_physical_collections_v117.py --lang fr
-          python cardsim-v03/tools/fetch_release_assets.py
+          # Extract only generated data/assets. Runtime source files remain those
+          # from the current 1.2.0 branch and are never overwritten by the old APK.
+          TMPBASE="$RUNNER_TEMP/v116assets"
+          rm -rf "$TMPBASE" && mkdir -p "$TMPBASE"
+          unzip -oq "$BASEAPK" \
+            'assets/catalog/fr/*' \
+            'assets/v111_collection_index.json' 'assets/v111_collection_index.js' 'assets/v111_import_report.json' \
+            'assets/v115_sealed_catalog.json' 'assets/v115_sealed_catalog.js' \
+            'assets/eevee_heroes.json' 'assets/eevee_heroes_embed.js' \
+            'assets/standard_sets_embed.js' 'assets/master_variants_embed.js' 'assets/pitch_black_embed.js' \
+            'assets/v105_catalog.json' 'assets/v105_catalog_embed.js' \
+            'assets/img/v109/*' 'assets/img/v115/products/*' \
+            -d "$TMPBASE"
+          cp -a "$TMPBASE/assets/catalog" "$A/"
+          for f in v111_collection_index.json v111_collection_index.js v111_import_report.json \
+                   v115_sealed_catalog.json v115_sealed_catalog.js \
+                   eevee_heroes.json eevee_heroes_embed.js standard_sets_embed.js master_variants_embed.js pitch_black_embed.js \
+                   v105_catalog.json v105_catalog_embed.js; do
+            cp "$TMPBASE/assets/$f" "$A/$f"
+          done
+          mkdir -p "$A/img/v109" "$A/img/v115/products"
+          cp -a "$TMPBASE/assets/img/v109/." "$A/img/v109/"
+          cp -a "$TMPBASE/assets/img/v115/products/." "$A/img/v115/products/"
+
+          # 1.2.0 no longer depends on a live TCGdex rebuild. It cross-checks the
+          # validated FR baseline against independent public data below.
           python cardsim-v03/tools/fetch_v117_energy_assets.py
-          python cardsim-v03/tools/import_verified_sealed_products_v117.py
           python cardsim-v03/tools/finalize_v117_products.py
           python cardsim-v03/tools/finalize_v117_binders.py
 
-          # V1.2.0 recoupe le catalogue avec pokemon-tcg-data, restaure les cartes
-          # omises/scans absents et privilégie les wrappers TCGplayer haute définition.
+          # Cross-source integrity: exact historical rarities / missing cards,
+          # high-resolution TCGplayer wrapper art and strict product confidence.
           python cardsim-v03/tools/finalize_v120_integrity.py
-          # Le passage précédent réévalue les scellés ; réappliquer la classification
-          # des portfolios garantit qu'ils restent utilisables comme rangement.
           python cardsim-v03/tools/finalize_v117_binders.py
 
-          # La collation est générée après l'enrichissement des raretés afin que le
-          # Set de Base/Jungle/Fossile disposent de vrais pools Rare/Rare Holo.
+          # Collation is regenerated after rarity enrichment so Base/Jungle/Fossil
+          # get distinct Rare and Rare Holo pools.
           python cardsim-v03/tools/generate_v116_collation_profiles.py
           python cardsim-v03/tools/test_v116_collation_profiles.py
           node cardsim-v03/tools/test_v116_collation_runtime.js
@@ -89,6 +121,7 @@ jobs:
               assert len(d.get('cards') or [])==int(x.get('cards') or 0)==int(x.get('total') or 0),x['id']
           assert len(list((a/'catalog'/'fr').glob('*.json')))==len(sets)
 
+          # 1999 regression contracts.
           for sid in ['base1','base2','base3']:
               d=json.loads((a/'catalog'/'fr'/by_id[sid]['file']).read_text(encoding='utf-8'))
               assert len(d.get('cards') or [])>40,(sid,len(d.get('cards') or []))
@@ -98,7 +131,7 @@ jobs:
           assert sum('Rare Holo' in r for r in rar)>=15, sum('Rare Holo' in r for r in rar)
           assert sum(r=='Rare' for r in rar)>=10, sum(r=='Rare' for r in rar)
 
-          # 57 scans locaux : 9 SM + 8 SWSH 2020 + 8 SWSH 2022 + 24 SVE datés + 8 Mega.
+          # Local energy prints by era, never global SVE artwork.
           energy=[p for p in (a/'img'/'v117'/'energy').rglob('*') if p.is_file()]
           assert len(energy)==57,len(energy)
           assert (a/'v117_energy_catalog.js').is_file()
