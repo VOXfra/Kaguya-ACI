@@ -3,8 +3,9 @@
 
 The original app reused SVE artwork everywhere. This release keeps local, dated
 prints and splits Scarlet & Violet at the documented 001-008 / 009-016 /
-017-024 refreshes. PkmnCards is used for SVE because the old PokemonTCG.io SVE
-image endpoint currently returns 404 for these files.
+017-024 refreshes. PkmnCards is used as the primary scan source, with the exact
+published filename variants (some SVE waves use ``_std`` while the launch wave
+does not). PokemonTCG.io remains only a secondary fallback.
 """
 from __future__ import annotations
 import json
@@ -44,8 +45,8 @@ def main()->int:
    if p.is_file():p.unlink()
  eras={k:[] for k in ['sm2017','sm2019','swsh2020','swsh2022','sv2023','sv2024','sv2025','mega']}
 
- # Sun & Moon launch print. Team Up is kept in the same SM family rather than
- # ever falling through to a newer Sword/Shield or Scarlet/Violet card.
+ # Sun & Moon launch print. Team Up remains in the SM family rather than ever
+ # falling through to a newer Sword/Shield or Scarlet/Violet card.
  for i,(fr,slug) in enumerate(TYPES,1):
   save_first(OUT/'sm'/f'{i}.jpg',[
    f'https://pkmncards.com/wp-content/uploads/en_US-SM_Energy-{i:03d}-{slug}-1.jpg',
@@ -63,17 +64,22 @@ def main()->int:
   save_first(OUT/'swsh_2022'/f'{i}.png',[f'https://pkmncards.com/wp-content/uploads/en_US-SWSH_Energy-{i+9:03d}-{slug}.png'])
   eras['swsh2022'].append(erow('swsh_2022',i,fr,'png'))
 
-  # SVE has three documented Basic Energy print waves: 001-008, 009-016,
-  # 017-024. These exact scans are bundled locally so a booster never receives
-  # a generic energy card from the wrong era.
+  # SVE has three Basic Energy print waves. PkmnCards stores the launch wave
+  # without a suffix, while the 2024/2025 refreshes use ``_std``. Try both
+  # explicit forms before the PokemonTCG.io fallback so the build is reproducible
+  # if one mirror changes naming again.
   for key,folder,n in [('sv2023','sv_2023',i),('sv2024','sv_2024',i+8),('sv2025','sv_2025',i+16)]:
    save_first(OUT/folder/f'{i}.png',[
+    f'https://pkmncards.com/wp-content/uploads/sve_en_{n:03d}_std.png',
     f'https://pkmncards.com/wp-content/uploads/sve_en_{n:03d}.png',
     f'https://images.pokemontcg.io/sve/{n}_hires.png',
     f'https://images.pokemontcg.io/sve/{n}.png'])
    eras[key].append(erow(folder,i,fr,'png'))
 
-  save_first(OUT/'me'/f'{i}.png',[f'https://pkmncards.com/wp-content/uploads/mee_en_{i:03d}_std.png',f'https://images.pokemontcg.io/mee/{i}_hires.png'])
+  save_first(OUT/'me'/f'{i}.png',[
+   f'https://pkmncards.com/wp-content/uploads/mee_en_{i:03d}_std.png',
+   f'https://pkmncards.com/wp-content/uploads/mee_en_{i:03d}.png',
+   f'https://images.pokemontcg.io/mee/{i}_hires.png'])
   eras['mega'].append(erow('me',i,fr,'png'))
 
  files=[p for p in OUT.rglob('*') if p.is_file()]
