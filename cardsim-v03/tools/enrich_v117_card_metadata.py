@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """V1.1.7 metadata repair for historical booster pools.
 
-TCGdex is kept as the authority for French card identity/scans. pokemon-tcg-data is
-used only as a second structured source for rarity labels where it has the same
-canonical set/card ID. This restores distinctions such as Rare Holo in Base/Jungle/
-Fossil without changing the French card itself.
+TCGdex remains the authority for French card identity/scans. pokemon-tcg-data is a
+second structured source for richer rarity labels where the canonical set/card ID
+matches. When TCGdex has no French scan at all, its English large scan is retained
+only as an explicit runtime fallback (`v117FallbackImage`): the French missing-scan
+counter is NOT cleared, so diagnostics never pretend the French catalog is complete.
 """
 from __future__ import annotations
-import hashlib,json,re,time,urllib.error,urllib.request
+import hashlib,json,time,urllib.error,urllib.request
 from concurrent.futures import ThreadPoolExecutor,as_completed
 from pathlib import Path
 from typing import Any
@@ -63,13 +64,12 @@ def specificity(r:str)->int:
 def main()->int:
     idx=json.loads(INDEX.read_text(encoding='utf-8'));sets=idx.get('sets') or []
     external={}
-    # Fetch all canonical IDs concurrently. Missing files are normal for regional sets.
     with ThreadPoolExecutor(max_workers=18,thread_name_prefix='rarity') as pool:
         fut={pool.submit(get,str(e['id'])):str(e['id']) for e in sets}
         for f in as_completed(fut):
             sid=fut[f];rows=f.result()
             if isinstance(rows,list):external[sid]=rows
-    changed=matched=0;base_holo={}
+    changed=matched=fallback_scans=0;base_holo={}
     for entry in sets:
         sid=str(entry['id']);path=CAT/str(entry['file'])
         payload=json.loads(path.read_text(encoding='utf-8'));ext=external.get(sid) or []
@@ -77,12 +77,18 @@ def main()->int:
         counts={}
         for c in payload.get('cards') or []:
             x=by_id.get(str(c.get('id') or ''))
-            if not x:continue
+            if not x:
+                rk=str(c.get('rarityKey') or 'unknown');counts[rk]=counts.get(rk,0)+1;continue
             matched+=1;rich=str(x.get('rarity') or '').strip();old=str(c.get('rarityRaw') or '').strip()
             if rich and (specificity(rich)>specificity(old) or norm(old)=='rare'):
                 c['rarityRaw']=rich;c['rarityKey']=rarity_key(rich);c['supplyTier']=supply(rich);c['v117RaritySource']='pokemon-tcg-data';changed+=1
+            # Do not overwrite an existing French image. This is deliberately an
+            # English-language emergency fallback for cards that would otherwise be blank.
+            if not str(c.get('image') or '').strip():
+                images=x.get('images') or {};fallback=str(images.get('large') or images.get('small') or '').strip() if isinstance(images,dict) else ''
+                if fallback.startswith('https://'):
+                    c['v117FallbackImage']=fallback;c['v117FallbackImageLanguage']='en';fallback_scans+=1
             rk=str(c.get('rarityKey') or 'unknown');counts[rk]=counts.get(rk,0)+1
-        # The index is UI/diagnostics only; keep its rarity summary in sync.
         entry['rarities']=counts
         compact=json.dumps(payload,ensure_ascii=False,separators=(',',':'))
         path.write_text(compact,encoding='utf-8')
@@ -90,14 +96,12 @@ def main()->int:
         if sid in ('base1','base2','base3'):
             holo=sum(1 for c in payload.get('cards') or [] if 'holo' in norm(c.get('rarityRaw')))
             base_holo[sid]=holo
-    idx['source']=str(idx.get('source') or '')+' + pokemon-tcg-data rarity metadata'
-    idx.setdefault('stats',{})['v117RarityMatches']=matched;idx['stats']['v117RarityUpgrades']=changed
+    idx['source']=str(idx.get('source') or '')+' + pokemon-tcg-data rarity/fallback metadata'
+    idx.setdefault('stats',{})['v117RarityMatches']=matched;idx['stats']['v117RarityUpgrades']=changed;idx['stats']['v117FallbackScans']=fallback_scans
     compact=json.dumps(idx,ensure_ascii=False,separators=(',',':'))
     INDEX.write_text(compact,encoding='utf-8');(A/'v111_collection_index.js').write_text("'use strict';\nwindow.V111_COLLECTION_INDEX="+compact+';\n',encoding='utf-8')
     (A/'v111_import_report.json').write_text(json.dumps(idx,ensure_ascii=False,indent=2),encoding='utf-8')
-    print(f'V1.1.7 rarity enrichment: {matched} matched / {changed} upgraded / vintage holo {base_holo}')
-    # Critical regression: these three sets physically contain holo rares. If the
-    # second source stops restoring them, do not ship another fake WOTC collation.
+    print(f'V1.1.7 metadata: {matched} matched / {changed} rarity upgrades / {fallback_scans} missing-scan fallbacks / vintage holo {base_holo}')
     for sid in ('base1','base2','base3'):
         if base_holo.get(sid,0)<=0:raise RuntimeError(f'{sid}: aucune Rare Holo après enrichissement')
     return 0
