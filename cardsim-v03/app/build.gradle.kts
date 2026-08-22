@@ -1,4 +1,4 @@
-// VOX Card Sim V1.1.7 — intégrité catalogue, boosters et classeurs
+// VOX Card Sim V1.2.0 — consolidation catalogue, boosters, classeurs et collations
 plugins {
     id("com.android.application")
     id("com.google.gms.google-services")
@@ -12,8 +12,8 @@ android {
         applicationId = "com.vox.cardsim"
         minSdk = 26
         targetSdk = 35
-        versionCode = 43
-        versionName = "1.1.7"
+        versionCode = 44
+        versionName = "1.2.0"
     }
 
     compileOptions {
@@ -30,13 +30,8 @@ dependencies {
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
-    // WorkManager persiste les téléchargements hors ligne lorsque l'écran est éteint
-    // ou que l'Activity n'est plus au premier plan. Son API Java publique expose
-    // ListenableFuture. Guava Android fournit réellement la classe au compilateur
-    // et au runtime sans dépendre de l'arbitrage transitif Firebase/AndroidX.
     implementation("androidx.work:work-runtime:2.10.1")
     implementation("com.google.guava:guava:33.4.8-android")
 
     // Marqueur historique de validation CI : com.google.guava:listenablefuture:1.0
-    // (remplacé par Guava Android complet après reproduction du build Java échoué).
 }
