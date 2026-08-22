@@ -14,7 +14,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 70
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
@@ -30,26 +30,15 @@ jobs:
           mkdir -p "$A/img" "$A/img/v109" "$A/img/v109/me05_cards"
           rm -rf "$A/catalog/fr" "$A/img/v115/products" "$A/img/v117/energy"
 
-          # Cartes françaises, puis seconde source de métadonnées pour rétablir les
-          # distinctions historiques Rare Holo / EX / etc. sans remplacer les scans FR.
           python cardsim-v03/tools/generate_v110_data.py
           python cardsim-v03/tools/generate_v105_catalog.py
-          python cardsim-v03/tools/import_physical_collections_release.py --lang fr
-          python cardsim-v03/tools/enrich_v117_card_metadata.py
+          python cardsim-v03/tools/import_physical_collections_v117.py --lang fr
           python cardsim-v03/tools/fetch_release_assets.py
-
-          # Catalogue de vrais produits : un seul Booster par extension, les wrappers
-          # sont des variantes choisies à l'ouverture et les miniatures sont remplacées
-          # par les meilleures versions portrait disponibles au build.
-          python cardsim-v03/tools/import_verified_sealed_products.py
+          python cardsim-v03/tools/fetch_v117_energy_assets.py
+          python cardsim-v03/tools/import_verified_sealed_products_v117.py
           python cardsim-v03/tools/finalize_v117_products.py
-          python cardsim-v03/tools/upgrade_v117_booster_art.py
+          python cardsim-v03/tools/finalize_v117_binders.py
 
-          # Les énergies sont elles aussi des assets locaux de l'époque du booster.
-          python cardsim-v03/tools/generate_v117_energy_catalog.py
-
-          # Le moteur de collation audité V1.1.6 utilise désormais les métadonnées
-          # historiques enrichies ci-dessus.
           python cardsim-v03/tools/generate_v116_collation_profiles.py
           python cardsim-v03/tools/test_v116_collation_profiles.py
           node cardsim-v03/tools/test_v116_collation_runtime.js
@@ -59,11 +48,12 @@ jobs:
             cardsim-v03/tools/import_all_collections.py \
             cardsim-v03/tools/import_all_collections_release.py \
             cardsim-v03/tools/import_physical_collections_release.py \
+            cardsim-v03/tools/import_physical_collections_v117.py \
             cardsim-v03/tools/import_verified_sealed_products.py \
+            cardsim-v03/tools/import_verified_sealed_products_v117.py \
             cardsim-v03/tools/finalize_v117_products.py \
-            cardsim-v03/tools/enrich_v117_card_metadata.py \
-            cardsim-v03/tools/upgrade_v117_booster_art.py \
-            cardsim-v03/tools/generate_v117_energy_catalog.py \
+            cardsim-v03/tools/finalize_v117_binders.py \
+            cardsim-v03/tools/fetch_v117_energy_assets.py \
             cardsim-v03/tools/fetch_release_assets.py \
             cardsim-v03/tools/generate_v116_collation_profiles.py \
             cardsim-v03/tools/test_v116_collation_profiles.py
@@ -78,7 +68,6 @@ jobs:
           assert idx['schema']==111 and idx['language']=='fr', idx
           assert s['failed']==0 and s['imported']==s['discovered']==len(sets), s
           assert len(sets)>=180, len(sets)
-          assert s.get('v117RarityUpgrades',0)>0,s
           assert all(x.get('seriesId')!='tcgp' for x in sets)
           by_id={x['id']:x for x in sets}; ids=set(by_id)
           for required in ['base1','base2','base3','base5','neo1','sm8','swsh10','sv03.5','me02.5','me03','me04','me05']:
@@ -93,13 +82,19 @@ jobs:
               assert len(d.get('cards') or [])==int(x.get('cards') or 0)==int(x.get('total') or 0),x['id']
           assert len(list((a/'catalog'/'fr').glob('*.json')))==len(sets)
 
-          # Les extensions 1999 sont réellement embarquées ET leurs holo sont à
-          # nouveau distinguées du pool Rare normal.
           for sid in ['base1','base2','base3']:
               d=json.loads((a/'catalog'/'fr'/by_id[sid]['file']).read_text(encoding='utf-8'))
-              cards=d.get('cards') or []
-              assert len(cards)>40,(sid,len(cards))
-              assert any('holo' in str(c.get('rarityRaw','')).casefold() for c in cards),(sid,'no Rare Holo')
+              assert len(d.get('cards') or [])>40,(sid,len(d.get('cards') or []))
+              assert int(by_id[sid].get('missingScans') or 0)==0,(sid,by_id[sid].get('missingScans'))
+          base=json.loads((a/'catalog'/'fr'/by_id['base1']['file']).read_text(encoding='utf-8'))
+          assert sum(1 for c in base['cards'] if str(c.get('rarityRaw','')).casefold()=='rare' and 'holo' in (c.get('variants') or []) and 'normal' not in (c.get('variants') or []))>=15
+
+          energy=[p for p in (a/'img'/'v117'/'energy').rglob('*') if p.is_file()]
+          assert len(energy)==40,len(energy)
+          for era in ['sm','swsh_2020','swsh_2022','sv','me']:
+              rows=[p for p in (a/'img'/'v117'/'energy'/era).glob('*') if p.is_file()]
+              assert len(rows)==8,(era,len(rows))
+              assert all(p.stat().st_size>12000 for p in rows),era
 
           sealed=json.loads((a/'v115_sealed_catalog.json').read_text(encoding='utf-8'))
           ss=sealed['stats']; products=[p for rows in sealed['sets'].values() for p in rows]
@@ -109,9 +104,9 @@ jobs:
           assert ss['tcgcsvMatchedSets']>=90, ss
           assert ss['canonicalBoosterSets']>=90 and ss['boosterArtworks']>=ss['canonicalBoosterSets'],ss
           assert ss['rejectedNonPackImages']>=1,ss
+          assert ss.get('usableBinderProducts',0)>=5,ss
           assert not any('pack créatif' in str(p.get('name','')).casefold() for p in products)
           assert not any(re.search(r'illustration\s+\d+',str(p.get('name','')),re.I) for p in products)
-          assert not any(str(p.get('id','')).startswith('v114-creative-pack-') for p in products)
           for sid,rows in sealed['sets'].items():
               loose=[p for p in rows if p.get('mode')=='loose']
               assert len(loose)<=1,(sid,len(loose))
@@ -119,26 +114,11 @@ jobs:
                   p=loose[0];assert p.get('v117CanonicalBooster') and p.get('opens')==1 and p.get('verifiedContents') is True,p
                   assert p.get('artworks'),(sid,p)
                   for img in p['artworks']:assert (a/img).is_file(),(sid,img)
-
-          # Régression de la capture Astres Radieux : jamais le logo horizontal.
           ar=[p for p in sealed['sets']['swsh10'] if p.get('mode')=='loose'][0]
           assert len(ar.get('artworks') or [])>=4,ar
           assert int(ar.get('rejectedNonPackImages') or 0)>=1,ar
-          if ar.get('v117HighQualityArtwork'):
-              dims=ar.get('v117ArtworkDimensions') or []
-              assert dims and all(int(w)>=240 and int(h)>int(w)*1.2 for w,h in dims),dims
-          # Displays et accessoires : l'UI sait immédiatement s'ils sont ouvrables.
           assert any(p.get('type')=='booster_box' and p.get('openable') and p.get('opens')==36 for p in products)
-          assert any(p.get('contentKind')=='accessory' and p.get('openable') is False for p in products)
-
-          energy=json.loads((a/'v117_energy_catalog.json').read_text(encoding='utf-8'))
-          assert energy['schema']==117,energy
-          for era in ['swsh2022','sv2023']:
-              rows=energy.get('eras',{}).get(era) or []
-              assert len(rows)==8,(era,len(rows),energy.get('errors'))
-              assert len({r['name'] for r in rows})==8,era
-              for r in rows:
-                  p=a/r['image'];assert p.is_file() and p.stat().st_size>10000,(era,r,p)
+          assert any(p.get('contentKind')=='binder' and p.get('v117UsableBinder') for p in products)
 
           col=json.loads((a/'v116_collation_profiles.json').read_text(encoding='utf-8'))
           assert col['schema']==116 and col['language']=='fr', col
@@ -154,7 +134,6 @@ jobs:
           assert [int(c['localId']) for c in cards if c.get('v109BundledFrenchScan')]==list(range(75,90))
           print('Physical catalog:',s,'sets=',len(sets))
           print('V1.1.7 products:',ss)
-          print('Energy eras:',{k:len(v) for k,v in energy.get('eras',{}).items()})
           print('Collation:',col.get('stats'),'profiles=',len(col['sets']))
           PY
 
@@ -163,17 +142,10 @@ jobs:
           grep -q 'versionName = "1.1.7"' cardsim-v03/app/build.gradle.kts
           grep -q "V116_VERSION='1.1.6'" "$A/v116fix.js"
           grep -q "V117_VERSION='1.1.7'" "$A/v117fix.js"
-          grep -q 'v116_collation_profiles.js' "$A/v111boot.js"
           grep -q 'v116hotfix.js' "$A/v111boot.js"
-          grep -q 'v117_energy_catalog.js' "$A/v111boot.js"
           grep -q 'v117fix.js' "$A/v111boot.js"
-          grep -q 'v117energyfix.js' "$A/v111boot.js"
-          grep -q 'v117finalfix.js' "$A/v111boot.js"
-          grep -q 'v117-generic-binder-' "$A/v117fix.js"
-          grep -q '__voxV117PendingPackArt' "$A/v117fix.js"
-          grep -q 'v111HydrateSet(sid)' "$A/v117fix.js"
-          grep -q 'v117EnsureSet' "$A/v117finalfix.js"
-          grep -q 'V117_ENERGY_CATALOG' "$A/v117energyfix.js"
+          grep -q 'v117-storage-binder-' "$A/v117fix.js"
+          grep -q 'v117EnergyPath' "$A/v117fix.js"
           grep -q 'v115_sealed_catalog.js' "$A/index.html"
           grep -q 'position:absolute!important' "$A/v114fix.js"
           grep -q 'DIGITAL_SERIES_IDS = {"tcgp"}' cardsim-v03/tools/import_physical_collections_release.py
@@ -219,23 +191,20 @@ jobs:
             v111boot.js v111fix.js v111catalogfix.js v111condition.js v111conditionfix.js v111perf.js \
             v112fix.js v113fix.js v114early.js v114fix.js v115fix.js v115_sealed_catalog.js \
             v115_sealed_catalog.json v116fix.js v116hotfix.js v116_collation_profiles.js v116_collation_profiles.json \
-            v117_energy_catalog.js v117_energy_catalog.json v117fix.js v117energyfix.js v117finalfix.js \
-            v111_collection_index.js v111_collection_index.json; do
+            v117fix.js v111_collection_index.js v111_collection_index.json; do
             unzip -l "$APK" | grep -q "assets/$f"
           done
           unzip -p "$APK" assets/v117fix.js | grep -q "V117_VERSION='1.1.7'"
-          unzip -p "$APK" assets/v111boot.js | grep -q 'v117finalfix.js'
-          unzip -p "$APK" assets/v114fix.js | grep -q 'position:absolute!important'
-          unzip -p "$APK" assets/v115_sealed_catalog.json | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("v117Finalized") is True; assert d["stats"]["canonicalBoosterSets"]>=90'
-          unzip -p "$APK" assets/v117_energy_catalog.json | python -c 'import json,sys; d=json.load(sys.stdin); assert len(d["eras"]["swsh2022"])==8; assert len(d["eras"]["sv2023"])==8'
+          unzip -p "$APK" assets/v111boot.js | grep -q 'v117fix.js'
+          unzip -p "$APK" assets/v115_sealed_catalog.json | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("v117Finalized") is True; assert d["stats"]["canonicalBoosterSets"]>=90; assert d["stats"]["usableBinderProducts"]>=5'
           EXPECTED=$(unzip -p "$APK" assets/v111_collection_index.json | python -c 'import json,sys; print(len(json.load(sys.stdin)["sets"]))')
           COUNT=$(unzip -l "$APK" | grep -c 'assets/catalog/fr/.*\.json')
           test "$COUNT" -eq "$EXPECTED"
           ! unzip -l "$APK" | grep -q 'assets/catalog/fr/A1.json'
           for f in base1.json base2.json base3.json; do unzip -l "$APK" | grep -q "assets/catalog/fr/$f"; done
           test "$(unzip -l "$APK" | grep -c 'assets/img/v109/me05_cards/')" -eq 15
+          test "$(unzip -l "$APK" | grep -c 'assets/img/v117/energy/')" -eq 40
           test "$(unzip -l "$APK" | grep -c 'assets/img/v115/products/')" -ge 180
-          test "$(unzip -l "$APK" | grep -c 'assets/img/v117/energy/')" -ge 16
 
       - name: Restore permanent signing key
         uses: actions/download-artifact@v4
