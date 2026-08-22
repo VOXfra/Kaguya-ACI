@@ -1,4 +1,4 @@
-// VOX Card Sim V1.1.6 — produits physiques vérifiés + moteur de collation audité
+// VOX Card Sim V1.1.7 — intégrité catalogue, boosters et classeurs
 plugins {
     id("com.android.application")
     id("com.google.gms.google-services")
@@ -12,8 +12,8 @@ android {
         applicationId = "com.vox.cardsim"
         minSdk = 26
         targetSdk = 35
-        versionCode = 42
-        versionName = "1.1.6"
+        versionCode = 43
+        versionName = "1.1.7"
     }
 
     compileOptions {
