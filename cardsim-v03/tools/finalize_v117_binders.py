@@ -20,12 +20,7 @@ impl._english_map = _english_map
 
 
 def _finalize_promo_pack_semantics():
-    """Do not pretend McDonald's Match & Battle packs use normal booster collation.
-
-    They are real TCGplayer products and remain visible/collectable. Until a
-    documented McDonald's collation model exists, they stay sealed rather than
-    opening with an invented standard expansion profile.
-    """
+    """Keep real McDonald's packs visible without inventing booster collation."""
     data = json.loads(impl.P.read_text(encoding="utf-8"))
     idx = json.loads(impl.INDEX.read_text(encoding="utf-8"))
     mc_sets = {
@@ -35,6 +30,7 @@ def _finalize_promo_pack_semantics():
         or "mcdonald" in str(x.get("name") or "").casefold()
     }
     changed = 0
+    dirty = False
     for sid in mc_sets:
         for p in data.get("sets", {}).get(sid, []) or []:
             if p.get("mode") == "loose" or p.get("v117CanonicalBooster"):
@@ -49,18 +45,28 @@ def _finalize_promo_pack_semantics():
                 p.pop("v117CanonicalBooster", None)
                 p.pop("artworks", None)
                 changed += 1
+                dirty = True
             elif p.get("v120RecoveredProduct"):
-                p["v120ShopVerified"] = True
-                p.setdefault("openable", False)
-                p.setdefault("contentKind", "promo_pack")
-    if changed:
-        stats = data.setdefault("stats", {})
-        stats["verifiedPromoPackProducts"] = sum(
-            1
-            for sid in mc_sets
-            for p in data.get("sets", {}).get(sid, []) or []
-            if p.get("contentKind") == "promo_pack"
-        )
+                if p.get("v120ShopVerified") is not True:
+                    p["v120ShopVerified"] = True
+                    dirty = True
+                if p.get("openable") is not False:
+                    p["openable"] = False
+                    dirty = True
+                if p.get("contentKind") != "promo_pack":
+                    p["contentKind"] = "promo_pack"
+                    dirty = True
+    stats = data.setdefault("stats", {})
+    promo_count = sum(
+        1
+        for sid in mc_sets
+        for p in data.get("sets", {}).get(sid, []) or []
+        if p.get("contentKind") == "promo_pack"
+    )
+    if stats.get("verifiedPromoPackProducts") != promo_count:
+        stats["verifiedPromoPackProducts"] = promo_count
+        dirty = True
+    if dirty:
         impl.P.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         impl.J.write_text(
             "window.V115_SEALED_CATALOG="
@@ -68,7 +74,7 @@ def _finalize_promo_pack_semantics():
             + ";\n",
             encoding="utf-8",
         )
-        print(f"V1.2 McDonald's promo packs kept sealed: {changed}")
+        print(f"V1.2 McDonald's promo packs verified in shop: {promo_count} ({changed} reclassified)")
 
 
 if __name__ == "__main__":
