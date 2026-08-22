@@ -1,0 +1,15 @@
+/* V0.7.2 mobile performance pass */
+.inventory-card,.market-result,.listing-row{content-visibility:auto;contain-intrinsic-size:124px}
+.inventory-load-sentinel{height:2px;width:100%;pointer-events:none}
+.inventory-card img{transform:translateZ(0)}
+.inventory-sort{flex-wrap:wrap}
+.sell-all-cards{flex:none}
+.v072-holo{--hx:34%;--hy:26%;position:relative;overflow:hidden;isolation:isolate}
+.v072-holo>img{position:relative;z-index:1}
+.v072-holo .holo-spectrum,.v072-holo .holo-glare,.v072-holo .holo-texture{position:absolute;inset:-2%;z-index:2;pointer-events:none;border-radius:inherit;transition:background-position .08s linear,opacity .12s linear;transform:translateZ(0)}
+.v072-holo .holo-spectrum{background:linear-gradient(118deg,transparent 12%,rgba(255,55,105,.58) 25%,rgba(255,221,64,.64) 37%,rgba(67,255,196,.62) 49%,rgba(75,154,255,.65) 61%,rgba(188,83,255,.62) 73%,transparent 88%),conic-gradient(from 215deg at var(--hx) var(--hy),rgba(255,255,255,.08),rgba(255,66,135,.38),rgba(255,235,89,.35),rgba(67,255,211,.38),rgba(67,145,255,.38),rgba(207,81,255,.38),rgba(255,255,255,.08));background-size:185% 185%,155% 155%;background-position:calc(var(--hx) * .55) calc(var(--hy) * .55),var(--hx) var(--hy);mix-blend-mode:color-dodge;opacity:.78;animation:none!important;filter:none!important}
+.v072-holo .holo-glare{background:radial-gradient(circle at var(--hx) var(--hy),rgba(255,255,255,.92) 0%,rgba(255,255,255,.36) 11%,rgba(170,225,255,.15) 24%,transparent 46%);mix-blend-mode:screen;opacity:.78}
+.v072-holo .holo-texture{background:repeating-linear-gradient(122deg,transparent 0 7px,rgba(255,255,255,.18) 8px,transparent 10px),repeating-radial-gradient(circle at 30% 35%,rgba(255,255,255,.28) 0 1px,transparent 1.7px 8px);mix-blend-mode:overlay;opacity:.16}
+.stable-card[data-depth="0"]{will-change:transform;backface-visibility:hidden}
+.stable-card:not([data-depth="0"]){will-change:auto}
+@media(max-width:470px){.inventory-card{contain-intrinsic-size:146px}.inventory-sort{justify-content:flex-start}.inventory-sort select{flex:1;min-width:180px}}

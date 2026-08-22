@@ -1,0 +1,122 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function listingPath(listingId) {
+      return /databases/$(database)/documents/marketListings/$(listingId);
+    }
+
+    function tradePath(tradeId) {
+      return /databases/$(database)/documents/marketTrades/$(tradeId);
+    }
+
+    match /cloudSaves/{uid} {
+      allow read, create, update, delete: if isOwner(uid);
+      match /chunks/{chunkId} {
+        allow read, create, update, delete: if isOwner(uid);
+      }
+    }
+
+    match /publicProfiles/{uid} {
+      allow read: if signedIn();
+      allow create, update: if isOwner(uid)
+        && request.resource.data.uid == uid;
+      allow delete: if isOwner(uid);
+    }
+
+    match /marketListings/{listingId} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.sellerUid == request.auth.uid
+        && request.resource.data.status == 'active'
+        && request.resource.data.quantity is int
+        && request.resource.data.quantity > 0
+        && request.resource.data.unitPrice is number
+        && request.resource.data.unitPrice > 0
+        && request.resource.data.assetKey is string
+        && request.resource.data.localListingId is string;
+
+      allow update: if signedIn() && (
+        (
+          resource.data.sellerUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['quantity', 'status', 'updatedAt'])
+          && request.resource.data.quantity is int
+          && request.resource.data.quantity >= 0
+          && request.resource.data.quantity <= resource.data.quantity
+          && (
+            (request.resource.data.quantity == 0 && request.resource.data.status == 'sold')
+            || (request.resource.data.quantity > 0 && request.resource.data.status in ['active', 'cancelled'])
+          )
+        )
+        ||
+        (
+          resource.data.sellerUid != request.auth.uid
+          && resource.data.status == 'active'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['quantity', 'status', 'lastTradeId', 'updatedAt'])
+          && request.resource.data.quantity is int
+          && request.resource.data.quantity >= 0
+          && request.resource.data.quantity < resource.data.quantity
+          && request.resource.data.lastTradeId is string
+          && (
+            (request.resource.data.quantity == 0 && request.resource.data.status == 'sold')
+            || (request.resource.data.quantity > 0 && request.resource.data.status == 'active')
+          )
+          && getAfter(tradePath(request.resource.data.lastTradeId)).data.buyerUid == request.auth.uid
+          && getAfter(tradePath(request.resource.data.lastTradeId)).data.sellerUid == resource.data.sellerUid
+          && getAfter(tradePath(request.resource.data.lastTradeId)).data.listingId == listingId
+          && getAfter(tradePath(request.resource.data.lastTradeId)).data.quantity == resource.data.quantity - request.resource.data.quantity
+          && getAfter(tradePath(request.resource.data.lastTradeId)).data.unitPrice == resource.data.unitPrice
+        )
+      );
+
+      allow delete: if false;
+    }
+
+    match /marketTrades/{tradeId} {
+      allow read: if signedIn()
+        && (resource.data.buyerUid == request.auth.uid || resource.data.sellerUid == request.auth.uid);
+
+      allow create: if signedIn()
+        && request.resource.data.buyerUid == request.auth.uid
+        && request.resource.data.sellerUid != request.auth.uid
+        && request.resource.data.buyerClaimed == false
+        && request.resource.data.sellerClaimed == false
+        && request.resource.data.quantity is int
+        && request.resource.data.quantity > 0
+        && request.resource.data.unitPrice is number
+        && request.resource.data.unitPrice > 0
+        && request.resource.data.total == request.resource.data.unitPrice * request.resource.data.quantity
+        && get(listingPath(request.resource.data.listingId)).data.status == 'active'
+        && get(listingPath(request.resource.data.listingId)).data.sellerUid == request.resource.data.sellerUid
+        && get(listingPath(request.resource.data.listingId)).data.unitPrice == request.resource.data.unitPrice
+        && getAfter(listingPath(request.resource.data.listingId)).data.lastTradeId == tradeId
+        && get(listingPath(request.resource.data.listingId)).data.quantity - getAfter(listingPath(request.resource.data.listingId)).data.quantity == request.resource.data.quantity;
+
+      allow update: if signedIn() && (
+        (
+          resource.data.sellerUid == request.auth.uid
+          && resource.data.sellerClaimed == false
+          && request.resource.data.sellerClaimed == true
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sellerClaimed'])
+        )
+        ||
+        (
+          resource.data.buyerUid == request.auth.uid
+          && resource.data.buyerClaimed == false
+          && request.resource.data.buyerClaimed == true
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['buyerClaimed'])
+        )
+      );
+
+      allow delete: if false;
+    }
+  }
+}
