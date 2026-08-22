@@ -1,9 +1,8 @@
 'use strict';
-/* Test de release V1.1.6.
-   Charge les vrais JSON générés par l'importeur puis exécute le moteur de collation
-   sans DOM. L'objectif est de détecter avant l'APK : pool de rareté vide, mauvaise
-   longueur de booster, dépendance de sous-collection absente ou retour au vieux
-   générateur générique pour un produit booster vérifié. */
+/* Test de release du moteur de collation.
+   Charge les vrais JSON générés puis exécute les mêmes correctifs que l'APK :
+   longueurs, pools, dépendances, absence de fallback générique et composition
+   spéciale du Set de Base 1999. */
 const fs=require('fs');
 const path=require('path');
 const vm=require('vm');
@@ -33,8 +32,6 @@ let fallbackCalls=0;
 const state={metaReady:{},currentOpening:null};
 for(const sid of cards.keys())state.metaReady[sid]=true;
 
-/* v116fix.js lit window.V116_COLLATION_PROFILES au chargement. Le harness injecte
-   le catalogue généré puis charge exactement le même hotfix final que l'APK. */
 const ctx={
   console,
   window:null,
@@ -53,11 +50,13 @@ const ctx={
 };
 ctx.window=ctx;
 vm.createContext(ctx);
-vm.runInContext(fs.readFileSync(path.join(A,'v116fix.js'),'utf8'),ctx,{filename:'v116fix.js'});
-vm.runInContext(fs.readFileSync(path.join(A,'v116hotfix.js'),'utf8'),ctx,{filename:'v116hotfix.js'});
+for(const file of ['v116fix.js','v116hotfix.js','v116basefix.js']){
+  vm.runInContext(fs.readFileSync(path.join(A,file),'utf8'),ctx,{filename:file});
+}
 
 const failures=[];
-let tested=0,packs=0,skippedNoSource=0;
+let tested=0,packs=0,skippedNoSource=0,basePacks=0;
+const BASE_BASIC=new Set(['97','98','99','100','101','102']);
 for(const [sid,profile] of Object.entries(profiles.sets||{})){
   if(profile.confidence==='structure-only')continue;
   const source=cards.get(sid)||[];
@@ -78,6 +77,15 @@ for(const [sid,profile] of Object.entries(profiles.sets||{})){
       packs++;
       if(pack.length!==Number(profile.cardCount))throw new Error(`longueur ${pack.length}/${profile.cardCount}`);
       if(pack.some(c=>!c||!c.id))throw new Error('carte nulle/sans id');
+      if(sid==='base1'){
+        basePacks++;
+        const energies=pack.filter(c=>BASE_BASIC.has(String(c.localId||'')));
+        if(energies.length!==2)throw new Error(`Set de Base: ${energies.length}/2 énergies de base`);
+        const uncommon=pack.filter(c=>String(c.slot||'').startsWith('Peu commune'));
+        if(uncommon.length!==3)throw new Error(`Set de Base: ${uncommon.length}/3 peu communes`);
+        const commons=pack.filter(c=>String(c.slot||'').startsWith('Commune'));
+        if(commons.length!==5)throw new Error(`Set de Base: ${commons.length}/5 communes hors énergie`);
+      }
     }
   }catch(e){failures.push(`${sid}: ${e&&e.message||e}`)}
 }
@@ -85,10 +93,12 @@ for(const [sid,profile] of Object.entries(profiles.sets||{})){
 if(fallbackCalls)failures.push(`ancien générateur appelé ${fallbackCalls} fois`);
 if(tested<90)failures.push(`seulement ${tested} profils exécutables`);
 if(packs<20000)failures.push(`seulement ${packs} boosters testés`);
+if(basePacks!==250)failures.push(`Set de Base testé ${basePacks}/250 fois`);
 if(failures.length){
-  console.error('ÉCHECS COLLATION V1.1.6');
+  console.error('ÉCHECS COLLATION V1.2.0');
   for(const f of failures)console.error(' -',f);
   process.exit(1);
 }
-console.log(`V1.1.6 runtime OK : ${tested} profils · ${packs} boosters · 0 fallback générique`);
+console.log(`V1.2.0 runtime OK : ${tested} profils · ${packs} boosters · 0 fallback générique`);
+console.log(`Set de Base : ${basePacks} boosters · toujours 5 communes + 2 énergies Base Set + 3 peu communes + 1 rare`);
 console.log(`Boosters produits vérifiés couverts : ${verifiedBoosterSets.size}/${verifiedBoosterSets.size} · shells source ignorés : ${skippedNoSource}`);
