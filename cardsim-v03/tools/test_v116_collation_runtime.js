@@ -2,7 +2,7 @@
 /* Test de release du moteur de collation.
    Charge les vrais JSON générés puis exécute les mêmes correctifs que l'APK :
    longueurs, pools, dépendances, absence de fallback générique et composition
-   spéciale du Set de Base 1999. */
+   spéciale des extensions WotC 1999. */
 const fs=require('fs');
 const path=require('path');
 const vm=require('vm');
@@ -55,8 +55,23 @@ for(const file of ['v116fix.js','v116hotfix.js','v116basefix.js']){
 }
 
 const failures=[];
-let tested=0,packs=0,skippedNoSource=0,basePacks=0;
+let tested=0,packs=0,skippedNoSource=0,basePacks=0,fossilPacks=0;
 const BASE_BASIC=new Set(['97','98','99','100','101','102']);
+
+/* Fossile 1999 contient 62 cartes et aucune Énergie de base. Vérifier la seule
+   chose qu'un échantillon aléatoire ne peut pas prouver : chaque carte du set doit
+   appartenir à au moins un pool physique atteignable du booster. */
+try{
+  const fossil=cards.get('base3')||[];
+  if(fossil.length!==62)failures.push(`Fossile: catalogue ${fossil.length}/62 cartes`);
+  const pools=ctx.v116Pools('base3');
+  const reachable=new Set([...pools.common,...pools.uncommon,...pools.rare,...pools.holo].map(c=>String(c.id)));
+  const missing=fossil.filter(c=>!reachable.has(String(c.id))).map(c=>`${c.localId||'?'} ${c.name||c.id}`);
+  if(missing.length)failures.push(`Fossile: cartes inatteignables dans les boosters: ${missing.join(', ')}`);
+  const energyLike=fossil.filter(c=>/^(basic )?energy$|énergie de base|basic energy/i.test(String(c.name||'')));
+  if(energyLike.length)failures.push(`Fossile: ${energyLike.length} énergie(s) de base inattendue(s) dans le catalogue`);
+}catch(e){failures.push(`Fossile audit pools: ${e&&e.message||e}`)}
+
 for(const [sid,profile] of Object.entries(profiles.sets||{})){
   if(profile.confidence==='structure-only')continue;
   const source=cards.get(sid)||[];
@@ -86,6 +101,14 @@ for(const [sid,profile] of Object.entries(profiles.sets||{})){
         const commons=pack.filter(c=>String(c.slot||'').startsWith('Commune'));
         if(commons.length!==5)throw new Error(`Set de Base: ${commons.length}/5 communes hors énergie`);
       }
+      if(sid==='base3'){
+        fossilPacks++;
+        if(pack.some(c=>c.kind==='energy'||/énergie|energy/i.test(String(c.slot||''))))throw new Error('Fossile: carte Énergie injectée dans le booster');
+        const commons=pack.filter(c=>String(c.slot||'').startsWith('Commune'));
+        const uncommon=pack.filter(c=>String(c.slot||'').startsWith('Peu commune'));
+        const rare=pack.filter(c=>String(c.slot||'').startsWith('Rare'));
+        if(commons.length!==7||uncommon.length!==3||rare.length!==1)throw new Error(`Fossile: composition ${commons.length}C/${uncommon.length}U/${rare.length}R au lieu de 7/3/1`);
+      }
     }
   }catch(e){failures.push(`${sid}: ${e&&e.message||e}`)}
 }
@@ -94,6 +117,7 @@ if(fallbackCalls)failures.push(`ancien générateur appelé ${fallbackCalls} foi
 if(tested<90)failures.push(`seulement ${tested} profils exécutables`);
 if(packs<20000)failures.push(`seulement ${packs} boosters testés`);
 if(basePacks!==250)failures.push(`Set de Base testé ${basePacks}/250 fois`);
+if(fossilPacks!==250)failures.push(`Fossile testé ${fossilPacks}/250 fois`);
 if(failures.length){
   console.error('ÉCHECS COLLATION V1.2.0');
   for(const f of failures)console.error(' -',f);
@@ -101,4 +125,5 @@ if(failures.length){
 }
 console.log(`V1.2.0 runtime OK : ${tested} profils · ${packs} boosters · 0 fallback générique`);
 console.log(`Set de Base : ${basePacks} boosters · toujours 5 communes + 2 énergies Base Set + 3 peu communes + 1 rare`);
+console.log(`Fossile 1999 : 62/62 cartes atteignables · ${fossilPacks} boosters · toujours 7 communes + 3 peu communes + 1 rare/holo · 0 énergie`);
 console.log(`Boosters produits vérifiés couverts : ${verifiedBoosterSets.size}/${verifiedBoosterSets.size} · shells source ignorés : ${skippedNoSource}`);
