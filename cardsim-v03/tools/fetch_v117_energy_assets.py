@@ -2,7 +2,9 @@
 """Bundle Basic Energy artwork by booster era and generate the runtime catalog.
 
 The original app reused SVE artwork everywhere. This release keeps local, dated
-prints and splits Scarlet & Violet at the documented 009-016 / 017-024 refreshes.
+prints and splits Scarlet & Violet at the documented 001-008 / 009-016 /
+017-024 refreshes. PkmnCards is used for SVE because the old PokemonTCG.io SVE
+image endpoint currently returns 404 for these files.
 """
 from __future__ import annotations
 import json
@@ -61,8 +63,14 @@ def main()->int:
   save_first(OUT/'swsh_2022'/f'{i}.png',[f'https://pkmncards.com/wp-content/uploads/en_US-SWSH_Energy-{i+9:03d}-{slug}.png'])
   eras['swsh2022'].append(erow('swsh_2022',i,fr,'png'))
 
+  # SVE has three documented Basic Energy print waves: 001-008, 009-016,
+  # 017-024. These exact scans are bundled locally so a booster never receives
+  # a generic energy card from the wrong era.
   for key,folder,n in [('sv2023','sv_2023',i),('sv2024','sv_2024',i+8),('sv2025','sv_2025',i+16)]:
-   save_first(OUT/folder/f'{i}.png',[f'https://images.pokemontcg.io/sve/{n}_hires.png',f'https://images.pokemontcg.io/sve/{n}.png'])
+   save_first(OUT/folder/f'{i}.png',[
+    f'https://pkmncards.com/wp-content/uploads/sve_en_{n:03d}.png',
+    f'https://images.pokemontcg.io/sve/{n}_hires.png',
+    f'https://images.pokemontcg.io/sve/{n}.png'])
    eras[key].append(erow(folder,i,fr,'png'))
 
   save_first(OUT/'me'/f'{i}.png',[f'https://pkmncards.com/wp-content/uploads/mee_en_{i:03d}_std.png',f'https://images.pokemontcg.io/mee/{i}_hires.png'])
