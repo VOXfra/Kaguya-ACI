@@ -297,14 +297,19 @@ def download_hd_booster(product: dict[str, Any]) -> tuple[dict[str, Any], str]:
     url = TCGPLAYER_HD.format(product_id=pid)
     try:
         data, ctype = get_bytes(url, retries=3, timeout=40)
-        if len(data) < 8000:
+        if len(data) < 12000:
             raise RuntimeError(f"image HD trop petite: {len(data)}")
         ext = sealed_importer.image_ext(data, ctype)
         HD_DIR.mkdir(parents=True, exist_ok=True)
         path = HD_DIR / f"tcgplayer-{pid}{ext}"; path.write_bytes(data)
         rel = path.relative_to(A).as_posix()
         size = v117.image_size(rel)
-        if not size or size[1] < size[0] * 1.15 or max(size) < 450:
+        # TCGplayer documente ce rendu comme une image produit 1000x1000. Beaucoup
+        # de wrappers sont donc centrés sur un canevas carré : le ratio du FICHIER
+        # n'est pas le ratio du sachet. Le filtre portrait reste appliqué aux images
+        # SealedDex non structurées ; pour ce CDN produit de confiance on exige à
+        # la place une vraie définition minimale, sans rejeter un bon scan carré.
+        if not size or min(size) < 450 or max(size) < 450:
             path.unlink(missing_ok=True); return product, ""
         return product, rel
     except Exception:
