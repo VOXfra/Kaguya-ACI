@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
-"""Bundle Basic Energy artwork for the eras that have a dedicated energy slot.
+"""Bundle Basic Energy artwork by booster era and generate the runtime catalog.
 
-Sun & Moon booster energy can include Fairy Energy, so its pool has 9 types.
-Sword & Shield booster packs use the eight surviving booster-energy types; the
-Fairy print exists as an accessory/ETB print but is not put in the random booster
-energy slot. Scarlet & Violet and Mega Evolution also use eight types.
+The original app reused SVE artwork everywhere. This release keeps local, dated
+prints and splits Scarlet & Violet at the documented 009-016 / 017-024 refreshes.
 """
 from __future__ import annotations
+import json
 import urllib.request
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
-OUT=ROOT/'app'/'src'/'main'/'assets'/'img'/'v117'/'energy'
-UA='VOX-CardSim-Energy/1.1.7'
-BASE_TYPES=['grass_energy','fire_energy','water_energy','lightning_energy','psychic_energy','fighting_energy','darkness_energy','metal_energy']
+A=ROOT/'app'/'src'/'main'/'assets'
+OUT=A/'img'/'v117'/'energy'
+CATALOG=A/'v117_energy_catalog.js'
+UA='VOX-CardSim-Energy/1.2.0'
+TYPES=[('Plante','grass_energy'),('Feu','fire_energy'),('Eau','water_energy'),('Électrique','lightning_energy'),('Psy','psychic_energy'),('Combat','fighting_energy'),('Obscurité','darkness_energy'),('Métal','metal_energy')]
 
 
 def get(url:str)->bytes:
@@ -31,25 +32,48 @@ def save_first(path:Path,urls:list[str])->None:
  raise RuntimeError(f'{path.name}: {last}')
 
 
+def erow(folder:str,i:int,name:str,ext:str)->dict:
+ return {'id':f'{folder}-{i}','name':name,'image':f'img/v117/energy/{folder}/{i}.{ext}'}
+
+
 def main()->int:
  if OUT.exists():
   for p in OUT.rglob('*'):
    if p.is_file():p.unlink()
- # Sun & Moon: 8 types actuels + Fairy Energy en neuvième position.
- for i,slug in enumerate(BASE_TYPES+['fairy_energy'],1):
+ eras={k:[] for k in ['sm2017','sm2019','swsh2020','swsh2022','sv2023','sv2024','sv2025','mega']}
+
+ # Sun & Moon launch print. Team Up is kept in the same SM family rather than
+ # ever falling through to a newer Sword/Shield or Scarlet/Violet card.
+ for i,(fr,slug) in enumerate(TYPES,1):
   save_first(OUT/'sm'/f'{i}.jpg',[
    f'https://pkmncards.com/wp-content/uploads/en_US-SM_Energy-{i:03d}-{slug}-1.jpg',
    f'https://pkmncards.com/wp-content/uploads/en_US-SM_Energy-{i:03d}-{slug}.jpg'])
- # Sword & Shield 2020: Fairy a bien eu une impression, mais pas dans le slot
- # énergie des boosters ; on garde donc les huit types tirables.
- for i,slug in enumerate(BASE_TYPES,1):
+  eras['sm2017'].append(erow('sm',i,fr,'jpg'));eras['sm2019'].append(erow('sm',i,fr,'jpg'))
+ # Fairy was a valid random Basic Energy in Sun & Moon.
+ save_first(OUT/'sm'/'9.jpg',[
+  'https://pkmncards.com/wp-content/uploads/en_US-SM_Energy-009-fairy_energy-1.jpg',
+  'https://pkmncards.com/wp-content/uploads/en_US-SM_Energy-009-fairy_energy.jpg'])
+ fairy=erow('sm',9,'Fée','jpg');eras['sm2017'].append(fairy);eras['sm2019'].append(fairy)
+
+ for i,(fr,slug) in enumerate(TYPES,1):
   save_first(OUT/'swsh_2020'/f'{i}.jpg',[f'https://pkmncards.com/wp-content/uploads/en_US-SWSH_Energy-{i:03d}-{slug}.jpg'])
+  eras['swsh2020'].append(erow('swsh_2020',i,fr,'jpg'))
   save_first(OUT/'swsh_2022'/f'{i}.png',[f'https://pkmncards.com/wp-content/uploads/en_US-SWSH_Energy-{i+9:03d}-{slug}.png'])
-  save_first(OUT/'sv'/f'{i}.png',[f'https://images.pokemontcg.io/sve/{i}_hires.png',f'https://images.pokemontcg.io/sve/{i}.png'])
+  eras['swsh2022'].append(erow('swsh_2022',i,fr,'png'))
+
+  for key,folder,n in [('sv2023','sv_2023',i),('sv2024','sv_2024',i+8),('sv2025','sv_2025',i+16)]:
+   save_first(OUT/folder/f'{i}.png',[f'https://images.pokemontcg.io/sve/{n}_hires.png',f'https://images.pokemontcg.io/sve/{n}.png'])
+   eras[key].append(erow(folder,i,fr,'png'))
+
   save_first(OUT/'me'/f'{i}.png',[f'https://pkmncards.com/wp-content/uploads/mee_en_{i:03d}_std.png',f'https://images.pokemontcg.io/mee/{i}_hires.png'])
+  eras['mega'].append(erow('me',i,fr,'png'))
+
  files=[p for p in OUT.rglob('*') if p.is_file()]
- if len(files)!=41:raise RuntimeError(f'énergies V1.1.7 incomplètes: {len(files)}/41')
- print(f'V1.1.7 energy assets: {len(files)}')
+ if len(files)!=57:raise RuntimeError(f'énergies V1.2.0 incomplètes: {len(files)}/57')
+ if any(p.stat().st_size<12000 for p in files):raise RuntimeError('énergie locale anormalement petite')
+ payload={'schema':117,'eras':eras,'stats':{'files':len(files),'eraProfiles':len(eras)}}
+ CATALOG.write_text("'use strict';\nwindow.V117_ENERGY_CATALOG="+json.dumps(payload,ensure_ascii=False,separators=(',',':'))+';\n',encoding='utf-8')
+ print(f'V1.2.0 energy assets: {len(files)} · {len(eras)} profils')
  return 0
 
 if __name__=='__main__':raise SystemExit(main())
