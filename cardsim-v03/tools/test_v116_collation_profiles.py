@@ -11,16 +11,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import finalize_v122_cardmarket
+import finalize_v122_cardmarket_release
 
 ROOT = Path(__file__).resolve().parents[1]
 A = ROOT / "app" / "src" / "main" / "assets"
 
 
 def main() -> int:
-    # Cardmarket est la source finale du catalogue physique et des prix. Le script
-    # échoue plutôt que de conserver silencieusement un catalogue incomplet.
-    finalize_v122_cardmarket.main()
+    # Cardmarket est la source finale du catalogue physique et des prix. Le wrapper
+    # utilise aussi idExpansion et garantit un booster canonique par collection.
+    finalize_v122_cardmarket_release.main()
 
     idx = json.loads((A / "v111_collection_index.json").read_text(encoding="utf-8"))
     sealed = json.loads((A / "v115_sealed_catalog.json").read_text(encoding="utf-8"))
@@ -29,30 +29,33 @@ def main() -> int:
     assert profiles["schema"] == 116 and profiles["language"] == "fr"
     sets = profiles["sets"]
 
-    # La boutique doit réellement être la passe Cardmarket finale.
     assert sealed.get("v122CardmarketFinalized") is True
     stats = sealed.get("stats") or {}
     assert stats.get("cardmarketSourcePrimary") is True
     assert int(stats.get("cardmarketMappedSets") or 0) >= 90, stats
     assert int(stats.get("cardmarketMappedProducts") or 0) >= 250, stats
     assert int(stats.get("cardmarketPricedProducts") or 0) > 0, stats
+    assert int(stats.get("cardmarketExpansionAnchors") or 0) > 0, stats
     for sid in ["base3", "sv03.5", "sv08.5"]:
         if any(x.get("id") == sid for x in idx.get("sets") or []):
             rows = sealed.get("sets", {}).get(sid) or []
             assert rows, f"Cardmarket: aucun produit final pour {sid}"
             assert any(p.get("v122CardmarketVerified") is True for p in rows), sid
 
-    # Chaque extension possédant un vrai booster directement ouvrable doit avoir
-    # un profil. Les autres produits booster Cardmarket peuvent rester scellés si
-    # leur collation/packaging exact n'est pas assez documenté.
     booster_sets = {
         sid for sid, rows in sealed.get("sets", {}).items()
         if any(p.get("mode") == "loose" for p in rows or [])
     }
     missing = sorted(booster_sets - set(sets))
     assert not missing, f"booster(s) sans profil de collation: {missing}"
+    for sid, rows in sealed.get("sets", {}).items():
+        loose = [p for p in rows or [] if p.get("mode") == "loose"]
+        assert len(loose) <= 1, (sid, len(loose))
+        if loose:
+            p = loose[0]
+            assert p.get("v117CanonicalBooster") and int(p.get("opens") or 0) == 1 and p.get("verifiedContents") is True, (sid, p)
+            assert p.get("artworks"), f"booster canonique sans artworks: {sid}"
 
-    # Contrats de structure historiques et spéciaux vérifiables.
     expected = {
         "base1": ("wotc11", 11),
         "base3": ("wotc11", 11),
