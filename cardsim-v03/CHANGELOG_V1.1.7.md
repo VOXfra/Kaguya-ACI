@@ -26,6 +26,7 @@
 - Tous les artworks utilisés par les boosters canoniques existent localement dans l'APK et les assets SealedDex utilisés sont portrait.
 - Tous les boosters vérifiés restent couverts par un profil de collation V1.1.6.
 - Inspection APK avant signature puis signature v1/v2/v3.
+- La CI régénère les données depuis leurs sources ; un échec réseau amont est relancé sans modifier les règles du jeu.
 
 ## Version Android
 - `versionCode 43`
