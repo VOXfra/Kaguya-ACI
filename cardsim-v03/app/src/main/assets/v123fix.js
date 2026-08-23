@@ -64,6 +64,28 @@ function v123RenderCurrent(){
  try{updateStats?.()}catch(e){console.warn('V1.2.3 stats',e)}
 }
 
+/* La boutique V1.2.1 changeait directement activeSet, contrairement au sélecteur
+   général V1.1.2 qui hydrate le catalogue. On réunit les deux comportements : la
+   sélection reste instantanée, puis le JSON local est chargé et la vue repeinte. */
+if(typeof v121SelectShopSet==='function'){
+ const V123_SHOP_SELECT_BASE=v121SelectShopSet;
+ v121SelectShopSet=function(id){
+  const r=V123_SHOP_SELECT_BASE(id);
+  if(id&&v123Entry(id)&&!v123Hydrated(id))v123Hydrate(id).then(ok=>{if(ok)v123RenderCurrent()});
+  return r;
+ };
+}
+
+/* Même garde-fou quand on arrive sur une page via la barre de navigation. */
+if(typeof nav==='function'){
+ const V123_NAV_BASE=nav;
+ nav=function(id){
+  const r=V123_NAV_BASE(id),sid=state.activeSet;
+  if(sid&&v123Entry(sid)&&!v123Hydrated(sid))v123Hydrate(sid).then(ok=>{if(ok)v123RenderCurrent()});
+  return r;
+ };
+}
+
 async function v123BootLocalFirst(){
  if(window.__voxV123BootPromise)return window.__voxV123BootPromise;
  window.__voxV123BootPromise=(async()=>{
