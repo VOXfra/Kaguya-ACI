@@ -33,13 +33,11 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * Téléchargement persistant des scans hors ligne.
+ * V1.2.5 — téléchargements de scans hors ligne finis et reprenables.
  *
- * V1.2.4 : le JSON canonique des collections est déjà embarqué dans l'APK. Le
- * téléchargement ne doit donc jamais rendre une collection inutilisable simplement
- * parce qu'un scan distant manque ou qu'un CDN répond mal. Les ressources absentes
- * de la source sont ignorées proprement ; les erreurs réseau partielles restent
- * réessayables et les fichiers déjà en cache ne sont pas retéléchargés.
+ * Le catalogue, la collation et les métadonnées sont déjà dans l'APK. Une panne de
+ * CDN ne doit donc jamais mettre WorkManager dans une boucle de retry ni rendre une
+ * collection inutilisable. Les scans manquants restent simplement à compléter.
  */
 public final class OfflinePackWorker extends Worker {
     public static final String KEY_SET_ID = "set_id";
@@ -72,14 +70,13 @@ public final class OfflinePackWorker extends Worker {
         ensureChannel();
         try {
             setForegroundAsync(foreground("Préparation…", 0, 0)).get();
-            if (getInputData().getBoolean(KEY_ALL, false)) return downloadAll();
-            return downloadOne();
+            return getInputData().getBoolean(KEY_ALL, false) ? downloadAll() : downloadOne();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return Result.retry();
+            return Result.failure();
         } catch (Exception e) {
             prefs.edit().putString("worker_error", safeMessage(e)).apply();
-            return Result.retry();
+            return Result.failure();
         }
     }
 
@@ -88,27 +85,36 @@ public final class OfflinePackWorker extends Worker {
         if (setId == null || setId.trim().isEmpty()) return Result.failure();
         JSONObject entry = findEntry(index(), setId);
         if (entry == null) return Result.failure();
-        JSONObject payload = payload(language(), entry);
-        ManifestInfo manifest = buildManifest(setId, payload);
-        boolean explicitForce = getInputData().getBoolean(KEY_FORCE, false);
-        boolean force = explicitForce || needsCatalogUpdate(entry);
-        boolean usable = downloadManifest(
-                setId,
-                manifest,
-                force,
-                entry.optString("name", setId),
-                entry.optString("contentHash", ""),
-                1,
-                1
-        );
-        return usable ? Result.success() : Result.retry();
+        try {
+            JSONObject payload = payload(language(), entry);
+            ManifestInfo manifest = buildManifest(setId, payload);
+            downloadManifest(
+                    setId,
+                    manifest,
+                    getInputData().getBoolean(KEY_FORCE, false) || needsCatalogUpdate(entry),
+                    entry.optString("name", setId),
+                    entry.optString("contentHash", ""),
+                    1,
+                    1
+            );
+            // Les données locales sont valides : les éventuels scans ratés sont un
+            // état partiel à compléter, pas un échec WorkManager à relancer en boucle.
+            return Result.success();
+        } catch (Exception e) {
+            prefs.edit()
+                    .putBoolean("pack_" + setId, false)
+                    .putString("pack_state_" + setId, "error")
+                    .putString("pack_error_" + setId, "Catalogue local : " + safeMessage(e))
+                    .putLong("pack_time_" + setId, System.currentTimeMillis())
+                    .apply();
+            return Result.failure();
+        }
     }
 
     private Result downloadAll() throws Exception {
         String lang = language();
         boolean updateOnly = getInputData().getBoolean(KEY_UPDATE_ONLY, false);
-        JSONObject idx = index();
-        JSONArray sets = idx.optJSONArray("sets");
+        JSONArray sets = index().optJSONArray("sets");
         if (sets == null) return Result.failure();
 
         int eligible = 0;
@@ -116,7 +122,6 @@ public final class OfflinePackWorker extends Worker {
             JSONObject entry = sets.optJSONObject(i);
             if (entry != null && eligible(entry, updateOnly)) eligible++;
         }
-
         prefs.edit()
                 .putBoolean("bulk_running", true)
                 .putBoolean("bulk_update_only", updateOnly)
@@ -126,81 +131,63 @@ public final class OfflinePackWorker extends Worker {
                 .putLong("bulk_started_at", System.currentTimeMillis())
                 .apply();
 
-        if (eligible == 0) {
-            prefs.edit()
-                    .putBoolean("bulk_running", false)
-                    .putLong("bulk_finished_at", System.currentTimeMillis())
-                    .apply();
-            return Result.success();
-        }
-
         int done = 0;
-        int failed = 0;
-        for (int i = 0; i < sets.length(); i++) {
-            if (isStopped()) break;
+        int localFailures = 0;
+        for (int i = 0; i < sets.length() && !isStopped(); i++) {
             JSONObject entry = sets.optJSONObject(i);
             if (entry == null || !eligible(entry, updateOnly)) continue;
-
             String id = entry.optString("id", "");
             String name = entry.optString("name", id);
-            boolean usable;
             try {
                 JSONObject payload = payload(lang, entry);
-                ManifestInfo manifest = buildManifest(id, payload);
-                usable = downloadManifest(
+                downloadManifest(
                         id,
-                        manifest,
+                        buildManifest(id, payload),
                         needsCatalogUpdate(entry),
                         name,
                         entry.optString("contentHash", ""),
                         done + 1,
-                        eligible
+                        Math.max(eligible, 1)
                 );
             } catch (Exception e) {
-                usable = prefs.getBoolean("pack_" + id, false);
+                localFailures++;
                 prefs.edit()
-                        .putString("pack_state_" + id, usable ? "partial" : "error")
-                        .putBoolean("pack_retryable_" + id, true)
-                        .putString("pack_error_" + id, safeMessage(e))
+                        .putBoolean("pack_" + id, false)
+                        .putString("pack_state_" + id, "error")
+                        .putString("pack_error_" + id, "Catalogue local : " + safeMessage(e))
                         .putLong("pack_time_" + id, System.currentTimeMillis())
                         .apply();
             }
-
             done++;
-            if (!usable) failed++;
-            prefs.edit().putInt("bulk_done", done).putInt("bulk_failed", failed).apply();
+            prefs.edit().putInt("bulk_done", done).putInt("bulk_failed", localFailures).apply();
             setForegroundAsync(foreground(
                     (updateOnly ? "Mise à jour" : "Téléchargement") + " · " + name,
                     done,
-                    eligible
+                    Math.max(eligible, 1)
             ));
         }
 
-        boolean stopped = isStopped();
         prefs.edit()
                 .putBoolean("bulk_running", false)
                 .putInt("bulk_done", done)
-                .putInt("bulk_failed", failed)
+                .putInt("bulk_failed", localFailures)
                 .putLong("bulk_finished_at", System.currentTimeMillis())
                 .apply();
-
-        if (stopped) return Result.retry();
-        // Un set partiel mais utilisable n'échoue plus tout le téléchargement global.
-        return failed == 0 ? Result.success() : Result.retry();
+        return localFailures == 0 ? Result.success() : Result.failure();
     }
 
     private String language() {
         String lang = getInputData().getString(KEY_LANG);
-        if (lang == null || lang.trim().isEmpty()) return "fr";
-        return lang.trim().toLowerCase(Locale.US);
+        return lang == null || lang.trim().isEmpty() ? "fr" : lang.trim().toLowerCase(Locale.US);
     }
 
     private boolean eligible(JSONObject entry, boolean updateOnly) {
         String id = entry.optString("id", "");
         if (id.isEmpty()) return false;
-        // ready et partial sont téléchargeables. Seul un vrai échec de catalogue est exclu.
         String status = entry.optString("status", "ready").toLowerCase(Locale.US);
         if ("failed".equals(status) || "error".equals(status)) return false;
+        // Même une source 100 % sans scans peut être marquée "partielle" : le JSON
+        // local reste utile et le worker doit pouvoir enregistrer cet état proprement.
         boolean installed = prefs.getBoolean("pack_" + id, false);
         boolean retryable = prefs.getBoolean("pack_retryable_" + id, false);
         if (updateOnly) return installed && (needsCatalogUpdate(entry) || retryable);
@@ -241,34 +228,27 @@ public final class OfflinePackWorker extends Worker {
         return payload;
     }
 
-    /**
-     * Le manifeste ne contient que les ressources réellement distantes disponibles.
-     * Les JSON, collations, énergies par époque et scans de secours sont déjà dans
-     * l'APK et ne doivent jamais dépendre d'un CDN au moment du téléchargement.
-     */
     private ManifestInfo buildManifest(String setId, JSONObject payload) throws Exception {
         Set<String> urls = new LinkedHashSet<>();
-        JSONObject set = payload.optJSONObject("set");
-        if (set != null) addAssetUrl(urls, set.optString("logo", ""), true);
-
         JSONArray cards = payload.optJSONArray("cards");
         if (cards == null || cards.length() == 0) throw new Exception("Catalogue local vide");
         int missing = 0;
         for (int i = 0; i < cards.length(); i++) {
             JSONObject card = cards.optJSONObject(i);
             if (card == null) continue;
-            String localId = card.optString("localId", "");
+            int n = parseCardNumber(card.optString("localId", ""));
+            if ("me05".equals(setId) && n >= 75 && n <= 89) continue; // scans APK
             String image = card.optString("image", "");
-            int n = parseCardNumber(localId);
-            boolean bundledMe05 = "me05".equals(setId) && n >= 75 && n <= 89;
-            if (bundledMe05) continue;
             if (image.isEmpty()) {
                 missing++;
                 continue;
             }
             addAssetUrl(urls, image, false);
         }
-
+        // Le logo passe en dernier : un CDN de logo lent ne peut plus donner
+        // l'impression que le pack entier reste bloqué à 0/N.
+        JSONObject set = payload.optJSONObject("set");
+        if (set != null) addAssetUrl(urls, set.optString("logo", ""), true);
         JSONArray out = new JSONArray();
         for (String url : urls) out.put(url);
         return new ManifestInfo(out, missing);
@@ -291,7 +271,7 @@ public final class OfflinePackWorker extends Worker {
         }
     }
 
-    private boolean downloadManifest(
+    private void downloadManifest(
             String setId,
             ManifestInfo manifest,
             boolean force,
@@ -301,86 +281,107 @@ public final class OfflinePackWorker extends Worker {
             int setTotal
     ) {
         JSONArray urls = manifest.urls;
-        int sourceMissing = manifest.sourceMissing;
+        int total = urls.length();
         int done = 0;
         int failed = 0;
+        int attempted = 0;
+        int consecutiveFailures = 0;
         long bytes = 0;
-        int total = urls.length();
-        boolean previouslyUsable = prefs.getBoolean("pack_" + setId, false);
-        String lastNetworkError = "";
+        String lastError = "";
+        long started = System.currentTimeMillis();
 
         prefs.edit()
+                .putBoolean("pack_" + setId, true) // le JSON local est déjà utilisable
                 .putString("pack_state_" + setId, "running")
+                .putLong("pack_started_at_" + setId, started)
+                .putLong("pack_heartbeat_" + setId, started)
                 .putInt("pack_total_" + setId, total)
                 .putInt("pack_done_" + setId, 0)
+                .putInt("pack_attempted_" + setId, 0)
                 .putInt("pack_failed_" + setId, 0)
+                .putInt("pack_source_missing_" + setId, manifest.sourceMissing)
                 .putBoolean("pack_retryable_" + setId, false)
                 .remove("pack_error_" + setId)
                 .apply();
 
         for (int i = 0; i < total; i++) {
-            if (isStopped()) return previouslyUsable;
+            if (isStopped()) {
+                failed += Math.max(0, total - attempted);
+                lastError = "Téléchargement interrompu";
+                break;
+            }
             String url = urls.optString(i, "");
             if (url.isEmpty()) continue;
+            attempted++;
+            prefs.edit()
+                    .putInt("pack_attempted_" + setId, attempted)
+                    .putLong("pack_heartbeat_" + setId, System.currentTimeMillis())
+                    .apply();
             try {
                 File target = cacheFileFor(url);
-                if (force || !target.exists() || target.length() <= 0) downloadUrlWithRetry(url, target);
+                if (force || !target.exists() || target.length() <= 0) downloadUrlSmart(url, target);
                 if (!target.exists() || target.length() <= 0) throw new Exception("fichier vide");
-                bytes += Math.max(0, target.length());
+                bytes += target.length();
                 done++;
+                consecutiveFailures = 0;
             } catch (Exception e) {
                 failed++;
-                lastNetworkError = safeMessage(e);
+                consecutiveFailures++;
+                lastError = safeMessage(e);
             }
+            prefs.edit()
+                    .putInt("pack_done_" + setId, done)
+                    .putInt("pack_attempted_" + setId, attempted)
+                    .putInt("pack_failed_" + setId, failed)
+                    .putLong("pack_bytes_" + setId, bytes)
+                    .putLong("pack_heartbeat_" + setId, System.currentTimeMillis())
+                    .apply();
 
-            if (i % 4 == 0 || i == total - 1) {
-                prefs.edit()
-                        .putInt("pack_done_" + setId, done)
-                        .putInt("pack_failed_" + setId, failed)
-                        .putLong("pack_bytes_" + setId, bytes)
-                        .apply();
-                setForegroundAsync(foreground(
-                        label + " · " + done + "/" + total + (failed > 0 ? " · " + failed + " à réessayer" : ""),
-                        setIndex,
-                        Math.max(setTotal, 1)
-                ));
+            setForegroundAsync(foreground(
+                    label + " · " + attempted + "/" + total + (failed > 0 ? " · " + failed + " à compléter" : ""),
+                    setIndex,
+                    Math.max(setTotal, 1)
+            ));
+
+            // Si le CDN entier est indisponible, on ne bloque pas Android pendant
+            // des dizaines de minutes à essayer 100+ URL qui échoueront pareil.
+            if (consecutiveFailures >= 3 && done == 0) {
+                failed += Math.max(0, total - attempted);
+                lastError = "CDN indisponible · réessaie plus tard";
+                break;
             }
         }
 
-        boolean transportUsable = total == 0 || done > 0 || previouslyUsable;
-        boolean complete = transportUsable && failed == 0 && sourceMissing == 0;
-        boolean usable = complete || transportUsable;
+        boolean complete = failed == 0 && manifest.sourceMissing == 0;
         boolean retryable = failed > 0;
-        String stateName = complete ? "installed" : (usable ? "partial" : "error");
-
+        String state = complete ? "installed" : "partial";
         StringBuilder note = new StringBuilder();
-        if (sourceMissing > 0) {
-            note.append(sourceMissing).append(" scan(s) absent(s) de la source");
+        if (manifest.sourceMissing > 0) {
+            note.append(manifest.sourceMissing).append(" scan(s) absent(s) de la source");
         }
         if (failed > 0) {
             if (note.length() > 0) note.append(" · ");
-            note.append(failed).append(" téléchargement(s) à réessayer");
-            if (!lastNetworkError.isEmpty()) note.append(" · ").append(lastNetworkError);
+            note.append(failed).append(" scan(s) à compléter");
+            if (!lastError.isEmpty()) note.append(" · ").append(lastError);
         }
 
         SharedPreferences.Editor editor = prefs.edit()
-                .putBoolean("pack_" + setId, usable)
-                .putString("pack_state_" + setId, stateName)
+                .putBoolean("pack_" + setId, true)
+                .putString("pack_state_" + setId, state)
                 .putBoolean("pack_retryable_" + setId, retryable)
                 .putLong("pack_time_" + setId, System.currentTimeMillis())
+                .putLong("pack_heartbeat_" + setId, System.currentTimeMillis())
                 .putInt("pack_items_" + setId, done)
                 .putInt("pack_total_" + setId, total)
                 .putInt("pack_done_" + setId, done)
+                .putInt("pack_attempted_" + setId, attempted)
                 .putInt("pack_failed_" + setId, failed)
-                .putInt("pack_source_missing_" + setId, sourceMissing)
+                .putInt("pack_source_missing_" + setId, manifest.sourceMissing)
                 .putLong("pack_bytes_" + setId, bytes);
+        if (contentHash != null && !contentHash.isEmpty()) editor.putString("pack_catalog_hash_" + setId, contentHash);
         if (note.length() > 0) editor.putString("pack_error_" + setId, note.toString());
         else editor.remove("pack_error_" + setId);
-        if (usable && contentHash != null && !contentHash.isEmpty()) {
-            editor.putString("pack_catalog_hash_" + setId, contentHash);
-        }
         editor.apply();
-        return usable;
     }
 
     private String readAsset(String path) throws Exception {
@@ -420,45 +421,51 @@ public final class OfflinePackWorker extends Worker {
         return e.getMessage().trim();
     }
 
-    private void downloadUrlWithRetry(String address, File target) throws Exception {
-        Exception last = null;
-        for (int attempt = 0; attempt < 4; attempt++) {
-            try {
-                downloadUrl(address, target);
-                return;
-            } catch (InterruptedException e) {
-                throw e;
-            } catch (Exception e) {
-                last = e;
-                try {
-                    Thread.sleep(350L * (attempt + 1) * (attempt + 1));
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    throw interrupted;
-                }
-            }
+    private void downloadUrlSmart(String original, File target) throws Exception {
+        Exception first;
+        try {
+            downloadUrlOnce(original, target, original);
+            return;
+        } catch (Exception e) {
+            first = e;
         }
-        throw last == null ? new Exception("Téléchargement impossible") : last;
+        String fallback = lowResolutionFallback(original);
+        if (!fallback.equals(original)) {
+            try {
+                // Le contenu basse résolution est volontairement stocké sous la clé
+                // du scan HD demandé : hors ligne, cardImg() retrouve ainsi l'image.
+                downloadUrlOnce(fallback, target, original);
+                return;
+            } catch (Exception ignored) {}
+        } else {
+            try {
+                downloadUrlOnce(original, target, original);
+                return;
+            } catch (Exception ignored) {}
+        }
+        throw first;
     }
 
-    private void downloadUrl(String address, File target) throws Exception {
+    private String lowResolutionFallback(String url) {
+        String value = String.valueOf(url);
+        return value.replace("/high.webp", "/low.webp");
+    }
+
+    private void downloadUrlOnce(String address, File target, String cacheKeyUrl) throws Exception {
         HttpURLConnection conn = null;
         File tmp = new File(target.getAbsolutePath() + ".part");
         try {
             conn = (HttpURLConnection) new URL(address).openConnection();
-            conn.setConnectTimeout(20000);
-            conn.setReadTimeout(45000);
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(12000);
             conn.setInstanceFollowRedirects(true);
-            conn.setRequestProperty("User-Agent", "VOX-CardSim/1.2 Android");
-            conn.setRequestProperty("Accept", "image/avif,image/webp,image/png,image/jpeg,*/*");
+            conn.setRequestProperty("User-Agent", "VOX-CardSim/1.2.5 Android");
+            conn.setRequestProperty("Accept", "image/webp,image/png,image/jpeg,*/*");
             conn.connect();
             int code = conn.getResponseCode();
             if (code < 200 || code >= 300) throw new Exception("HTTP " + code);
             String type = conn.getContentType();
-            if (type != null) {
-                String lower = type.toLowerCase(Locale.US);
-                if (lower.contains("text/html") || lower.startsWith("text/")) throw new Exception("Réponse non-image");
-            }
+            if (type != null && type.toLowerCase(Locale.US).startsWith("text/")) throw new Exception("Réponse non-image");
 
             if (tmp.exists()) tmp.delete();
             try (InputStream in = new BufferedInputStream(conn.getInputStream());
@@ -471,7 +478,6 @@ public final class OfflinePackWorker extends Worker {
                 }
             }
             if (!tmp.exists() || tmp.length() < 128) throw new Exception("Fichier image invalide");
-
             if (target.exists() && !target.delete()) throw new Exception("Impossible de remplacer le cache");
             if (!tmp.renameTo(target)) {
                 try (InputStream in = new FileInputStream(tmp);
@@ -482,7 +488,7 @@ public final class OfflinePackWorker extends Worker {
                 }
                 if (!tmp.delete()) tmp.deleteOnExit();
             }
-            prefs.edit().putString("mime_" + sha256(address), guessMime(address, type)).apply();
+            prefs.edit().putString("mime_" + sha256(cacheKeyUrl), guessMime(address, type)).apply();
         } finally {
             if (conn != null) conn.disconnect();
             if (tmp.exists() && (!target.exists() || target.length() <= 0)) tmp.delete();
