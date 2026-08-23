@@ -1,19 +1,11 @@
 #!/usr/bin/env python3
 """Release wrapper around the V1.2.2 Cardmarket catalog finalizer.
 
-Two additional guarantees are applied here:
-1. Cardmarket's own ``idExpansion`` groups are used as a high-confidence anchor.
-   One clearly matched product can therefore attach generic accessories/packaging
-   in the same Cardmarket expansion without fuzzy-guessing each product name.
-2. CardSim has one canonical directly-openable booster SKU per set. Cardmarket may
-   list several legitimate single-pack wrappers/languages; all are preserved as
-   real products, but only the best documented one stays ``mode=loose``. The other
-   one-pack products stay sealed and open into one booster.
-
-Cardmarket does not provide product artwork in its public non-single catalog. When
-its canonical booster row has no local artwork, the release reuses only artwork
-that was already audited for the same set in the validated pre-Cardmarket catalog.
-No synthetic or cross-set image is introduced.
+Cardmarket's own expansion ids are used as a high-confidence mapping anchor. The
+shop keeps every real Cardmarket product, but CardSim exposes a direct loose
+booster only when the same set has audited booster artwork. If Cardmarket lists a
+single pack for a set whose wrapper art is not independently audited, that product
+remains a real sealed one-pack product instead of inventing an image.
 """
 from __future__ import annotations
 
@@ -38,7 +30,6 @@ def _build_expansion_map(rows: list[dict[str, Any]], aliases: dict[str, list[str
         sid = original(row, aliases, index_by_id)
         if sid:
             votes[eid][sid] += 1
-
     mapping: dict[str, str] = {}
     audit: dict[str, dict[str, int]] = {}
     for eid, counter in votes.items():
@@ -54,13 +45,10 @@ def _build_expansion_map(rows: list[dict[str, Any]], aliases: dict[str, list[str
 
 
 def _audited_art(old: dict[str, Any], sid: str) -> tuple[list[str], str]:
-    """Return only same-set artwork/image that existed in the validated catalog."""
     rows = list(old.get("sets", {}).get(sid) or [])
     rows.sort(key=lambda p: (
-        bool(p.get("artworks")),
-        bool(p.get("image")),
-        bool(p.get("v117CanonicalBooster")),
-        bool(p.get("verifiedContents")),
+        bool(p.get("artworks")), bool(p.get("image")),
+        bool(p.get("v117CanonicalBooster")), bool(p.get("verifiedContents")),
     ), reverse=True)
     for p in rows:
         arts = [str(x) for x in (p.get("artworks") or []) if str(x)]
@@ -72,12 +60,24 @@ def _audited_art(old: dict[str, Any], sid: str) -> tuple[list[str], str]:
     return [], ""
 
 
+def _as_sealed_single_pack(p: dict[str, Any], reason: str) -> None:
+    p["mode"] = "sealed"
+    p["opens"] = 1
+    p["openable"] = True
+    p["verifiedContents"] = True
+    p["v122SinglePackVariant"] = True
+    p["v122LooseDemotionReason"] = reason
+    p.pop("v117CanonicalBooster", None)
+    p.pop("v122CanonicalCardmarketBooster", None)
+
+
 def _canonicalize_boosters(old: dict[str, Any]) -> dict[str, int]:
     data = json.loads(base.SEALED.read_text(encoding="utf-8"))
     sets = data.get("sets") or {}
     converted = 0
     multi_sets = 0
     restored_art_sets = 0
+    no_art_sets = 0
 
     for sid, rows in sets.items():
         loose = [p for p in rows or [] if p.get("mode") == "loose"]
@@ -87,27 +87,15 @@ def _canonicalize_boosters(old: dict[str, Any]) -> dict[str, int]:
         def score(p: dict[str, Any]) -> tuple[int, int, int, str]:
             name = base.norm(p.get("name"))
             s = 0
-            if p.get("artworks"):
-                s += 100
-            if p.get("image"):
-                s += 20
-            if p.get("v122CardmarketVerified"):
-                s += 15
-            if "sleeved" not in name and "blister" not in name:
-                s += 8
-            if name.startswith("booster ") or name.endswith(" booster") or " booster pack" in name:
-                s += 5
+            if p.get("artworks"): s += 100
+            if p.get("image"): s += 20
+            if p.get("v122CardmarketVerified"): s += 15
+            if "sleeved" not in name and "blister" not in name: s += 8
+            if name.startswith("booster ") or name.endswith(" booster") or " booster pack" in name: s += 5
             return (s, len(p.get("artworks") or []), -len(name), str(p.get("id") or ""))
 
         loose.sort(key=score, reverse=True)
         canonical = loose[0]
-        canonical["mode"] = "loose"
-        canonical["opens"] = 1
-        canonical["openable"] = True
-        canonical["verifiedContents"] = True
-        canonical["v117CanonicalBooster"] = True
-        canonical["v122CanonicalCardmarketBooster"] = True
-
         if not canonical.get("artworks"):
             arts, image = _audited_art(old, str(sid))
             if arts:
@@ -117,32 +105,45 @@ def _canonicalize_boosters(old: dict[str, Any]) -> dict[str, int]:
                 canonical["v122ArtworkReusedFromAuditedCatalog"] = True
                 restored_art_sets += 1
 
+        # No audited wrapper art means no direct loose-booster SKU. The Cardmarket
+        # product remains in the catalog as a real one-pack sealed product.
+        if not canonical.get("artworks"):
+            for p in loose:
+                _as_sealed_single_pack(p, "no-audited-booster-art")
+                converted += 1
+            no_art_sets += 1
+            if len(loose) > 1:
+                multi_sets += 1
+            continue
+
+        canonical["mode"] = "loose"
+        canonical["opens"] = 1
+        canonical["openable"] = True
+        canonical["verifiedContents"] = True
+        canonical["v117CanonicalBooster"] = True
+        canonical["v122CanonicalCardmarketBooster"] = True
+
         if len(loose) > 1:
             multi_sets += 1
         for p in loose[1:]:
-            p["mode"] = "sealed"
-            p["opens"] = 1
-            p["openable"] = True
-            p["verifiedContents"] = True
-            p["v122SinglePackVariant"] = True
-            p.pop("v117CanonicalBooster", None)
-            p.pop("v122CanonicalCardmarketBooster", None)
+            _as_sealed_single_pack(p, "non-canonical-cardmarket-pack")
             converted += 1
 
     canonical_rows = [p for rows in sets.values() for p in rows or [] if p.get("mode") == "loose"]
     stats = data.setdefault("stats", {})
     stats["canonicalBoosterSets"] = len({str(p.get("setId") or "") for p in canonical_rows})
-    stats["boosterArtworks"] = sum(max(1, len(p.get("artworks") or [])) for p in canonical_rows)
+    stats["boosterArtworks"] = sum(len(p.get("artworks") or []) for p in canonical_rows)
     stats["v122SinglePackVariants"] = converted
     stats["v122MultiBoosterProductSets"] = multi_sets
     stats["v122AuditedArtworkRestoredSets"] = restored_art_sets
+    stats["v122NoAuditedLooseBoosterSets"] = no_art_sets
 
     for sid, rows in sets.items():
-        loose = [p for p in rows or [] if p.get("mode") == "loose"]
-        if len(loose) > 1:
-            raise RuntimeError(f"Cardmarket: plusieurs boosters canoniques pour {sid}: {len(loose)}")
-        if loose:
-            p = loose[0]
+        direct = [p for p in rows or [] if p.get("mode") == "loose"]
+        if len(direct) > 1:
+            raise RuntimeError(f"Cardmarket: plusieurs boosters canoniques pour {sid}: {len(direct)}")
+        if direct:
+            p = direct[0]
             if not p.get("v117CanonicalBooster") or int(p.get("opens") or 0) != 1 or p.get("verifiedContents") is not True:
                 raise RuntimeError(f"Cardmarket: booster canonique invalide: {sid}")
             if not p.get("artworks"):
@@ -158,6 +159,7 @@ def _canonicalize_boosters(old: dict[str, Any]) -> dict[str, int]:
         "setsWithMultipleSinglePackProducts": multi_sets,
         "canonicalBoosterSets": stats["canonicalBoosterSets"],
         "auditedArtworkRestoredSets": restored_art_sets,
+        "noAuditedLooseBoosterSets": no_art_sets,
     }
 
 
@@ -181,10 +183,8 @@ def main() -> int:
         return original_match(row, aliases_arg, index_arg)
 
     def cached_load(url: str, preferred: tuple[str, ...]) -> list[dict[str, Any]]:
-        if url == base.CARDMARKET_PRODUCTS:
-            return products
-        if url == base.CARDMARKET_PRICES:
-            return prices
+        if url == base.CARDMARKET_PRODUCTS: return products
+        if url == base.CARDMARKET_PRICES: return prices
         return original_load(url, preferred)
 
     base.match_set = anchored_match
