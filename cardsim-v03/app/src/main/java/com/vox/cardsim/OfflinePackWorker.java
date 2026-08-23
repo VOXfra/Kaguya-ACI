@@ -33,11 +33,13 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * Téléchargement persistant des packs hors ligne.
+ * Téléchargement persistant des scans hors ligne.
  *
- * WorkManager garde la tâche lorsque l'écran s'éteint ou que l'Activity disparaît.
- * Le Worker passe en foreground pendant le transfert : Android affiche une
- * notification de progression au lieu de tuer une boucle JavaScript de WebView.
+ * V1.2.4 : le JSON canonique des collections est déjà embarqué dans l'APK. Le
+ * téléchargement ne doit donc jamais rendre une collection inutilisable simplement
+ * parce qu'un scan distant manque ou qu'un CDN répond mal. Les ressources absentes
+ * de la source sont ignorées proprement ; les erreurs réseau partielles restent
+ * réessayables et les fichiers déjà en cache ne sont pas retéléchargés.
  */
 public final class OfflinePackWorker extends Worker {
     public static final String KEY_SET_ID = "set_id";
@@ -48,18 +50,16 @@ public final class OfflinePackWorker extends Worker {
 
     private static final String CHANNEL = "offline_downloads";
     private static final int NOTIFICATION_ID = 12011;
-    private static final String[] ENERGY_URLS = new String[] {
-            "https://images.pokemontcg.io/sve/1_hires.png", "https://images.pokemontcg.io/sve/1.png",
-            "https://images.pokemontcg.io/sve/2_hires.png", "https://images.pokemontcg.io/sve/2.png",
-            "https://images.pokemontcg.io/sve/3_hires.png", "https://images.pokemontcg.io/sve/3.png",
-            "https://images.pokemontcg.io/sve/4_hires.png", "https://images.pokemontcg.io/sve/4.png",
-            "https://images.pokemontcg.io/sve/5_hires.png", "https://images.pokemontcg.io/sve/5.png",
-            "https://images.pokemontcg.io/sve/6_hires.png", "https://images.pokemontcg.io/sve/6.png",
-            "https://images.pokemontcg.io/sve/7_hires.png", "https://images.pokemontcg.io/sve/7.png",
-            "https://images.pokemontcg.io/sve/8_hires.png", "https://images.pokemontcg.io/sve/8.png"
-    };
-
     private final SharedPreferences prefs;
+
+    private static final class ManifestInfo {
+        final JSONArray urls;
+        final int sourceMissing;
+        ManifestInfo(JSONArray urls, int sourceMissing) {
+            this.urls = urls;
+            this.sourceMissing = Math.max(0, sourceMissing);
+        }
+    }
 
     public OfflinePackWorker(@NonNull Context context, @NonNull WorkerParameters params) {
         super(context, params);
@@ -78,7 +78,7 @@ public final class OfflinePackWorker extends Worker {
             Thread.currentThread().interrupt();
             return Result.retry();
         } catch (Exception e) {
-            prefs.edit().putString("worker_error", String.valueOf(e.getMessage())).apply();
+            prefs.edit().putString("worker_error", safeMessage(e)).apply();
             return Result.retry();
         }
     }
@@ -86,13 +86,13 @@ public final class OfflinePackWorker extends Worker {
     private Result downloadOne() throws Exception {
         String setId = getInputData().getString(KEY_SET_ID);
         if (setId == null || setId.trim().isEmpty()) return Result.failure();
-        String lang = language();
         JSONObject entry = findEntry(index(), setId);
         if (entry == null) return Result.failure();
-        JSONObject payload = payload(lang, entry);
-        JSONArray manifest = buildManifest(setId, payload);
-        boolean force = getInputData().getBoolean(KEY_FORCE, false) || needsUpdate(entry);
-        boolean ok = downloadManifest(
+        JSONObject payload = payload(language(), entry);
+        ManifestInfo manifest = buildManifest(setId, payload);
+        boolean explicitForce = getInputData().getBoolean(KEY_FORCE, false);
+        boolean force = explicitForce || needsCatalogUpdate(entry);
+        boolean usable = downloadManifest(
                 setId,
                 manifest,
                 force,
@@ -101,14 +101,14 @@ public final class OfflinePackWorker extends Worker {
                 1,
                 1
         );
-        return ok ? Result.success() : Result.failure();
+        return usable ? Result.success() : Result.retry();
     }
 
     private Result downloadAll() throws Exception {
         String lang = language();
         boolean updateOnly = getInputData().getBoolean(KEY_UPDATE_ONLY, false);
-        JSONObject index = index();
-        JSONArray sets = index.optJSONArray("sets");
+        JSONObject idx = index();
+        JSONArray sets = idx.optJSONArray("sets");
         if (sets == null) return Result.failure();
 
         int eligible = 0;
@@ -116,6 +116,7 @@ public final class OfflinePackWorker extends Worker {
             JSONObject entry = sets.optJSONObject(i);
             if (entry != null && eligible(entry, updateOnly)) eligible++;
         }
+
         prefs.edit()
                 .putBoolean("bulk_running", true)
                 .putBoolean("bulk_update_only", updateOnly)
@@ -126,41 +127,47 @@ public final class OfflinePackWorker extends Worker {
                 .apply();
 
         if (eligible == 0) {
-            prefs.edit().putBoolean("bulk_running", false).putLong("bulk_finished_at", System.currentTimeMillis()).apply();
+            prefs.edit()
+                    .putBoolean("bulk_running", false)
+                    .putLong("bulk_finished_at", System.currentTimeMillis())
+                    .apply();
             return Result.success();
         }
 
-        int done = 0, failed = 0;
+        int done = 0;
+        int failed = 0;
         for (int i = 0; i < sets.length(); i++) {
             if (isStopped()) break;
             JSONObject entry = sets.optJSONObject(i);
             if (entry == null || !eligible(entry, updateOnly)) continue;
+
             String id = entry.optString("id", "");
             String name = entry.optString("name", id);
-            boolean ok;
+            boolean usable;
             try {
                 JSONObject payload = payload(lang, entry);
-                JSONArray manifest = buildManifest(id, payload);
-                ok = downloadManifest(
+                ManifestInfo manifest = buildManifest(id, payload);
+                usable = downloadManifest(
                         id,
                         manifest,
-                        needsUpdate(entry),
+                        needsCatalogUpdate(entry),
                         name,
                         entry.optString("contentHash", ""),
                         done + 1,
                         eligible
                 );
             } catch (Exception e) {
-                ok = false;
+                usable = prefs.getBoolean("pack_" + id, false);
                 prefs.edit()
-                        .putBoolean("pack_" + id, false)
-                        .putString("pack_state_" + id, "error")
-                        .putString("pack_error_" + id, String.valueOf(e.getMessage()))
+                        .putString("pack_state_" + id, usable ? "partial" : "error")
+                        .putBoolean("pack_retryable_" + id, true)
+                        .putString("pack_error_" + id, safeMessage(e))
                         .putLong("pack_time_" + id, System.currentTimeMillis())
                         .apply();
             }
+
             done++;
-            if (!ok) failed++;
+            if (!usable) failed++;
             prefs.edit().putInt("bulk_done", done).putInt("bulk_failed", failed).apply();
             setForegroundAsync(foreground(
                     (updateOnly ? "Mise à jour" : "Téléchargement") + " · " + name,
@@ -176,8 +183,10 @@ public final class OfflinePackWorker extends Worker {
                 .putInt("bulk_failed", failed)
                 .putLong("bulk_finished_at", System.currentTimeMillis())
                 .apply();
+
         if (stopped) return Result.retry();
-        return failed == 0 ? Result.success() : Result.failure();
+        // Un set partiel mais utilisable n'échoue plus tout le téléchargement global.
+        return failed == 0 ? Result.success() : Result.retry();
     }
 
     private String language() {
@@ -188,13 +197,17 @@ public final class OfflinePackWorker extends Worker {
 
     private boolean eligible(JSONObject entry, boolean updateOnly) {
         String id = entry.optString("id", "");
-        if (id.isEmpty() || !"ready".equals(entry.optString("status", "ready"))) return false;
+        if (id.isEmpty()) return false;
+        // ready et partial sont téléchargeables. Seul un vrai échec de catalogue est exclu.
+        String status = entry.optString("status", "ready").toLowerCase(Locale.US);
+        if ("failed".equals(status) || "error".equals(status)) return false;
         boolean installed = prefs.getBoolean("pack_" + id, false);
-        if (updateOnly) return installed && needsUpdate(entry);
-        return !installed || needsUpdate(entry);
+        boolean retryable = prefs.getBoolean("pack_retryable_" + id, false);
+        if (updateOnly) return installed && (needsCatalogUpdate(entry) || retryable);
+        return !installed || needsCatalogUpdate(entry) || retryable;
     }
 
-    private boolean needsUpdate(JSONObject entry) {
+    private boolean needsCatalogUpdate(JSONObject entry) {
         String id = entry.optString("id", "");
         if (id.isEmpty() || !prefs.getBoolean("pack_" + id, false)) return false;
         String current = entry.optString("contentHash", "");
@@ -222,22 +235,25 @@ public final class OfflinePackWorker extends Worker {
         JSONObject payload = new JSONObject(readAsset("catalog/" + lang + "/" + file));
         String expected = entry.optString("contentHash", "");
         String got = payload.optString("contentHash", "");
-        if (!expected.isEmpty() && !expected.equals(got)) throw new Exception("Catalogue incohérent");
+        if (!expected.isEmpty() && !expected.equals(got)) throw new Exception("Catalogue local incohérent");
+        JSONArray cards = payload.optJSONArray("cards");
+        if (cards == null || cards.length() == 0) throw new Exception("Catalogue local vide");
         return payload;
     }
 
     /**
-     * Manifeste minimal : scans HD + logo + énergies.
-     * Les détails de cartes et les prix sont désormais dans le JSON embarqué ;
-     * supprimer les appels API par carte réduit massivement la durée et le trafic.
+     * Le manifeste ne contient que les ressources réellement distantes disponibles.
+     * Les JSON, collations, énergies par époque et scans de secours sont déjà dans
+     * l'APK et ne doivent jamais dépendre d'un CDN au moment du téléchargement.
      */
-    private JSONArray buildManifest(String setId, JSONObject payload) throws Exception {
+    private ManifestInfo buildManifest(String setId, JSONObject payload) throws Exception {
         Set<String> urls = new LinkedHashSet<>();
         JSONObject set = payload.optJSONObject("set");
         if (set != null) addAssetUrl(urls, set.optString("logo", ""), true);
+
         JSONArray cards = payload.optJSONArray("cards");
-        int missing = 0;
         if (cards == null || cards.length() == 0) throw new Exception("Catalogue local vide");
+        int missing = 0;
         for (int i = 0; i < cards.length(); i++) {
             JSONObject card = cards.optJSONObject(i);
             if (card == null) continue;
@@ -246,14 +262,16 @@ public final class OfflinePackWorker extends Worker {
             int n = parseCardNumber(localId);
             boolean bundledMe05 = "me05".equals(setId) && n >= 75 && n <= 89;
             if (bundledMe05) continue;
-            if (image.isEmpty()) missing++;
-            else addAssetUrl(urls, image, false);
+            if (image.isEmpty()) {
+                missing++;
+                continue;
+            }
+            addAssetUrl(urls, image, false);
         }
-        for (String energy : ENERGY_URLS) urls.add(energy);
-        if (missing > 0) throw new Exception(missing + " scan(s) sans URL dans la source française");
+
         JSONArray out = new JSONArray();
         for (String url : urls) out.put(url);
-        return out;
+        return new ManifestInfo(out, missing);
     }
 
     private void addAssetUrl(Set<String> out, String base, boolean logo) {
@@ -275,41 +293,46 @@ public final class OfflinePackWorker extends Worker {
 
     private boolean downloadManifest(
             String setId,
-            JSONArray urls,
+            ManifestInfo manifest,
             boolean force,
             String label,
             String contentHash,
             int setIndex,
             int setTotal
     ) {
-        int done = 0, failed = 0;
+        JSONArray urls = manifest.urls;
+        int sourceMissing = manifest.sourceMissing;
+        int done = 0;
+        int failed = 0;
         long bytes = 0;
         int total = urls.length();
+        boolean previouslyUsable = prefs.getBoolean("pack_" + setId, false);
+        String lastNetworkError = "";
+
         prefs.edit()
-                .putBoolean("pack_" + setId, false)
                 .putString("pack_state_" + setId, "running")
                 .putInt("pack_total_" + setId, total)
                 .putInt("pack_done_" + setId, 0)
                 .putInt("pack_failed_" + setId, 0)
+                .putBoolean("pack_retryable_" + setId, false)
                 .remove("pack_error_" + setId)
                 .apply();
 
         for (int i = 0; i < total; i++) {
-            if (isStopped()) return false;
+            if (isStopped()) return previouslyUsable;
             String url = urls.optString(i, "");
-            if (url.isEmpty()) {
-                failed++;
-                continue;
-            }
+            if (url.isEmpty()) continue;
             try {
                 File target = cacheFileFor(url);
                 if (force || !target.exists() || target.length() <= 0) downloadUrlWithRetry(url, target);
+                if (!target.exists() || target.length() <= 0) throw new Exception("fichier vide");
                 bytes += Math.max(0, target.length());
                 done++;
             } catch (Exception e) {
                 failed++;
-                prefs.edit().putString("pack_error_" + setId, url + " · " + e.getMessage()).apply();
+                lastNetworkError = safeMessage(e);
             }
+
             if (i % 4 == 0 || i == total - 1) {
                 prefs.edit()
                         .putInt("pack_done_" + setId, done)
@@ -317,26 +340,47 @@ public final class OfflinePackWorker extends Worker {
                         .putLong("pack_bytes_" + setId, bytes)
                         .apply();
                 setForegroundAsync(foreground(
-                        label + " · " + done + "/" + total + (failed > 0 ? " · " + failed + " erreur(s)" : ""),
+                        label + " · " + done + "/" + total + (failed > 0 ? " · " + failed + " à réessayer" : ""),
                         setIndex,
                         Math.max(setTotal, 1)
                 ));
             }
         }
 
-        boolean installed = failed == 0 && done == total;
+        boolean transportUsable = total == 0 || done > 0 || previouslyUsable;
+        boolean complete = transportUsable && failed == 0 && sourceMissing == 0;
+        boolean usable = complete || transportUsable;
+        boolean retryable = failed > 0;
+        String stateName = complete ? "installed" : (usable ? "partial" : "error");
+
+        StringBuilder note = new StringBuilder();
+        if (sourceMissing > 0) {
+            note.append(sourceMissing).append(" scan(s) absent(s) de la source");
+        }
+        if (failed > 0) {
+            if (note.length() > 0) note.append(" · ");
+            note.append(failed).append(" téléchargement(s) à réessayer");
+            if (!lastNetworkError.isEmpty()) note.append(" · ").append(lastNetworkError);
+        }
+
         SharedPreferences.Editor editor = prefs.edit()
-                .putBoolean("pack_" + setId, installed)
-                .putString("pack_state_" + setId, installed ? "installed" : "error")
+                .putBoolean("pack_" + setId, usable)
+                .putString("pack_state_" + setId, stateName)
+                .putBoolean("pack_retryable_" + setId, retryable)
                 .putLong("pack_time_" + setId, System.currentTimeMillis())
                 .putInt("pack_items_" + setId, done)
                 .putInt("pack_total_" + setId, total)
                 .putInt("pack_done_" + setId, done)
                 .putInt("pack_failed_" + setId, failed)
+                .putInt("pack_source_missing_" + setId, sourceMissing)
                 .putLong("pack_bytes_" + setId, bytes);
-        if (installed && contentHash != null && !contentHash.isEmpty()) editor.putString("pack_catalog_hash_" + setId, contentHash);
+        if (note.length() > 0) editor.putString("pack_error_" + setId, note.toString());
+        else editor.remove("pack_error_" + setId);
+        if (usable && contentHash != null && !contentHash.isEmpty()) {
+            editor.putString("pack_catalog_hash_" + setId, contentHash);
+        }
         editor.apply();
-        return installed;
+        return usable;
     }
 
     private String readAsset(String path) throws Exception {
@@ -371,6 +415,11 @@ public final class OfflinePackWorker extends Worker {
         }
     }
 
+    private String safeMessage(Exception e) {
+        if (e == null || e.getMessage() == null || e.getMessage().trim().isEmpty()) return "Erreur réseau";
+        return e.getMessage().trim();
+    }
+
     private void downloadUrlWithRetry(String address, File target) throws Exception {
         Exception last = null;
         for (int attempt = 0; attempt < 4; attempt++) {
@@ -393,40 +442,51 @@ public final class OfflinePackWorker extends Worker {
     }
 
     private void downloadUrl(String address, File target) throws Exception {
-        HttpURLConnection conn = (HttpURLConnection) new URL(address).openConnection();
-        conn.setConnectTimeout(20000);
-        conn.setReadTimeout(45000);
-        conn.setInstanceFollowRedirects(true);
-        conn.setRequestProperty("User-Agent", "VOX-CardSim/1.1 Android");
-        conn.setRequestProperty("Accept", "image/avif,image/webp,image/png,image/jpeg,application/json,*/*");
-        conn.connect();
-        int code = conn.getResponseCode();
-        if (code < 200 || code >= 300) {
-            conn.disconnect();
-            throw new Exception("HTTP " + code);
-        }
+        HttpURLConnection conn = null;
         File tmp = new File(target.getAbsolutePath() + ".part");
-        try (InputStream in = new BufferedInputStream(conn.getInputStream());
-             BufferedOutputStream out = new BufferedOutputStream(new FileOutputStream(tmp))) {
-            byte[] buffer = new byte[65536];
-            int n;
-            while ((n = in.read(buffer)) != -1) {
-                if (isStopped()) throw new InterruptedException("Téléchargement annulé");
-                out.write(buffer, 0, n);
+        try {
+            conn = (HttpURLConnection) new URL(address).openConnection();
+            conn.setConnectTimeout(20000);
+            conn.setReadTimeout(45000);
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("User-Agent", "VOX-CardSim/1.2 Android");
+            conn.setRequestProperty("Accept", "image/avif,image/webp,image/png,image/jpeg,*/*");
+            conn.connect();
+            int code = conn.getResponseCode();
+            if (code < 200 || code >= 300) throw new Exception("HTTP " + code);
+            String type = conn.getContentType();
+            if (type != null) {
+                String lower = type.toLowerCase(Locale.US);
+                if (lower.contains("text/html") || lower.startsWith("text/")) throw new Exception("Réponse non-image");
             }
-        }
-        if (target.exists() && !target.delete()) throw new Exception("Impossible de remplacer le cache");
-        if (!tmp.renameTo(target)) {
-            try (InputStream in = new FileInputStream(tmp);
-                 BufferedOutputStream out = new BufferedOutputStream(new FileOutputStream(target))) {
+
+            if (tmp.exists()) tmp.delete();
+            try (InputStream in = new BufferedInputStream(conn.getInputStream());
+                 BufferedOutputStream out = new BufferedOutputStream(new FileOutputStream(tmp))) {
                 byte[] buffer = new byte[65536];
                 int n;
-                while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
+                while ((n = in.read(buffer)) != -1) {
+                    if (isStopped()) throw new InterruptedException("Téléchargement annulé");
+                    out.write(buffer, 0, n);
+                }
             }
-            if (!tmp.delete()) tmp.deleteOnExit();
+            if (!tmp.exists() || tmp.length() < 128) throw new Exception("Fichier image invalide");
+
+            if (target.exists() && !target.delete()) throw new Exception("Impossible de remplacer le cache");
+            if (!tmp.renameTo(target)) {
+                try (InputStream in = new FileInputStream(tmp);
+                     BufferedOutputStream out = new BufferedOutputStream(new FileOutputStream(target))) {
+                    byte[] buffer = new byte[65536];
+                    int n;
+                    while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
+                }
+                if (!tmp.delete()) tmp.deleteOnExit();
+            }
+            prefs.edit().putString("mime_" + sha256(address), guessMime(address, type)).apply();
+        } finally {
+            if (conn != null) conn.disconnect();
+            if (tmp.exists() && (!target.exists() || target.length() <= 0)) tmp.delete();
         }
-        prefs.edit().putString("mime_" + sha256(address), guessMime(address, conn.getContentType())).apply();
-        conn.disconnect();
     }
 
     private String guessMime(String url, String stored) {
