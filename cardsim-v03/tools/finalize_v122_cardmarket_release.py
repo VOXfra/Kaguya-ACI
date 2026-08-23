@@ -9,12 +9,16 @@ Two additional guarantees are applied here:
    list several legitimate single-pack wrappers/languages; all are preserved as
    real products, but only the best documented one stays ``mode=loose``. The other
    one-pack products stay sealed and open into one booster.
+
+Cardmarket does not provide product artwork in its public non-single catalog. When
+its canonical booster row has no local artwork, the release reuses only artwork
+that was already audited for the same set in the validated pre-Cardmarket catalog.
+No synthetic or cross-set image is introduced.
 """
 from __future__ import annotations
 
 from collections import Counter, defaultdict
 import json
-from pathlib import Path
 from typing import Any
 
 import finalize_v122_cardmarket as base
@@ -43,20 +47,37 @@ def _build_expansion_map(rows: list[dict[str, Any]], aliases: dict[str, list[str
             continue
         top_sid, top_n = ranked[0]
         second_n = ranked[1][1] if len(ranked) > 1 else 0
-        # A Cardmarket expansion is accepted when every explicit set-name vote
-        # agrees, or when the winner has at least two independent anchors and a
-        # strong majority over the runner-up.
         if len(ranked) == 1 or (top_n >= 2 and top_n >= max(2, second_n * 2)):
             mapping[eid] = top_sid
             audit[eid] = dict(counter)
     return mapping, audit
 
 
-def _canonicalize_boosters() -> dict[str, int]:
+def _audited_art(old: dict[str, Any], sid: str) -> tuple[list[str], str]:
+    """Return only same-set artwork/image that existed in the validated catalog."""
+    rows = list(old.get("sets", {}).get(sid) or [])
+    rows.sort(key=lambda p: (
+        bool(p.get("artworks")),
+        bool(p.get("image")),
+        bool(p.get("v117CanonicalBooster")),
+        bool(p.get("verifiedContents")),
+    ), reverse=True)
+    for p in rows:
+        arts = [str(x) for x in (p.get("artworks") or []) if str(x)]
+        img = str(p.get("image") or "")
+        if arts:
+            return arts, img or arts[0]
+        if img and (p.get("mode") == "loose" or str(p.get("type") or "") == "booster_pack"):
+            return [img], img
+    return [], ""
+
+
+def _canonicalize_boosters(old: dict[str, Any]) -> dict[str, int]:
     data = json.loads(base.SEALED.read_text(encoding="utf-8"))
     sets = data.get("sets") or {}
     converted = 0
     multi_sets = 0
+    restored_art_sets = 0
 
     for sid, rows in sets.items():
         loose = [p for p in rows or [] if p.get("mode") == "loose"]
@@ -87,6 +108,15 @@ def _canonicalize_boosters() -> dict[str, int]:
         canonical["v117CanonicalBooster"] = True
         canonical["v122CanonicalCardmarketBooster"] = True
 
+        if not canonical.get("artworks"):
+            arts, image = _audited_art(old, str(sid))
+            if arts:
+                canonical["artworks"] = arts
+                if not canonical.get("image") and image:
+                    canonical["image"] = image
+                canonical["v122ArtworkReusedFromAuditedCatalog"] = True
+                restored_art_sets += 1
+
         if len(loose) > 1:
             multi_sets += 1
         for p in loose[1:]:
@@ -99,15 +129,13 @@ def _canonicalize_boosters() -> dict[str, int]:
             p.pop("v122CanonicalCardmarketBooster", None)
             converted += 1
 
-    canonical_rows = [
-        p for rows in sets.values() for p in rows or []
-        if p.get("mode") == "loose"
-    ]
+    canonical_rows = [p for rows in sets.values() for p in rows or [] if p.get("mode") == "loose"]
     stats = data.setdefault("stats", {})
     stats["canonicalBoosterSets"] = len({str(p.get("setId") or "") for p in canonical_rows})
     stats["boosterArtworks"] = sum(max(1, len(p.get("artworks") or [])) for p in canonical_rows)
     stats["v122SinglePackVariants"] = converted
     stats["v122MultiBoosterProductSets"] = multi_sets
+    stats["v122AuditedArtworkRestoredSets"] = restored_art_sets
 
     for sid, rows in sets.items():
         loose = [p for p in rows or [] if p.get("mode") == "loose"]
@@ -125,7 +153,12 @@ def _canonicalize_boosters() -> dict[str, int]:
         "window.V115_SEALED_CATALOG=" + json.dumps(data, ensure_ascii=False, separators=(",", ":")) + ";\n",
         encoding="utf-8",
     )
-    return {"convertedSinglePackVariants": converted, "setsWithMultipleSinglePackProducts": multi_sets, "canonicalBoosterSets": stats["canonicalBoosterSets"]}
+    return {
+        "convertedSinglePackVariants": converted,
+        "setsWithMultipleSinglePackProducts": multi_sets,
+        "canonicalBoosterSets": stats["canonicalBoosterSets"],
+        "auditedArtworkRestoredSets": restored_art_sets,
+    }
 
 
 def main() -> int:
@@ -134,8 +167,6 @@ def main() -> int:
     index_by_id = {str(x.get("id")): x for x in idx.get("sets") or [] if isinstance(x, dict) and x.get("id")}
     aliases = base.set_aliases(index_by_id, old)
 
-    # Download each official file exactly once. The base finalizer is patched to
-    # consume these in-memory snapshots so a release does not redownload 75k prices.
     products = base.load_public(base.CARDMARKET_PRODUCTS, ("products", "productList"))
     prices = base.load_public(base.CARDMARKET_PRICES, ("priceGuides", "priceGuide"))
     expansion_map, expansion_audit = _build_expansion_map(products, aliases, index_by_id)
@@ -174,7 +205,7 @@ def main() -> int:
         encoding="utf-8",
     )
 
-    booster_stats = _canonicalize_boosters()
+    booster_stats = _canonicalize_boosters(old)
     final = json.loads(base.SEALED.read_text(encoding="utf-8"))
     final_stats = final.get("stats") or {}
     print("V1.2.2 Cardmarket expansion anchors:", {
