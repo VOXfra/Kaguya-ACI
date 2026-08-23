@@ -77,7 +77,17 @@ def _finalize_promo_pack_semantics():
         print(f"V1.2 McDonald's promo packs verified in shop: {promo_count} ({changed} reclassified)")
 
 
+def _maybe_finalize_scan_fallbacks():
+    """Run V1.2.6 only on the second binder pass, after V1.2.0 scan enrichment."""
+    idx = json.loads(impl.INDEX.read_text(encoding="utf-8"))
+    if int((idx.get("stats") or {}).get("v120ExternalSets") or 0) <= 0:
+        return
+    import finalize_v126_scan_fallbacks as scanfix
+    scanfix.main()
+
+
 if __name__ == "__main__":
     rc = impl.main()
     _finalize_promo_pack_semantics()
+    _maybe_finalize_scan_fallbacks()
     raise SystemExit(rc)
