@@ -78,12 +78,13 @@ async function v123BootLocalFirst(){
   await Promise.all(ids.map(id=>v123Hydrate(id)));
   for(const id of ids){try{reconcileBinder?.(id)}catch{}}
   v123RenderCurrent();
-  try{if(typeof processMarket==='function')processMarket(true)}catch(e){console.warn('V1.2.3 local market tick',e)}
   if(state.currentOpening){
    try{renderOpening?.()}catch{}
    try{if(typeof preloadPack==='function')preloadPromise=preloadPack(state.currentOpening.cards||[])}catch{}
   }
-  try{if(typeof v122Checkpoint==='function')v122Checkpoint('démarrage local');else save?.()}catch{}
+  /* Important : ce bootstrap est volontairement en lecture seule. Il ne déclenche
+     ni tick de marché ni save(), afin de ne pas avancer lastSavedAt avant que la
+     sauvegarde cloud ait eu l'occasion d'être comparée à la sauvegarde locale. */
   window.__voxV123BootCompletedAt=Date.now();
   window.__voxV123LocalFirstReady=true;
   return true;
