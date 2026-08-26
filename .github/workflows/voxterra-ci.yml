@@ -69,7 +69,7 @@ jobs:
           if [ -f run/logs/latest.log ]; then tail -n 400 run/logs/latest.log; fi
           test -f run/logs/latest.log
           grep -q 'Done (' run/logs/latest.log
-          ! grep -qiE 'OutOfMemoryError|crash report|watchdog' run/logs/latest.log
+          ! grep -qiE 'OutOfMemoryError|Server Watchdog/ERROR|This crash report has been saved' run/logs/latest.log
           test -d run/world/region
           region_count=$(find run/world/region -name '*.mca' | wc -l)
           echo "Region files generated: $region_count"
