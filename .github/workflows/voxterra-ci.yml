@@ -14,6 +14,22 @@ jobs:
           mkdir -p voxterra-build
           base64 -d .ci/voxterra-src.tar.gz.b64 > /tmp/voxterra-src.tar.gz
           tar -xzf /tmp/voxterra-src.tar.gz -C voxterra-build
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('voxterra-build/src/main/java/fr/voxterra')
+          p = root / 'season/SeasonalWeather.java'
+          s = p.read_text()
+          s = s.replace('import net.minecraft.world.level.Heightmap;', 'import net.minecraft.world.level.levelgen.Heightmap;')
+          s = s.replace('ClimateEngine.sample(level.getDayTime(), x, topY - 1, z)', 'ClimateEngine.sample(WorldTime.ticks(level), x, topY - 1, z)')
+          p.write_text(s)
+          p = root / 'VoxTerra.java'
+          s = p.read_text()
+          s = s.replace('import fr.voxterra.season.SeasonalWeather;', 'import fr.voxterra.season.SeasonalWeather;\nimport fr.voxterra.season.WorldTime;')
+          s = s.replace('source.getLevel().getDayTime()', 'WorldTime.ticks(source.getLevel())')
+          s = s.replace('ctx.getSource().getLevel().getDayTime()', 'WorldTime.ticks(ctx.getSource().getLevel())')
+          p.write_text(s)
+          (root / 'season/WorldTime.java').write_text('''package fr.voxterra.season;\n\nimport net.minecraft.server.level.ServerLevel;\n\npublic final class WorldTime {\n    private WorldTime() {}\n    public static long ticks(ServerLevel level) {\n        return level.dimensionType().defaultClock()\n                .map(clock -> level.clockManager().getTotalTicks(clock))\n                .orElseGet(level::getGameTime);\n    }\n}\n''')
+          PY
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
