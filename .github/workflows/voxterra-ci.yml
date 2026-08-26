@@ -37,6 +37,10 @@ jobs:
       - name: Build
         working-directory: voxterra-build
         run: gradle clean build --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: voxterra-v0.1.1-build
+          path: voxterra-build/build/libs/*.jar
       - name: Generate 256 chunks
         working-directory: voxterra-build
         run: |
@@ -69,13 +73,7 @@ jobs:
           if [ -f run/logs/latest.log ]; then tail -n 400 run/logs/latest.log; fi
           test -f run/logs/latest.log
           grep -q 'Done (' run/logs/latest.log
+          grep -q 'Marked 256 chunks' run/logs/latest.log
+          grep -q 'Saved the game' run/logs/latest.log
           ! grep -qiE 'OutOfMemoryError|Server Watchdog/ERROR|This crash report has been saved' run/logs/latest.log
-          test -d run/world/region
-          region_count=$(find run/world/region -name '*.mca' | wc -l)
-          echo "Region files generated: $region_count"
-          test "$region_count" -ge 1
           if [ "$status" -ne 0 ] && [ "$status" -ne 124 ]; then exit "$status"; fi
-      - uses: actions/upload-artifact@v4
-        with:
-          name: voxterra-v0.1.1-build
-          path: voxterra-build/build/libs/*.jar
