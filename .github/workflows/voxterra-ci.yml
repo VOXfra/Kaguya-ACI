@@ -24,7 +24,7 @@ jobs:
           s = s.replace('double lat = GeoEngine.latitude(z);\n                    double moisture = GeoEngine.moistureAt(x, z, h, lat);\n                    accumulation[idx] = h <= GeoEngine.SEA_LEVEL ? 0.15 : 0.55 + moisture * 0.9;', 'double rainfall = GeoEngine.drainageRainfall(x, z, h);\n                    accumulation[idx] = h <= GeoEngine.SEA_LEVEL ? 0.15 : 0.55 + rainfall * 0.9;')
           p.write_text(s)
           p = Path('voxterra-build/src/main/java/fr/voxterra/worldgen/VoxTerraBiomeSource.java')
-          s = p.read_text().replace('double slope = GeoEngine.slope(x, z);', 'double slope = g.slope01() * 85.0;')
+          s = p.read_text().replace('double slope = GeoEngine.slope(x, z);', 'double slope = g.ruggedness() * 85.0;')
           p.write_text(s)
           PY
       - uses: actions/setup-java@v5
