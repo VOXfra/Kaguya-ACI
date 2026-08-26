@@ -1,6 +1,12 @@
 name: VOX CardSim V1.3.5 Complete Catalog
 
 on:
+  push:
+    branches:
+      - tmp-vox-cardsim-v111-universal-import-background-offline
+    paths:
+      - 'cardsim-v03/**'
+      - '.github/workflows/tmp-vox-cardsim-v135-release.yml'
   pull_request:
     branches: [main]
     paths:
@@ -67,6 +73,7 @@ jobs:
           python cardsim-v03/tools/finalize_v117_binders.py
           python cardsim-v03/tools/finalize_v120_integrity.py
           python cardsim-v03/tools/finalize_v126_scan_fallbacks.py
+          python cardsim-v03/tools/test_v135_catalog_completeness.py
           python cardsim-v03/tools/finalize_v135_catalog_completeness.py
           python cardsim-v03/tools/finalize_v117_binders.py
 
@@ -87,6 +94,7 @@ jobs:
             cardsim-v03/tools/finalize_v120_integrity.py \
             cardsim-v03/tools/finalize_v126_scan_fallbacks.py \
             cardsim-v03/tools/finalize_v135_catalog_completeness.py \
+            cardsim-v03/tools/test_v135_catalog_completeness.py \
             cardsim-v03/tools/fetch_v117_energy_assets.py \
             cardsim-v03/tools/fetch_release_assets.py \
             cardsim-v03/tools/generate_v116_collation_profiles.py \
