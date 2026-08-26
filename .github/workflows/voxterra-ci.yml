@@ -40,6 +40,39 @@ jobs:
       - name: Build
         working-directory: voxterra-build
         run: gradle clean build --stacktrace
+      - name: Boot realistic world
+        working-directory: voxterra-build
+        run: |
+          mkdir -p run
+          printf 'eula=true\n' > run/eula.txt
+          cat > run/server.properties <<'EOF'
+          level-type=voxterra:realistic
+          level-seed=123456789
+          online-mode=false
+          view-distance=2
+          simulation-distance=2
+          spawn-protection=0
+          EOF
+          rm -rf run/world
+          set +e
+          gradle runServer --args='nogui' > /tmp/voxterra-server.log 2>&1 &
+          pid=$!
+          ok=0
+          for i in $(seq 1 120); do
+            if [ -f run/logs/latest.log ] && grep -q 'Done (' run/logs/latest.log; then
+              ok=1
+              break
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          kill "$pid" 2>/dev/null || true
+          pkill -f 'net.fabricmc.loader.impl.launch.knot.KnotServer' 2>/dev/null || true
+          cat /tmp/voxterra-server.log || true
+          if [ -f run/logs/latest.log ]; then tail -n 250 run/logs/latest.log; fi
+          test "$ok" = 1
       - uses: actions/upload-artifact@v4
         with:
           name: voxterra-v0.1-build
