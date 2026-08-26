@@ -1,0 +1,19 @@
+name: VOX CardSim V1.3.5 Push Probe
+
+on:
+  push:
+    branches:
+      - tmp-vox-cardsim-v111-universal-import-background-offline
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate V1.3.5 Python and regression tests
+        run: |
+          python -m py_compile cardsim-v03/tools/finalize_v135_catalog_completeness.py cardsim-v03/tools/test_v135_catalog_completeness.py
+          python cardsim-v03/tools/test_v135_catalog_completeness.py
