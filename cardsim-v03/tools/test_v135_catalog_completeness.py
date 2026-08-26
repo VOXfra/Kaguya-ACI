@@ -15,6 +15,7 @@ import finalize_v135_catalog_completeness as v135
 def test_local_id_key() -> None:
     assert v135._key("001") == v135._key("1") == "1"
     assert v135._key("SWSH001") == v135._key("SWSH1") == "SWSH1"
+    assert v135._key("SVP001") == v135._key("SVP1") == "SVP1"
     assert v135._key("TG01") == "TG1"
     assert v135._key("RC025") == "RC25"
 
