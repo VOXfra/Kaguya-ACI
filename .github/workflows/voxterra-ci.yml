@@ -1,0 +1,30 @@
+name: VoxTerra CI
+on:
+  push:
+    branches: ["voxterra-v0.1-ci"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore VoxTerra source
+        run: |
+          mkdir -p voxterra-build
+          base64 -d .ci/voxterra-src.tar.gz.b64 > /tmp/voxterra-src.tar.gz
+          tar -xzf /tmp/voxterra-src.tar.gz -C voxterra-build
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.1'
+      - name: Build
+        working-directory: voxterra-build
+        run: gradle clean build --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: voxterra-v0.1-build
+          path: voxterra-build/build/libs/*.jar
