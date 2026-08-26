@@ -9,28 +9,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Restore VoxTerra source
+      - name: Restore VoxTerra 0.1.1 source
         run: |
+          cat .ci/vt011.part00 .ci/vt011.part01 .ci/vt011.part02 .ci/vt011.part03 > /tmp/voxterra-src.tar.gz.b64
+          base64 -d /tmp/voxterra-src.tar.gz.b64 > /tmp/voxterra-src.tar.gz
           mkdir -p voxterra-build
-          base64 -d .ci/voxterra-src.tar.gz.b64 > /tmp/voxterra-src.tar.gz
           tar -xzf /tmp/voxterra-src.tar.gz -C voxterra-build
-          python3 - <<'PY'
-          from pathlib import Path
-          root = Path('voxterra-build/src/main/java/fr/voxterra')
-          p = root / 'season/SeasonalWeather.java'
-          s = p.read_text()
-          s = s.replace('import net.minecraft.world.level.Heightmap;', 'import net.minecraft.world.level.levelgen.Heightmap;')
-          s = s.replace('ClimateEngine.sample(level.getDayTime(), x, topY - 1, z)', 'ClimateEngine.sample(WorldTime.ticks(level), x, topY - 1, z)')
-          p.write_text(s)
-          p = root / 'VoxTerra.java'
-          s = p.read_text()
-          s = s.replace('import fr.voxterra.season.SeasonalWeather;', 'import fr.voxterra.season.SeasonalWeather;\nimport fr.voxterra.season.WorldTime;')
-          s = s.replace('source.getLevel().getDayTime()', 'WorldTime.ticks(source.getLevel())')
-          s = s.replace('ctx.getSource().getLevel().getDayTime()', 'WorldTime.ticks(ctx.getSource().getLevel())')
-          p.write_text(s)
-          (root / 'season/WorldTime.java').write_text('''package fr.voxterra.season;\n\nimport net.minecraft.server.level.ServerLevel;\n\npublic final class WorldTime {\n    private WorldTime() {}\n    public static long ticks(ServerLevel level) {\n        return level.dimensionType().defaultClock()\n                .map(clock -> level.clockManager().getTotalTicks(clock))\n                .orElseGet(level::getGameTime);\n    }\n}\n''')
-          PY
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
@@ -40,7 +25,7 @@ jobs:
       - name: Build
         working-directory: voxterra-build
         run: gradle clean build --stacktrace
-      - name: Boot realistic world
+      - name: Generate 256 chunks
         working-directory: voxterra-build
         run: |
           mkdir -p run
@@ -55,25 +40,30 @@ jobs:
           EOF
           rm -rf run/world
           set +e
-          gradle runServer --args='nogui' > /tmp/voxterra-server.log 2>&1 &
-          pid=$!
-          ok=0
-          for i in $(seq 1 120); do
-            if [ -f run/logs/latest.log ] && grep -q 'Done (' run/logs/latest.log; then
-              ok=1
-              break
-            fi
-            if ! kill -0 "$pid" 2>/dev/null; then
-              break
-            fi
-            sleep 1
-          done
-          kill "$pid" 2>/dev/null || true
-          pkill -f 'net.fabricmc.loader.impl.launch.knot.KnotServer' 2>/dev/null || true
-          cat /tmp/voxterra-server.log || true
-          if [ -f run/logs/latest.log ]; then tail -n 250 run/logs/latest.log; fi
-          test "$ok" = 1
+          (
+            for i in $(seq 1 90); do
+              if [ -f run/logs/latest.log ] && grep -q 'Done (' run/logs/latest.log; then break; fi
+              sleep 1
+            done
+            echo 'forceload add -128 -128 127 127'
+            sleep 60
+            echo 'save-all flush'
+            sleep 5
+            echo 'stop'
+          ) | timeout 150s gradle runServer --args='nogui' > /tmp/voxterra-server.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/voxterra-server.log
+          if [ -f run/logs/latest.log ]; then tail -n 400 run/logs/latest.log; fi
+          test -f run/logs/latest.log
+          grep -q 'Done (' run/logs/latest.log
+          ! grep -qiE 'Exception|OutOfMemoryError|crash report|watchdog' run/logs/latest.log
+          test -d run/world/region
+          region_count=$(find run/world/region -name '*.mca' | wc -l)
+          echo "Region files generated: $region_count"
+          test "$region_count" -ge 1
+          if [ "$status" -ne 0 ] && [ "$status" -ne 124 ]; then exit "$status"; fi
       - uses: actions/upload-artifact@v4
         with:
-          name: voxterra-v0.1-build
+          name: voxterra-v0.1.1-build
           path: voxterra-build/build/libs/*.jar
