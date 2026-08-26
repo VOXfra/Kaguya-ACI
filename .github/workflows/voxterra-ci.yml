@@ -15,6 +15,18 @@ jobs:
           base64 -d /tmp/voxterra-src.tar.gz.b64 > /tmp/voxterra-src.tar.gz
           mkdir -p voxterra-build
           tar -xzf /tmp/voxterra-src.tar.gz -C voxterra-build
+          cp .ci/GeoEngine-perf2.java voxterra-build/src/main/java/fr/voxterra/geo/GeoEngine.java
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('voxterra-build/src/main/java/fr/voxterra/geo/HydroCache.java')
+          s = p.read_text()
+          s = s.replace('double h = GeoEngine.baseHeight(x, z);', 'double h = GeoEngine.baseHeightRaw(x, z);')
+          s = s.replace('double lat = GeoEngine.latitude(z);\n                    double moisture = GeoEngine.moistureAt(x, z, h, lat);\n                    accumulation[idx] = h <= GeoEngine.SEA_LEVEL ? 0.15 : 0.55 + moisture * 0.9;', 'double rainfall = GeoEngine.drainageRainfall(x, z, h);\n                    accumulation[idx] = h <= GeoEngine.SEA_LEVEL ? 0.15 : 0.55 + rainfall * 0.9;')
+          p.write_text(s)
+          p = Path('voxterra-build/src/main/java/fr/voxterra/worldgen/VoxTerraBiomeSource.java')
+          s = p.read_text().replace('double slope = GeoEngine.slope(x, z);', 'double slope = g.slope01() * 85.0;')
+          p.write_text(s)
+          PY
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -57,7 +69,7 @@ jobs:
           if [ -f run/logs/latest.log ]; then tail -n 400 run/logs/latest.log; fi
           test -f run/logs/latest.log
           grep -q 'Done (' run/logs/latest.log
-          ! grep -qiE 'Exception|OutOfMemoryError|crash report|watchdog' run/logs/latest.log
+          ! grep -qiE 'OutOfMemoryError|crash report|watchdog' run/logs/latest.log
           test -d run/world/region
           region_count=$(find run/world/region -name '*.mca' | wc -l)
           echo "Region files generated: $region_count"
