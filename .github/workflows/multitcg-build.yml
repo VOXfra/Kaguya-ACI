@@ -1,0 +1,109 @@
+name: MultiTCG build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["build/multitcg-cardshop-v0.1"]
+    paths:
+      - "multitcg/**"
+      - ".github/workflows/multitcg-build.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Download BepInEx and Unity compile references
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p deps /tmp/bep /tmp/unity
+          curl -fL --retry 3 -o /tmp/bep.zip "https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.2/BepInEx_win_x64_5.4.23.2.zip"
+          unzip -q /tmp/bep.zip -d /tmp/bep
+          cp /tmp/bep/BepInEx/core/BepInEx.dll deps/
+          cp /tmp/bep/BepInEx/core/0Harmony.dll deps/
+
+          curl -fL --retry 3 -o /tmp/unity.zip "https://unity.bepinex.dev/libraries/2021.3.38f1.zip"
+          unzip -q /tmp/unity.zip -d /tmp/unity
+          cp "$(find /tmp/unity -name UnityEngine.CoreModule.dll | head -1)" deps/
+          cp "$(find /tmp/unity -name UnityEngine.ImageConversionModule.dll | head -1)" deps/
+          ls -lh deps
+
+      - name: Compile MultiTCG Core
+        run: dotnet build multitcg/src/MultiTCG.Core/MultiTCG.Core.csproj -c Release
+
+      - name: Generate original demo artwork
+        run: |
+          python3 -m pip install --quiet pillow
+          python3 multitcg/tools/generate_demo_assets.py --out build/package/BepInEx/plugins/MultiTCG/MultiTCG_prefabloader/assets
+
+      - name: Assemble installable mod
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ROOT="build/package/BepInEx/plugins/MultiTCG"
+          CONTENT="$ROOT/MultiTCG_prefabloader"
+          mkdir -p "$CONTENT"
+          cp multitcg/src/MultiTCG.Core/bin/Release/netstandard2.0/MultiTCG.Core.dll "$ROOT/"
+          cp multitcg/content/MultiTCG_prefabloader/MultiTCG_Demo.json "$CONTENT/"
+          printf 'MultiTCG virtual bundle. Loaded by MultiTCG.Core; this is intentionally not a Unity AssetBundle.\n' > "$CONTENT/MultiTCG_Demo"
+          printf 'multitcg-loose-assets-v1\n' > "$CONTENT/MultiTCG_Demo.multitcg"
+          cat > "$ROOT/README-MultiTCG.txt" <<'EOF'
+          MultiTCG Core v0.1.0 - VOX
+          ===========================
+
+          PURPOSE
+          -------
+          Adds NEW card expansions to TCG Card Shop Simulator through Enhanced Prefab Loader.
+          It does NOT replace or reskin the game's Tetramon/base cards.
+
+          REQUIREMENTS
+          ------------
+          - TCG Card Shop Simulator (current 2026 build)
+          - BepInEx 5.4.23.x
+          - Enhanced Prefab Loader 6.x installed separately
+
+          INSTALL
+          -------
+          Extract this ZIP into the TCG Card Shop Simulator game folder so the included BepInEx
+          folder merges with your existing BepInEx folder. Do not remove your existing EPL files.
+
+          TEST CONTENT
+          ------------
+          MultiTCG Demo Set: 12 original placeholder cards and one additive booster.
+          This demo exists only to verify that custom expansions coexist with vanilla cards before
+          very large real-world TCG catalogues are imported.
+
+          IMPORTANT
+          ---------
+          The .multitcg marker makes MultiTCG.Core handle only this content pack. Other EPL mods
+          continue using EPL's normal AssetBundle pipeline and are not intercepted.
+          EOF
+
+          python3 - <<'PY'
+          import json, pathlib
+          p=pathlib.Path('build/package/BepInEx/plugins/MultiTCG/MultiTCG_prefabloader/MultiTCG_Demo.json')
+          d=json.loads(p.read_text(encoding='utf-8'))
+          assert len(d['CardExpansions']) == 1
+          assert len(d['CardExpansions'][0]['Cards']) == 12
+          assert d['CardExpansions'][0]['CardExpansion'] == 'MultiTCGDemo'
+          assert d['Items'][0]['CardExpansion'] == 'MultiTCGDemo'
+          print('Descriptor validated: additive expansion MultiTCGDemo, 12 cards, 1 booster')
+          PY
+
+          cd build/package
+          zip -qr ../MultiTCG_Core_v0.1.0.zip .
+          cd ..
+          unzip -l MultiTCG_Core_v0.1.0.zip
+          sha256sum MultiTCG_Core_v0.1.0.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MultiTCG-Core-v0.1.0
+          path: build/MultiTCG_Core_v0.1.0.zip
+          if-no-files-found: error
