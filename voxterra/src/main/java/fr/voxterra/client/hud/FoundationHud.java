@@ -30,7 +30,7 @@ public final class FoundationHud {
     public static void initialize() {
         HudElementRegistry.replaceElement(VanillaHudElements.HOTBAR, original -> (graphics, tracker) -> {
             if (shouldShowHotbar()) {
-                original.render(graphics, tracker);
+                original.extractRenderState(graphics, tracker);
             }
         });
 
