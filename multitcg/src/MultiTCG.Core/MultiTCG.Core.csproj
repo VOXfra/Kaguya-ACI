@@ -16,6 +16,10 @@
       <HintPath>../../../deps/0Harmony.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>../../../deps/UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>../../../deps/UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
