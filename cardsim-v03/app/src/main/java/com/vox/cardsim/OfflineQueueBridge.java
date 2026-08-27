@@ -22,6 +22,7 @@ import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.security.MessageDigest;
@@ -31,6 +32,7 @@ import java.util.concurrent.TimeUnit;
 /** Pont WebView dédié aux téléchargements hors ligne persistants V1.1. */
 public final class OfflineQueueBridge {
     private static final String AUTO_WORK = "vox-offline-auto-update";
+    private static final int MAX_LOCAL_SAVE_BYTES = 32 * 1024 * 1024;
     private final Activity activity;
     private final Context appContext;
     private final SharedPreferences prefs;
@@ -83,6 +85,122 @@ public final class OfflineQueueBridge {
             }
         } catch (Exception e) {
             return "";
+        }
+    }
+
+    /* V1.2.15 — gameplay saves are private Android files, not WebView localStorage.
+       The API is deliberately tiny and synchronous because the JS boot sequence must
+       be able to recover a save before historical compatibility layers run. */
+    private String safeSaveMode(String mode) {
+        String m = mode == null ? "" : mode.trim().toLowerCase(Locale.US);
+        return ("realistic".equals(m) || "ludic".equals(m) || "creative".equals(m)) ? m : "";
+    }
+
+    private String safeSaveKind(String kind) {
+        String k = kind == null ? "" : kind.trim().toLowerCase(Locale.US);
+        return ("slot".equals(k) || "manual".equals(k) || "previous".equals(k)) ? k : "";
+    }
+
+    private File localSaveDir() {
+        File dir = new File(appContext.getFilesDir(), "vox_saves");
+        if (!dir.exists()) dir.mkdirs();
+        return dir;
+    }
+
+    private File localSaveFile(String mode, String kind) {
+        String m = safeSaveMode(mode), k = safeSaveKind(kind);
+        if (m.isEmpty() || k.isEmpty()) return null;
+        return new File(localSaveDir(), m + "." + k + ".json");
+    }
+
+    private String readLocalSaveFile(File file) {
+        if (file == null || !file.isFile() || file.length() <= 0 || file.length() > MAX_LOCAL_SAVE_BYTES) return "";
+        try (InputStream in = new FileInputStream(file);
+             ByteArrayOutputStream out = new ByteArrayOutputStream((int)Math.min(file.length(), 1024 * 1024))) {
+            byte[] buffer = new byte[32768];
+            int n;
+            while ((n = in.read(buffer)) != -1) {
+                out.write(buffer, 0, n);
+                if (out.size() > MAX_LOCAL_SAVE_BYTES) return "";
+            }
+            String json = out.toString("UTF-8");
+            new JSONObject(json);
+            return json;
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    @JavascriptInterface
+    public String readLocalSave(String mode, String kind) {
+        String m = safeSaveMode(mode), k = safeSaveKind(kind);
+        if (m.isEmpty() || k.isEmpty()) return "";
+        String json = readLocalSaveFile(localSaveFile(m, k));
+        if (json.isEmpty()) return "";
+        try {
+            JSONObject parsed = new JSONObject(json);
+            String gm = parsed.optString("gameMode", m);
+            return gm.isEmpty() || m.equals(gm) ? json : "";
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    @JavascriptInterface
+    public boolean writeLocalSave(String mode, String kind, String json) {
+        String m = safeSaveMode(mode), k = safeSaveKind(kind);
+        if (m.isEmpty() || k.isEmpty() || json == null || json.isEmpty()) return false;
+        try {
+            byte[] bytes = json.getBytes("UTF-8");
+            if (bytes.length <= 0 || bytes.length > MAX_LOCAL_SAVE_BYTES) return false;
+            JSONObject parsed = new JSONObject(json);
+            if (!parsed.has("version") && !parsed.has("schemaVersion")) return false;
+            String gm = parsed.optString("gameMode", m);
+            if (!gm.isEmpty() && !m.equals(gm)) return false;
+
+            File target = localSaveFile(m, k);
+            if (target == null) return false;
+            File dir = target.getParentFile();
+            if (dir == null || (!dir.exists() && !dir.mkdirs())) return false;
+            File tmp = new File(dir, target.getName() + ".tmp");
+            File swap = new File(dir, target.getName() + ".swap");
+            if (tmp.exists()) tmp.delete();
+            if (swap.exists()) swap.delete();
+
+            try (FileOutputStream out = new FileOutputStream(tmp, false)) {
+                out.write(bytes);
+                out.flush();
+                out.getFD().sync();
+            }
+            if (tmp.length() != bytes.length) { tmp.delete(); return false; }
+
+            boolean hadTarget = target.exists();
+            if (hadTarget && !target.renameTo(swap)) { tmp.delete(); return false; }
+            if (!tmp.renameTo(target)) {
+                if (hadTarget && swap.exists()) swap.renameTo(target);
+                tmp.delete();
+                return false;
+            }
+            if (swap.exists()) swap.delete();
+            String check = readLocalSaveFile(target);
+            return !check.isEmpty() && check.equals(json);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    @JavascriptInterface
+    public boolean deleteLocalSave(String mode, String kind) {
+        File target = localSaveFile(mode, kind);
+        if (target == null) return false;
+        try {
+            File tmp = new File(target.getParentFile(), target.getName() + ".tmp");
+            File swap = new File(target.getParentFile(), target.getName() + ".swap");
+            if (tmp.exists()) tmp.delete();
+            if (swap.exists()) swap.delete();
+            return !target.exists() || target.delete();
+        } catch (Exception e) {
+            return false;
         }
     }
 
