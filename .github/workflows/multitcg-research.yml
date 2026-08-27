@@ -12,13 +12,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Clone Enhanced Prefab Loader
         run: git clone --depth 1 https://gitlab.com/tcg-mods/prefabloader.git /tmp/epl
-      - name: Inspect discovery, prepatch and descriptor examples
+      - name: Inspect EPL identifiers and descriptor discovery helper
         run: |
-          echo '=== BUNDLE LOADING MANAGER ==='
-          cat /tmp/epl/EnhancedPrefabLoader.Core/LoadingPipeline/BundleLoadingManager.cs
-          echo '=== PREPATCH ENTRY / DISCOVERY ==='
-          grep -RIl 'PrepatchBundleDescriptor\|Directory.GetFiles\|SearchOption' /tmp/epl/EnhancedPrefabLoader.Prepatch | while read f; do echo "--- $f"; cat "$f"; done
-          echo '=== DESCRIPTOR / JSON EXAMPLES ==='
-          find /tmp/epl -type f \( -name '*.json' -o -name '*.md' \) -print0 | xargs -0 grep -Il 'CardExpansions\|BorderType\|ElementType' | head -20 | while read f; do echo "--- $f"; grep -n -C 3 'CardExpansions\|BorderType\|ElementType\|IsCardPack' "$f" | head -160; done
-          echo '=== ENUM HINTS ==='
-          grep -RIn 'ECardBorderType\|EElementIndex' /tmp/epl | head -80
+          echo '=== PLUGIN IDS ==='
+          grep -RIn 'BepInPlugin\|PluginGuid\|GUID' /tmp/epl/EnhancedPrefabLoader.Core /tmp/epl/EnhancedPrefabLoader.API | head -80
+          echo '=== FILE HELPER ==='
+          f=$(find /tmp/epl -type f -name 'FileHelper.cs' | head -1); [ -n "$f" ] && cat "$f" || true
+          echo '=== STREAMING ASSET GENERIC ==='
+          grep -RIl 'StreamingAssetsBridge.AssetLoadBridge\|StartLoadingCoroutine' /tmp/epl/EnhancedPrefabLoader.API | while read f; do echo "--- $f"; cat "$f"; done
