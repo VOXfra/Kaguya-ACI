@@ -26,85 +26,96 @@ jobs:
           curl -fL --retry 3 -o /tmp/bep.zip "https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.2/BepInEx_win_x64_5.4.23.2.zip"
           unzip -q /tmp/bep.zip -d /tmp/bep
           cp /tmp/bep/BepInEx/core/BepInEx.dll deps/
-          cp /tmp/bep/BepInEx/core/0Harmony.dll deps/
 
           curl -fL --retry 3 -o /tmp/unity.zip "https://unity.bepinex.dev/libraries/2021.3.38.zip"
           unzip -q /tmp/unity.zip -d /tmp/unity
-          cp "$(find /tmp/unity -name UnityEngine.dll | head -1)" deps/
-          cp "$(find /tmp/unity -name UnityEngine.CoreModule.dll | head -1)" deps/
-          cp "$(find /tmp/unity -name UnityEngine.ImageConversionModule.dll | head -1)" deps/
+          for dll in UnityEngine.dll UnityEngine.CoreModule.dll UnityEngine.IMGUIModule.dll UnityEngine.InputLegacyModule.dll; do
+            cp "$(find /tmp/unity -name "$dll" | head -1)" deps/
+          done
           ls -lh deps
 
-      - name: Compile MultiTCG Core
+      - name: Compile MultiTCG
         run: dotnet build multitcg/src/MultiTCG.Core/MultiTCG.Core.csproj -c Release
 
-      - name: Generate original demo artwork
-        run: |
-          python3 -m pip install --quiet pillow
-          python3 multitcg/tools/generate_demo_assets.py --out build/package/BepInEx/plugins/MultiTCG/MultiTCG_prefabloader/assets
-
-      - name: Assemble installable mod
+      - name: Assemble installable Phone Overhaul package
         shell: bash
         run: |
           set -euxo pipefail
+          python3 -m pip install --quiet pillow
           ROOT="build/package/BepInEx/plugins/MultiTCG"
-          CONTENT="$ROOT/MultiTCG_prefabloader"
-          mkdir -p "$CONTENT"
+          ICONDIR="build/package/BepInEx/plugins/Phone - Overhaul/App Images/MultiTCG"
+          mkdir -p "$ROOT/Data" "$ICONDIR"
           cp multitcg/src/MultiTCG.Core/bin/Release/netstandard2.0/MultiTCG.Core.dll "$ROOT/"
-          cp multitcg/content/MultiTCG_prefabloader/MultiTCG_Demo.json "$CONTENT/"
-          printf 'MultiTCG virtual bundle. Loaded by MultiTCG.Core; this is intentionally not a Unity AssetBundle.\n' > "$CONTENT/MultiTCG_Demo"
-          printf 'multitcg-loose-assets-v1\n' > "$CONTENT/MultiTCG_Demo.multitcg"
-          cat > "$ROOT/README-MultiTCG.txt" <<'EOF'
-          MultiTCG Core v0.1.0 - VOX
-          ===========================
+          cp multitcg/content/Data/*.mtcg "$ROOT/Data/"
 
-          PURPOSE
-          -------
-          Adds NEW card expansions to TCG Card Shop Simulator through Enhanced Prefab Loader.
-          It does NOT replace or reskin the game's Tetramon/base cards.
+          python3 - <<'PY'
+          from PIL import Image, ImageDraw, ImageFont
+          from pathlib import Path
+          p=Path('build/package/BepInEx/plugins/Phone - Overhaul/App Images/MultiTCG/MultiTCG.png')
+          p.parent.mkdir(parents=True, exist_ok=True)
+          im=Image.new('RGBA',(256,256),(22,24,30,255))
+          d=ImageDraw.Draw(im)
+          d.rounded_rectangle((16,16,240,240), radius=48, fill=(35,39,49,255), outline=(230,230,235,255), width=6)
+          d.rounded_rectangle((54,48,202,208), radius=18, outline=(230,230,235,255), width=5)
+          d.line((78,80,178,80), fill=(230,230,235,255), width=5)
+          d.line((78,110,178,110), fill=(230,230,235,255), width=5)
+          d.text((78,140),'MT',fill=(240,240,245,255),font=ImageFont.load_default())
+          im.save(p)
+          PY
+
+          cat > "$ROOT/README-MultiTCG.txt" <<'EOF'
+          MultiTCG v0.2.0 - Phone build
+          ===============================
+
+          WHAT THIS BUILD DOES
+          --------------------
+          - Adds a MultiTCG application to Phone - Overhaul when that mod is installed.
+          - F8 also opens/closes MultiTCG as a fallback.
+          - Provides Store, Collections and Language screens.
+          - Supports independent FR/EN/JP collection variants where a catalogue declares them.
+          - Includes a standalone booster/collection save under the game's persistent data path.
+          - Attempts to debit purchases through the game's own CEventPlayer_ReduceCoin event.
+          - Loads external .mtcg catalogue files from BepInEx/plugins/MultiTCG/Data.
+          - DOES NOT patch, replace, reskin or delete any Tetramon/base-game card.
+          - DOES NOT require Enhanced Prefab Loader.
 
           REQUIREMENTS
           ------------
-          - TCG Card Shop Simulator (current 2026 build)
-          - BepInEx 5.4.23.x
-          - Enhanced Prefab Loader 6.x installed separately
+          Required: BepInEx 5.4.23.x (the game must already be modded with BepInEx).
+          Recommended: Phone - Overhaul 1.7.x. Without it, use F8.
 
           INSTALL
           -------
-          Extract this ZIP into the TCG Card Shop Simulator game folder so the included BepInEx
-          folder merges with your existing BepInEx folder. Do not remove your existing EPL files.
+          Extract this ZIP into the TCG Card Shop Simulator root folder and merge BepInEx.
+          If Phone - Overhaul is installed, the included app icon is placed in its App Images folder.
 
-          TEST CONTENT
-          ------------
-          MultiTCG Demo Set: 12 original placeholder cards and one additive booster.
-          This demo exists only to verify that custom expansions coexist with vanilla cards before
-          very large real-world TCG catalogues are imported.
+          CURRENT TEST CATALOGUE
+          ----------------------
+          Text-only starter entries for Pokémon TCG, One Piece Card Game and Wankul are included
+          to validate navigation, languages, purchases, booster opening and separate collections.
+          No copyrighted card artwork is bundled in this test build.
 
           IMPORTANT
           ---------
-          The .multitcg marker makes MultiTCG.Core handle only this content pack. Other EPL mods
-          continue using EPL's normal AssetBundle pipeline and are not intercepted.
+          This v0.2 validates the self-contained MultiTCG + smartphone architecture. Physical
+          non-Tetramon cards/boxes placed in the 3D shop are a separate integration layer and are
+          intentionally not faked in this build.
           EOF
 
-          python3 - <<'PY'
-          import json, pathlib
-          p=pathlib.Path('build/package/BepInEx/plugins/MultiTCG/MultiTCG_prefabloader/MultiTCG_Demo.json')
-          d=json.loads(p.read_text(encoding='utf-8'))
-          assert len(d['CardExpansions']) == 1
-          assert len(d['CardExpansions'][0]['Cards']) == 12
-          assert d['CardExpansions'][0]['CardExpansion'] == 'MultiTCGDemo'
-          assert d['Items'][0]['CardExpansion'] == 'MultiTCGDemo'
-          print('Descriptor validated: additive expansion MultiTCGDemo, 12 cards, 1 booster')
-          PY
+          test -f "$ROOT/MultiTCG.Core.dll"
+          test -f "$ROOT/Data/starter_catalog.mtcg"
+          test -f "$ICONDIR/MultiTCG.png"
+          ! find build/package -type f | grep -qi 'prefabloader'
+          ! find build/package -type f | grep -Eqi 'resources\.assets|sharedassets|Assembly-CSharp'
 
           cd build/package
-          zip -qr ../MultiTCG_Core_v0.1.0.zip .
+          zip -qr ../MultiTCG_v0.2.0.zip .
           cd ..
-          unzip -l MultiTCG_Core_v0.1.0.zip
-          sha256sum MultiTCG_Core_v0.1.0.zip
+          unzip -l MultiTCG_v0.2.0.zip
+          sha256sum MultiTCG_v0.2.0.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: MultiTCG-Core-v0.1.0
-          path: build/MultiTCG_Core_v0.1.0.zip
+          name: MultiTCG-v0.2.0
+          path: build/MultiTCG_v0.2.0.zip
           if-no-files-found: error
