@@ -28,7 +28,7 @@ jobs:
           cp /tmp/bep/BepInEx/core/BepInEx.dll deps/
           cp /tmp/bep/BepInEx/core/0Harmony.dll deps/
 
-          curl -fL --retry 3 -o /tmp/unity.zip "https://unity.bepinex.dev/libraries/2021.3.38f1.zip"
+          curl -fL --retry 3 -o /tmp/unity.zip "https://unity.bepinex.dev/libraries/2021.3.38.zip"
           unzip -q /tmp/unity.zip -d /tmp/unity
           cp "$(find /tmp/unity -name UnityEngine.CoreModule.dll | head -1)" deps/
           cp "$(find /tmp/unity -name UnityEngine.ImageConversionModule.dll | head -1)" deps/
