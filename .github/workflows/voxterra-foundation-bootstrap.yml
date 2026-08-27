@@ -1,8 +1,6 @@
 name: VoxTerra Foundation Bootstrap
 
 on:
-  push:
-    branches: ["voxterra-foundation"]
   workflow_dispatch:
 
 permissions:
@@ -10,80 +8,11 @@ permissions:
 
 jobs:
   bootstrap:
-    if: ${{ !contains(github.event.head_commit.message || '', '[foundation-bootstrap]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: voxterra-foundation
           fetch-depth: 0
-
-      - name: Restore validated VoxTerra 0.1.1 source
-        run: |
-          rm -rf /tmp/voxterra-src voxterra
-          cat .ci/vt011.part00 .ci/vt011.part01 .ci/vt011.part02 .ci/vt011.part03 > /tmp/voxterra-src.tar.gz.b64
-          base64 -d /tmp/voxterra-src.tar.gz.b64 > /tmp/voxterra-src.tar.gz
-          mkdir -p /tmp/voxterra-src
-          tar -xzf /tmp/voxterra-src.tar.gz -C /tmp/voxterra-src
-          cp .ci/GeoEngine-perf2.java /tmp/voxterra-src/src/main/java/fr/voxterra/geo/GeoEngine.java
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('/tmp/voxterra-src/src/main/java/fr/voxterra/geo/HydroCache.java')
-          s = p.read_text()
-          s = s.replace('double h = GeoEngine.baseHeight(x, z);', 'double h = GeoEngine.baseHeightRaw(x, z);')
-          s = s.replace('double lat = GeoEngine.latitude(z);\n                    double moisture = GeoEngine.moistureAt(x, z, h, lat);\n                    accumulation[idx] = h <= GeoEngine.SEA_LEVEL ? 0.15 : 0.55 + moisture * 0.9;', 'double rainfall = GeoEngine.drainageRainfall(x, z, h);\n                    accumulation[idx] = h <= GeoEngine.SEA_LEVEL ? 0.15 : 0.55 + rainfall * 0.9;')
-          p.write_text(s)
-          p = Path('/tmp/voxterra-src/src/main/java/fr/voxterra/worldgen/VoxTerraBiomeSource.java')
-          s = p.read_text().replace('double slope = GeoEngine.slope(x, z);', 'double slope = g.ruggedness() * 85.0;')
-          p.write_text(s)
-          PY
-          mv /tmp/voxterra-src voxterra
-
-      - name: Mark Foundation architecture
-        run: |
-          mkdir -p voxterra/docs
-          cat > voxterra/docs/FOUNDATION.md <<'EOF'
-          # VoxTerra Foundation
-
-          This directory is the maintainable Fabric source tree for VoxTerra.
-
-          Foundation owns the experience-defining glue and custom gameplay only. Heavy rendering/world systems such as Sodium, Iris, Voxy, Lithosphere and Serene Seasons remain external dependencies.
-
-          ## Locked direction
-          - Minecraft Java 26.2 / Fabric / Java 25
-          - Foundation first: custom HUD/crosshair and integration layer
-          - First playable age: Stone & Fire
-          - No artificial inventory weight/encumbrance system
-          - No copying from restrictive third-party mods
-          - External systems are integrated through APIs/compatibility where appropriate
-          EOF
-
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '25'
-
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '9.5.1'
-
-      - name: Verify restored source still builds
-        working-directory: voxterra
-        run: gradle clean build --stacktrace
-
-      - name: Commit maintainable source tree
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add voxterra
-          if git diff --cached --quiet; then
-            echo "No source changes to commit"
-          else
-            git commit -m "[foundation-bootstrap] Restore maintainable VoxTerra source tree"
-            git push origin HEAD:voxterra-foundation
-          fi
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: voxterra-foundation-bootstrap
-          path: voxterra/build/libs/*.jar
+      - name: Notice
+        run: echo "Foundation source has already been bootstrapped into voxterra/. This workflow is retained only for historical/manual recovery."
