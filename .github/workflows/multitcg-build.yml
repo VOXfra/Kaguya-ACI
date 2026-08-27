@@ -29,7 +29,7 @@ jobs:
 
           curl -fL --retry 3 -o /tmp/unity.zip "https://unity.bepinex.dev/libraries/2021.3.38.zip"
           unzip -q /tmp/unity.zip -d /tmp/unity
-          for dll in UnityEngine.dll UnityEngine.CoreModule.dll UnityEngine.IMGUIModule.dll UnityEngine.InputLegacyModule.dll; do
+          for dll in UnityEngine.dll UnityEngine.CoreModule.dll UnityEngine.IMGUIModule.dll UnityEngine.InputLegacyModule.dll UnityEngine.TextRenderingModule.dll; do
             cp "$(find /tmp/unity -name "$dll" | head -1)" deps/
           done
           ls -lh deps
