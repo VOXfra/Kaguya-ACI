@@ -1,0 +1,77 @@
+# MultiTCG starter catalogue v0.2
+# Format:
+# TCG|id|display name|languages comma separated
+# SET|tcg id|set id|display name|booster price|languages
+# CARD|set id|card id|number|display name|rarity
+#
+# These are lightweight text-only test entries. No copyrighted card artwork is bundled.
+
+TCG|pokemon|Pokémon TCG|FR,EN,JP
+SET|pokemon|pokemon_base|Set de Base|4.00|FR,EN,JP
+CARD|pokemon_base|pokemon_base_001|1|Carte test 001|Common
+CARD|pokemon_base|pokemon_base_002|2|Carte test 002|Common
+CARD|pokemon_base|pokemon_base_003|3|Carte test 003|Common
+CARD|pokemon_base|pokemon_base_004|4|Carte test 004|Common
+CARD|pokemon_base|pokemon_base_005|5|Carte test 005|Common
+CARD|pokemon_base|pokemon_base_006|6|Carte test 006|Common
+CARD|pokemon_base|pokemon_base_007|7|Carte test 007|Rare
+CARD|pokemon_base|pokemon_base_008|8|Carte test 008|Rare
+CARD|pokemon_base|pokemon_base_009|9|Carte test 009|Rare
+CARD|pokemon_base|pokemon_base_010|10|Carte test 010|Epic
+SET|pokemon|pokemon_jungle|Jungle|4.00|FR,EN,JP
+CARD|pokemon_jungle|pokemon_jungle_001|1|Carte test Jungle 001|Common
+CARD|pokemon_jungle|pokemon_jungle_002|2|Carte test Jungle 002|Common
+CARD|pokemon_jungle|pokemon_jungle_003|3|Carte test Jungle 003|Common
+CARD|pokemon_jungle|pokemon_jungle_004|4|Carte test Jungle 004|Common
+CARD|pokemon_jungle|pokemon_jungle_005|5|Carte test Jungle 005|Common
+CARD|pokemon_jungle|pokemon_jungle_006|6|Carte test Jungle 006|Rare
+CARD|pokemon_jungle|pokemon_jungle_007|7|Carte test Jungle 007|Rare
+CARD|pokemon_jungle|pokemon_jungle_008|8|Carte test Jungle 008|Epic
+SET|pokemon|pokemon_fossil|Fossile|4.00|FR,EN,JP
+CARD|pokemon_fossil|pokemon_fossil_001|1|Carte test Fossile 001|Common
+CARD|pokemon_fossil|pokemon_fossil_002|2|Carte test Fossile 002|Common
+CARD|pokemon_fossil|pokemon_fossil_003|3|Carte test Fossile 003|Common
+CARD|pokemon_fossil|pokemon_fossil_004|4|Carte test Fossile 004|Rare
+CARD|pokemon_fossil|pokemon_fossil_005|5|Carte test Fossile 005|Rare
+CARD|pokemon_fossil|pokemon_fossil_006|6|Carte test Fossile 006|Epic
+
+TCG|onepiece|One Piece Card Game|FR,EN,JP
+SET|onepiece|op01|OP-01 Romance Dawn|4.50|FR,EN,JP
+CARD|op01|op01_001|1|Carte test OP01 001|Common
+CARD|op01|op01_002|2|Carte test OP01 002|Common
+CARD|op01|op01_003|3|Carte test OP01 003|Common
+CARD|op01|op01_004|4|Carte test OP01 004|Common
+CARD|op01|op01_005|5|Carte test OP01 005|Rare
+CARD|op01|op01_006|6|Carte test OP01 006|Rare
+CARD|op01|op01_007|7|Carte test OP01 007|Epic
+SET|onepiece|op02|OP-02 Paramount War|4.50|FR,EN,JP
+CARD|op02|op02_001|1|Carte test OP02 001|Common
+CARD|op02|op02_002|2|Carte test OP02 002|Common
+CARD|op02|op02_003|3|Carte test OP02 003|Common
+CARD|op02|op02_004|4|Carte test OP02 004|Rare
+CARD|op02|op02_005|5|Carte test OP02 005|Rare
+CARD|op02|op02_006|6|Carte test OP02 006|Epic
+SET|onepiece|op03|OP-03 Pillars of Strength|4.50|FR,EN,JP
+CARD|op03|op03_001|1|Carte test OP03 001|Common
+CARD|op03|op03_002|2|Carte test OP03 002|Common
+CARD|op03|op03_003|3|Carte test OP03 003|Rare
+CARD|op03|op03_004|4|Carte test OP03 004|Rare
+CARD|op03|op03_005|5|Carte test OP03 005|Epic
+
+TCG|wankul|Wankul|FR
+SET|wankul|wankul_origins|Origins|4.00|FR
+CARD|wankul_origins|wankul_origins_001|1|Carte test Origins 001|Common
+CARD|wankul_origins|wankul_origins_002|2|Carte test Origins 002|Common
+CARD|wankul_origins|wankul_origins_003|3|Carte test Origins 003|Common
+CARD|wankul_origins|wankul_origins_004|4|Carte test Origins 004|Rare
+CARD|wankul_origins|wankul_origins_005|5|Carte test Origins 005|Epic
+SET|wankul|wankul_campus|Campus|4.00|FR
+CARD|wankul_campus|wankul_campus_001|1|Carte test Campus 001|Common
+CARD|wankul_campus|wankul_campus_002|2|Carte test Campus 002|Common
+CARD|wankul_campus|wankul_campus_003|3|Carte test Campus 003|Rare
+CARD|wankul_campus|wankul_campus_004|4|Carte test Campus 004|Epic
+SET|wankul|wankul_battle|Battle|4.00|FR
+CARD|wankul_battle|wankul_battle_001|1|Carte test Battle 001|Common
+CARD|wankul_battle|wankul_battle_002|2|Carte test Battle 002|Common
+CARD|wankul_battle|wankul_battle_003|3|Carte test Battle 003|Rare
+CARD|wankul_battle|wankul_battle_004|4|Carte test Battle 004|Epic
