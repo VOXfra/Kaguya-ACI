@@ -12,15 +12,21 @@ jobs:
       - uses: actions/checkout@v4
       - name: Clone Enhanced Prefab Loader
         run: git clone --depth 1 https://gitlab.com/tcg-mods/prefabloader.git /tmp/epl
-      - name: Locate descriptor models
+      - name: Inspect current EPL internals needed by MultiTCG
         run: |
-          echo '=== MODEL FILES ==='
-          find /tmp/epl -type f \( -iname '*BundleDescriptor*.cs' -o -iname '*CardExpansion*.cs' -o -iname '*CardInfo*.cs' -o -iname '*ItemInfo*.cs' -o -iname '*Validator*.cs' -o -iname '*Sanitizer*.cs' \) | sort
-          echo '=== DESCRIPTOR ==='
-          f=$(find /tmp/epl -type f -iname '*BundleDescriptor*.cs' | head -1); [ -n "$f" ] && cat "$f" || true
-          echo '=== CARD EXPANSION MODELS ==='
-          for f in $(find /tmp/epl -type f \( -iname '*CardExpansionInfo*.cs' -o -iname '*CardInfo*.cs' \)); do echo "--- $f"; cat "$f"; done
-          echo '=== ITEM INFO ==='
-          for f in $(find /tmp/epl -type f -iname '*ItemInfo*.cs'); do echo "--- $f"; cat "$f"; done
-          echo '=== VALIDATORS ==='
-          for f in $(find /tmp/epl -type f \( -iname '*CardExpansionValidator*.cs' -o -iname '*ItemValidator*.cs' \)); do echo "--- $f"; cat "$f"; done
+          echo '=== SANITIZER ==='
+          cat /tmp/epl/EnhancedPrefabLoader.Core/LoadingPipeline/SanitizerService.cs
+          echo '=== CARD PROCESSOR ==='
+          cat /tmp/epl/EnhancedPrefabLoader.Core/LoadingPipeline/Processors/CardExpansionProcessor.cs
+          echo '=== ITEM PROCESSOR ==='
+          cat /tmp/epl/EnhancedPrefabLoader.Core/LoadingPipeline/Processors/ItemProcessor.cs
+          echo '=== PROCESSING SERVICE ==='
+          cat /tmp/epl/EnhancedPrefabLoader.Core/LoadingPipeline/ProcessingService.cs
+          echo '=== BUNDLE MANAGER ==='
+          cat /tmp/epl/EnhancedPrefabLoader.Core/BundleManager.cs
+          echo '=== STREAMING SERVICE ==='
+          cat /tmp/epl/EnhancedPrefabLoader.Core/Assets/StreamingAssetService.cs
+          echo '=== PREPATCH DESCRIPTOR ==='
+          cat /tmp/epl/EnhancedPrefabLoader.Prepatch/Models/PrepatchBundleDescriptor.cs
+          echo '=== DISCOVERY SERVICE ==='
+          f=$(find /tmp/epl -type f -iname '*BundleDiscoveryService*.cs' | head -1); [ -n "$f" ] && cat "$f" || true
