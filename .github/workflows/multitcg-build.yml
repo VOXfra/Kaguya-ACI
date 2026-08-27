@@ -30,6 +30,7 @@ jobs:
 
           curl -fL --retry 3 -o /tmp/unity.zip "https://unity.bepinex.dev/libraries/2021.3.38.zip"
           unzip -q /tmp/unity.zip -d /tmp/unity
+          cp "$(find /tmp/unity -name UnityEngine.dll | head -1)" deps/
           cp "$(find /tmp/unity -name UnityEngine.CoreModule.dll | head -1)" deps/
           cp "$(find /tmp/unity -name UnityEngine.ImageConversionModule.dll | head -1)" deps/
           ls -lh deps
