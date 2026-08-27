@@ -1,0 +1,26 @@
+name: MultiTCG research
+
+on:
+  push:
+    branches: ["build/multitcg-cardshop-v0.1"]
+  workflow_dispatch:
+
+jobs:
+  inspect-epl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clone Enhanced Prefab Loader
+        run: git clone --depth 1 https://gitlab.com/tcg-mods/prefabloader.git /tmp/epl
+      - name: Locate descriptor models
+        run: |
+          echo '=== MODEL FILES ==='
+          find /tmp/epl -type f \( -iname '*BundleDescriptor*.cs' -o -iname '*CardExpansion*.cs' -o -iname '*CardInfo*.cs' -o -iname '*ItemInfo*.cs' -o -iname '*Validator*.cs' -o -iname '*Sanitizer*.cs' \) | sort
+          echo '=== DESCRIPTOR ==='
+          f=$(find /tmp/epl -type f -iname '*BundleDescriptor*.cs' | head -1); [ -n "$f" ] && cat "$f" || true
+          echo '=== CARD EXPANSION MODELS ==='
+          for f in $(find /tmp/epl -type f \( -iname '*CardExpansionInfo*.cs' -o -iname '*CardInfo*.cs' \)); do echo "--- $f"; cat "$f"; done
+          echo '=== ITEM INFO ==='
+          for f in $(find /tmp/epl -type f -iname '*ItemInfo*.cs'); do echo "--- $f"; cat "$f"; done
+          echo '=== VALIDATORS ==='
+          for f in $(find /tmp/epl -type f \( -iname '*CardExpansionValidator*.cs' -o -iname '*ItemValidator*.cs' \)); do echo "--- $f"; cat "$f"; done
