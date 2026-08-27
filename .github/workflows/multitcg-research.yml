@@ -12,11 +12,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: Clone Enhanced Prefab Loader
         run: git clone --depth 1 https://gitlab.com/tcg-mods/prefabloader.git /tmp/epl
-      - name: Inspect EPL identifiers and descriptor discovery helper
+      - name: Inspect EPL startup order and load entry points
         run: |
+          echo '=== CORE PLUGIN ==='
+          find /tmp/epl/EnhancedPrefabLoader.Core -maxdepth 2 -type f -name 'Plugin.cs' -print -exec cat {} \;
+          echo '=== LOAD BUNDLES CALL SITES ==='
+          grep -RIn 'LoadBundlesAsync\|FireOnBundleLoadingComplete\|StartCleanupCoroutine' /tmp/epl/EnhancedPrefabLoader.Core | head -120
           echo '=== PLUGIN IDS ==='
           grep -RIn 'BepInPlugin\|PluginGuid\|GUID' /tmp/epl/EnhancedPrefabLoader.Core /tmp/epl/EnhancedPrefabLoader.API | head -80
           echo '=== FILE HELPER ==='
           f=$(find /tmp/epl -type f -name 'FileHelper.cs' | head -1); [ -n "$f" ] && cat "$f" || true
-          echo '=== STREAMING ASSET GENERIC ==='
-          grep -RIl 'StreamingAssetsBridge.AssetLoadBridge\|StartLoadingCoroutine' /tmp/epl/EnhancedPrefabLoader.API | while read f; do echo "--- $f"; cat "$f"; done
