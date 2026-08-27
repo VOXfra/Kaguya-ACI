@@ -1,47 +1,36 @@
-# VoxTerra 0.1.1 — World & Climate
+# VoxTerra Foundation
 
-Experimental Fabric 26.2 foundation for a simulation-first Minecraft overhaul.
+VoxTerra Foundation is the custom gameplay/immersion core of the VoxTerra realism modpack for Minecraft Java 26.2 on Fabric.
 
-## What 0.1.1 contains
-- Continuous macro-scale continents and oceans.
-- Directional tectonic uplift belts instead of isolated noise domes.
-- Multi-scale foothills, ridges and erosion-like valley networks.
-- Cached D8 drainage / flow accumulation on overlapping 4 km hydrology windows.
-- River channels whose width/depth scale with upstream accumulation.
-- Biomes selected *from* terrain + climate instead of shaping terrain.
-- 800-block vertical Overworld (`-64..735`).
-- 96-day year, four continuous seasons and latitude/altitude-based local temperature.
-- Dynamic freeze/snow/thaw pass around players during precipitation.
-- Debug commands: `/voxterra climate` and `/voxterra season`.
+The project deliberately does **not** reimplement large systems that are already handled well by external mods. Lithosphere owns terrain generation, Serene Seasons owns the seasonal calendar, and rendering/performance remain the job of Iris, Sodium, Voxy and related optimisation mods.
 
-## Install / test
-1. Minecraft Java 26.2, Fabric Loader 0.19.3 and Fabric API 0.158.0+26.2.
-2. Put `voxterra-0.1.1.jar` in the profile's `mods` folder.
-3. Remove VoxTerra 0.1.0 if it is still installed.
-4. Create a **new** world and select the `VoxTerra Realistic` world preset.
-5. Existing chunks are never retrofitted with the new terrain generator.
+VoxTerra instead owns the parts that define how the pack actually feels and plays.
 
-## Why 0.1.1 exists
-The first public 0.1.0 build had a serious world-generation performance flaw. The density
-hot path called the full geography sample, which also evaluated slope, climate and moisture
-for every terrain column. Multiple worldgen workers could also build the same hydrology tile
-at the same time, and river water was inserted through `Level#setBlock` after chunk loading.
-Together these could stall neighbouring chunk generation.
+## Foundation 0.1.0
 
-0.1.1 separates the terrain-height hot path from climate sampling, makes hydrology tile
-construction concurrency-safe, removes boxed hydrology sorting, performs a sparse river
-presence test, and writes generated river water directly into the already loaded chunk without
-neighbour-update cascades.
+### Custom HUD
+- Permanent vanilla crosshair removed.
+- Vanilla hotbar renderer is preserved at full opacity.
+- Hotbar appears for 2.2 seconds when the selected slot changes.
+- Hotbar remains visible while an item is actively being used.
+- No alpha/fade is ever applied to item sprites, avoiding the transparent-hotbar issue seen with stacked HUD mods.
 
-## Status
-This is still the World & Climate foundation. Hydrology and continental-scale relief are real
-algorithms rather than a Vanilla noise preset, but geomorphology is intentionally compressed
-for Minecraft scale. Caves/geology remain deliberately unfinished for a later milestone.
+### Architecture
+- Old experimental VoxTerra terrain/climate/season runtime has been removed from the active build.
+- The source tree is now committed directly under `voxterra/` instead of being reconstructed from a hidden CI archive.
+- Foundation is client/server safe: client-only HUD code lives behind the Fabric client entrypoint.
+- Stone & Fire is the first gameplay module planned on top of Foundation.
 
-## Known limitations
-- Cave morphology and geology are not yet simulation-grade.
-- Seasonal foliage colour transitions are not implemented yet; snow/freeze/thaw are.
-- Hydrology uses a 32 m drainage grid for performance, so the smallest channels can still reveal
-  some D8/angular behaviour.
-- 0.1.1 improves terrain morphology substantially, but erosion, sediment transport, lakes and
-  glacial terrain are still future World & Climate work.
+## Requirements
+- Minecraft Java 26.2
+- Fabric Loader 0.19.3+
+- Fabric API 0.158.0+26.2
+- Java 25
+
+## Modpack note
+Remove Auto HUD and standalone crosshair-hiding mods when testing VoxTerra Foundation. They target the same vanilla HUD layers and are no longer needed.
+
+## Direction
+The objective is immersion and credible survival without turning realism into pointless friction. Systems are kept when they create interesting decisions or believable interactions; constraints that only make inventory management or routine actions annoying are not a goal.
+
+The next playable milestone is **Stone & Fire**: gathering loose natural materials, primitive stone working, early wood processing, fire starting, cooking and a first-night survival loop.

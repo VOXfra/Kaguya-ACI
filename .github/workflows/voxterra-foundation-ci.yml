@@ -1,0 +1,74 @@
+name: VoxTerra Foundation CI
+
+on:
+  push:
+    branches: ["voxterra-foundation"]
+    paths:
+      - "voxterra/**"
+      - ".github/workflows/voxterra-foundation-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.1'
+
+      - name: Build Foundation
+        working-directory: voxterra
+        run: gradle clean build --stacktrace
+
+      - name: Server smoke test
+        working-directory: voxterra
+        run: |
+          mkdir -p run
+          printf 'eula=true\n' > run/eula.txt
+          printf 'online-mode=false\nview-distance=2\nsimulation-distance=2\n' > run/server.properties
+          set +e
+          (
+            for i in $(seq 1 90); do
+              if [ -f run/logs/latest.log ] && grep -q 'Done (' run/logs/latest.log; then
+                echo stop
+                break
+              fi
+              sleep 1
+            done
+          ) | timeout 120s gradle runServer --args='nogui' > /tmp/voxterra-foundation-server.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/voxterra-foundation-server.log
+          test -f run/logs/latest.log
+          grep -q 'Done (' run/logs/latest.log
+          ! grep -qiE 'OutOfMemoryError|Server Watchdog/ERROR|This crash report has been saved|Exception in server tick loop' run/logs/latest.log
+          if [ "$status" -ne 0 ] && [ "$status" -ne 124 ]; then exit "$status"; fi
+
+      - name: Prepare release package
+        working-directory: voxterra
+        run: |
+          rm -rf release
+          mkdir -p release/mod release/docs
+          JAR=$(find build/libs -maxdepth 1 -type f -name 'voxterra-foundation-*.jar' ! -name '*-sources.jar' | head -n 1)
+          test -n "$JAR"
+          cp "$JAR" release/mod/
+          cp README.md CHANGELOG.md release/
+          cp docs/FOUNDATION.md release/docs/
+          printf 'Install: copy the JAR from mod/ into the Fabric 26.2 mods folder.\nRemove Auto HUD and standalone crosshair-hiding mods before testing.\n' > release/INSTALL.txt
+          cd release
+          zip -r ../VoxTerra-Foundation-0.1.0-foundation.1.zip .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: voxterra-foundation-0.1.0-foundation.1
+          path: |
+            voxterra/VoxTerra-Foundation-0.1.0-foundation.1.zip
+            voxterra/build/libs/voxterra-foundation-0.1.0-foundation.1.jar
+          if-no-files-found: error
