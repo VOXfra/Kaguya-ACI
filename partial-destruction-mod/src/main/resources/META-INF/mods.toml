@@ -4,11 +4,11 @@ license="MIT"
 
 [[mods]]
 modId="partialdestruction"
-version="0.1.0"
+version="0.2.0"
 displayName="Partial Destruction Prototype"
 authors="VOX"
 description='''
-Prototype Forge 1.20.1 that replaces supported stone/TFC rock blocks with seven physical destruction stages before the final normal break.
+Forge 1.20.1 prototype using the authoritative block break event to turn supported stone and TFC rock blocks into seven physical destruction stages before the final normal break.
 '''
 
 [[dependencies.partialdestruction]]
