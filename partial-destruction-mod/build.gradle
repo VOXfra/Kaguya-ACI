@@ -8,7 +8,7 @@ plugins {
 import groovy.json.JsonOutput
 
 group = 'fr.vox'
-version = '0.1.0'
+version = '0.2.0'
 
 base {
     archivesName = 'partialdestruction'
@@ -83,7 +83,6 @@ tasks.register('generatePartialDestructionResources') {
 
         def encode = { int x, int y, int z -> x * 16 + y * 4 + z }
         def score = { int x, int y, int z ->
-            // Base models are carved from the NORTH side (z = 0).
             double cx = (x + 0.5d) / 4.0d
             double cy = (y + 0.5d) / 4.0d
             int depth = z
