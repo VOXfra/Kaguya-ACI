@@ -9,6 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="MultiTcgCorePlugin.cs" />
+    <Compile Remove="MultiTcgPhoneNativePlugin.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="BepInEx">
@@ -29,10 +30,6 @@
     </Reference>
     <Reference Include="UnityEngine.TextRenderingModule">
       <HintPath>../../../deps/UnityEngine.TextRenderingModule.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="UnityEngine.UI">
-      <HintPath>../../../deps/UnityEngine.UI.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
