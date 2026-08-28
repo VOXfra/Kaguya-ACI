@@ -1,9 +1,11 @@
 package fr.vox.partialdestruction;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.BlockGetter;
@@ -20,11 +22,12 @@ import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.DirectionProperty;
 import net.minecraft.world.level.block.state.properties.IntegerProperty;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.event.entity.player.PlayerInteractEvent;
+import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -32,8 +35,8 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
-
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -41,17 +44,21 @@ import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Mod(PartialDestructionMod.MOD_ID)
 public final class PartialDestructionMod {
     public static final String MOD_ID = "partialdestruction";
+    public static final Logger LOGGER = LogUtils.getLogger();
 
     private static final DeferredRegister<Block> BLOCKS = DeferredRegister.create(ForgeRegistries.BLOCKS, MOD_ID);
     private static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITIES = DeferredRegister.create(ForgeRegistries.BLOCK_ENTITY_TYPES, MOD_ID);
 
     public static final RegistryObject<PartialBlock> PARTIAL_BLOCK = BLOCKS.register("partial_block", () ->
         new PartialBlock(BlockBehaviour.Properties.of()
-            .strength(-1.0F, 3_600_000.0F)
+            // Prototype stages must themselves be breakable, because each completed
+            // mining action advances one physical destruction stage.
+            .strength(0.20F, 6.0F)
             .sound(SoundType.STONE)
             .noOcclusion())
     );
@@ -64,78 +71,94 @@ public final class PartialDestructionMod {
         IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
         BLOCKS.register(modBus);
         BLOCK_ENTITIES.register(modBus);
-        MinecraftForge.EVENT_BUS.register(PartialMiningEvents.class);
+        LOGGER.info("[Partial Destruction] Forge 1.20.1 v0.2.0 loaded");
     }
 
+    /**
+     * Using BreakEvent is intentionally more conservative than the old LeftClickBlock
+     * prototype. Forge fires this when the server is actually about to remove the
+     * block, after Minecraft/TFC has already handled mining speed and tool checks.
+     */
+    @Mod.EventBusSubscriber(modid = MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
     public static final class PartialMiningEvents {
+        private static final Set<String> FINAL_BREAK_BYPASS = ConcurrentHashMap.newKeySet();
+
         @SubscribeEvent
-        public static void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
-            Player player = event.getEntity();
-            if (player.isCreative()) {
+        public static void onBreak(BlockEvent.BreakEvent event) {
+            if (!(event.getLevel() instanceof ServerLevel level)) {
                 return;
             }
 
-            Level level = event.getLevel();
+            Player rawPlayer = event.getPlayer();
+            if (!(rawPlayer instanceof ServerPlayer player) || player.isCreative()) {
+                return;
+            }
+
             BlockPos pos = event.getPos();
-            BlockState state = level.getBlockState(pos);
-            boolean partial = state.is(PARTIAL_BLOCK.get());
-            boolean supported = isSupported(state);
+            String bypassKey = key(level, pos);
 
-            if (!partial && !supported) {
+            // The final stage restores the real original block and asks vanilla to
+            // destroy it normally. That nested break must be allowed through once.
+            if (FINAL_BREAK_BYPASS.remove(bypassKey)) {
+                LOGGER.debug("[Partial Destruction] Allowing final vanilla break at {}", pos);
                 return;
             }
 
-            // Let the client send its normal START_DESTROY packet. The server is authoritative
-            // and replaces the block immediately, which then syncs back to the client.
-            if (level.isClientSide) {
+            BlockState state = level.getBlockState(pos);
+
+            if (state.is(PARTIAL_BLOCK.get())) {
+                event.setCanceled(true);
+                advancePartialBlock(level, pos, state, player, bypassKey);
+                return;
+            }
+
+            if (!isSupported(state)) {
                 return;
             }
 
             event.setCanceled(true);
-            if (event.getAction() != PlayerInteractEvent.LeftClickBlock.Action.START) {
-                return;
-            }
-
-            if (!(player instanceof ServerPlayer serverPlayer)) {
-                return;
-            }
-
-            if (partial) {
-                advancePartialBlock(level, pos, state, serverPlayer);
-            } else {
-                beginPartialBlock(level, pos, state, event.getFace());
-            }
+            Direction face = resolveHitFace(player, pos);
+            beginPartialBlock(level, pos, state, face);
+            LOGGER.info("[Partial Destruction] Started {} at {} from {}", blockId(state), pos, face);
         }
 
-        private static void beginPartialBlock(Level level, BlockPos pos, BlockState originalState, @Nullable Direction face) {
+        private static void beginPartialBlock(ServerLevel level, BlockPos pos, BlockState originalState, Direction face) {
             ResourceLocation originalId = ForgeRegistries.BLOCKS.getKey(originalState.getBlock());
             if (originalId == null) {
                 return;
             }
 
-            Direction hitFace = face == null ? Direction.NORTH : face;
             BlockState partialState = PARTIAL_BLOCK.get().defaultBlockState()
-                .setValue(PartialBlock.FACE, hitFace)
+                .setValue(PartialBlock.FACE, face)
                 .setValue(PartialBlock.STAGE, 1);
 
-            level.setBlock(pos, partialState, 3);
+            level.setBlock(pos, partialState, Block.UPDATE_ALL);
             BlockEntity blockEntity = level.getBlockEntity(pos);
             if (blockEntity instanceof PartialBlockEntity partialEntity) {
                 partialEntity.setOriginalBlock(originalId);
+            } else {
+                LOGGER.error("[Partial Destruction] Missing block entity after creating partial block at {}", pos);
             }
         }
 
-        private static void advancePartialBlock(Level level, BlockPos pos, BlockState state, ServerPlayer player) {
+        private static void advancePartialBlock(ServerLevel level, BlockPos pos, BlockState state, ServerPlayer player, String bypassKey) {
             int stage = state.getValue(PartialBlock.STAGE);
-            if (stage < 7) {
-                level.setBlock(pos, state.setValue(PartialBlock.STAGE, stage + 1), 3);
-                return;
-            }
-
-            ResourceLocation originalId = new ResourceLocation("minecraft", "stone");
             BlockEntity blockEntity = level.getBlockEntity(pos);
+            ResourceLocation originalId = new ResourceLocation("minecraft", "stone");
             if (blockEntity instanceof PartialBlockEntity partialEntity) {
                 originalId = partialEntity.getOriginalBlock();
+            }
+
+            if (stage < 7) {
+                level.setBlock(pos, state.setValue(PartialBlock.STAGE, stage + 1), Block.UPDATE_ALL);
+                // setBlock on the same BaseEntityBlock should retain its BE, but make
+                // the original id explicit so the prototype survives edge cases.
+                BlockEntity after = level.getBlockEntity(pos);
+                if (after instanceof PartialBlockEntity partialEntity) {
+                    partialEntity.setOriginalBlock(originalId);
+                }
+                LOGGER.debug("[Partial Destruction] Advanced {} to stage {} at {}", originalId, stage + 1, pos);
+                return;
             }
 
             Block originalBlock = ForgeRegistries.BLOCKS.getValue(originalId);
@@ -143,10 +166,27 @@ public final class PartialDestructionMod {
                 originalBlock = net.minecraft.world.level.block.Blocks.STONE;
             }
 
-            // Restore the real block first, then let vanilla/Forge perform the final break.
-            // This means the final drop path, held tool and ordinary break events are used.
-            level.setBlock(pos, originalBlock.defaultBlockState(), 3);
-            player.gameMode.destroyBlock(pos);
+            // Restore the real block and perform ONE ordinary vanilla/Forge break.
+            // The bypass key prevents our handler from intercepting this nested break.
+            level.setBlock(pos, originalBlock.defaultBlockState(), Block.UPDATE_ALL);
+            FINAL_BREAK_BYPASS.add(bypassKey);
+            boolean destroyed = player.gameMode.destroyBlock(pos);
+            if (!destroyed) {
+                FINAL_BREAK_BYPASS.remove(bypassKey);
+                LOGGER.warn("[Partial Destruction] Final vanilla break was rejected at {}", pos);
+            } else {
+                LOGGER.info("[Partial Destruction] Finished {} at {}", originalId, pos);
+            }
+        }
+
+        private static Direction resolveHitFace(ServerPlayer player, BlockPos target) {
+            // BreakEvent itself does not carry the hit face. Ray trace from the
+            // player's current eye position at the instant the break completes.
+            HitResult hit = player.pick(6.0D, 0.0F, false);
+            if (hit instanceof BlockHitResult blockHit && blockHit.getBlockPos().equals(target)) {
+                return blockHit.getDirection();
+            }
+            return Direction.NORTH;
         }
 
         private static boolean isSupported(BlockState state) {
@@ -171,6 +211,15 @@ public final class PartialDestructionMod {
             }
 
             return false;
+        }
+
+        private static String key(ServerLevel level, BlockPos pos) {
+            return level.dimension().location() + ":" + pos.asLong();
+        }
+
+        private static String blockId(BlockState state) {
+            ResourceLocation id = ForgeRegistries.BLOCKS.getKey(state.getBlock());
+            return id == null ? "unknown" : id.toString();
         }
     }
 
@@ -208,7 +257,7 @@ public final class PartialDestructionMod {
 
         @Override
         public VoxelShape getOcclusionShape(BlockState state, BlockGetter level, BlockPos pos) {
-            return getShape(state, level, pos, CollisionContext.empty());
+            return Shapes.empty();
         }
 
         @Nullable
