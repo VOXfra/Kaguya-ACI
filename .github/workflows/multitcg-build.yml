@@ -29,7 +29,7 @@ jobs:
 
           curl -fL --retry 3 -o /tmp/unity.zip "https://unity.bepinex.dev/libraries/2021.3.38.zip"
           unzip -q /tmp/unity.zip -d /tmp/unity
-          for dll in UnityEngine.dll UnityEngine.CoreModule.dll UnityEngine.UIModule.dll UnityEngine.TextRenderingModule.dll UnityEngine.UI.dll; do
+          for dll in UnityEngine.dll UnityEngine.CoreModule.dll UnityEngine.UIModule.dll UnityEngine.TextRenderingModule.dll; do
             src="$(find /tmp/unity -name "$dll" | head -1)"
             test -n "$src"
             cp "$src" deps/
@@ -74,36 +74,35 @@ jobs:
           - Removed the desktop/IMGUI window completely.
           - Removed the F8 fallback completely.
           - MultiTCG opens ONLY by tapping its Phone - Overhaul app icon.
-          - The app builds its UI as a child of the active Phone Overhaul screen/container,
-            so the content stays inside the smartphone instead of covering the game screen.
-          - Back button closes only the MultiTCG page and reveals the phone home screen again.
-          - Store, Collection and Language views remain available inside the phone app.
+          - The app creates Unity UI inside the active Phone Overhaul display at runtime.
+          - Back closes MultiTCG and reveals the phone home screen again.
+          - Store, Collection and Language views are inside the phone app.
           - No Enhanced Prefab Loader dependency.
           - No Tetramon/base card replacement or patching.
 
           REQUIREMENTS
           ------------
           - BepInEx 5.4.23.x
-          - Phone - Overhaul 1.7.x (required for this build)
+          - Phone - Overhaul 1.7.x
 
           INSTALL
           -------
-          Delete/overwrite the previous BepInEx/plugins/MultiTCG folder, then extract this ZIP
-          into the TCG Card Shop Simulator root folder and merge BepInEx.
+          Delete the previous BepInEx/plugins/MultiTCG folder, then extract this ZIP into the
+          TCG Card Shop Simulator root folder and merge BepInEx.
 
           TEST
           ----
           Open the in-game smartphone and tap MultiTCG. No separate desktop-style window should
-          appear. The MultiTCG page should occupy the phone screen while leaving the phone frame visible.
+          appear. MultiTCG should occupy the smartphone display while leaving the phone frame visible.
 
-          If tapping the icon does nothing, send BepInEx/LogOutput.log. v0.3 logs the resolved phone
-          hierarchy so the container can be targeted exactly on your Phone Overhaul build.
+          If tapping the icon does nothing or the page is misplaced, send BepInEx/LogOutput.log.
+          v0.3 logs the phone hierarchy and the RectTransform it attached to.
           EOF
 
           test -f "$ROOT/MultiTCG.Core.dll"
           test -f "$ROOT/Data/starter_catalog.mtcg"
           test -f "$ICONDIR/MultiTCG.png"
-          ! grep -R "KeyCode.F8\|GUI.Window\|OnGUI" -n multitcg/src/MultiTCG.Core/MultiTcgPhoneNativePlugin.cs
+          ! grep -n "KeyCode.F8\|GUI.Window\|OnGUI" multitcg/src/MultiTCG.Core/MultiTcgPhoneReflectionPlugin.cs
           ! find build/package -type f | grep -qi 'prefabloader'
           ! find build/package -type f | grep -Eqi 'resources\.assets|sharedassets|Assembly-CSharp'
 
