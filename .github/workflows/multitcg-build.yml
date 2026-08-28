@@ -29,15 +29,17 @@ jobs:
 
           curl -fL --retry 3 -o /tmp/unity.zip "https://unity.bepinex.dev/libraries/2021.3.38.zip"
           unzip -q /tmp/unity.zip -d /tmp/unity
-          for dll in UnityEngine.dll UnityEngine.CoreModule.dll UnityEngine.IMGUIModule.dll UnityEngine.InputLegacyModule.dll UnityEngine.TextRenderingModule.dll; do
-            cp "$(find /tmp/unity -name "$dll" | head -1)" deps/
+          for dll in UnityEngine.dll UnityEngine.CoreModule.dll UnityEngine.UIModule.dll UnityEngine.TextRenderingModule.dll UnityEngine.UI.dll; do
+            src="$(find /tmp/unity -name "$dll" | head -1)"
+            test -n "$src"
+            cp "$src" deps/
           done
           ls -lh deps
 
       - name: Compile MultiTCG
         run: dotnet build multitcg/src/MultiTCG.Core/MultiTCG.Core.csproj -c Release
 
-      - name: Assemble installable Phone Overhaul package
+      - name: Assemble native Phone Overhaul package
         shell: bash
         run: |
           set -euxo pipefail
@@ -49,73 +51,70 @@ jobs:
           cp multitcg/content/Data/*.mtcg "$ROOT/Data/"
 
           python3 - <<'PY'
-          from PIL import Image, ImageDraw, ImageFont
+          from PIL import Image, ImageDraw
           from pathlib import Path
           p=Path('build/package/BepInEx/plugins/Phone - Overhaul/App Images/MultiTCG/MultiTCG.png')
           p.parent.mkdir(parents=True, exist_ok=True)
-          im=Image.new('RGBA',(256,256),(22,24,30,255))
+          im=Image.new('RGBA',(256,256),(0,0,0,0))
           d=ImageDraw.Draw(im)
-          d.rounded_rectangle((16,16,240,240), radius=48, fill=(35,39,49,255), outline=(230,230,235,255), width=6)
-          d.rounded_rectangle((54,48,202,208), radius=18, outline=(230,230,235,255), width=5)
-          d.line((78,80,178,80), fill=(230,230,235,255), width=5)
-          d.line((78,110,178,110), fill=(230,230,235,255), width=5)
-          d.text((78,140),'MT',fill=(240,240,245,255),font=ImageFont.load_default())
+          d.rounded_rectangle((18,18,238,238), radius=52, fill=(30,33,42,255))
+          d.rounded_rectangle((55,43,201,213), radius=22, fill=(109,91,255,255))
+          d.rectangle((77,70,179,88), fill=(245,245,248,255))
+          d.rectangle((77,103,179,121), fill=(245,245,248,255))
+          d.rectangle((77,136,146,154), fill=(245,245,248,255))
           im.save(p)
           PY
 
           cat > "$ROOT/README-MultiTCG.txt" <<'EOF'
-          MultiTCG v0.2.0 - Phone build
-          ===============================
+          MultiTCG v0.3.0 - Native Phone UI
+          ==================================
 
-          WHAT THIS BUILD DOES
-          --------------------
-          - Adds a MultiTCG application to Phone - Overhaul when that mod is installed.
-          - F8 also opens/closes MultiTCG as a fallback.
-          - Provides Store, Collections and Language screens.
-          - Supports independent FR/EN/JP collection variants where a catalogue declares them.
-          - Includes a standalone booster/collection save under the game's persistent data path.
-          - Attempts to debit purchases through the game's own CEventPlayer_ReduceCoin event.
-          - Loads external .mtcg catalogue files from BepInEx/plugins/MultiTCG/Data.
-          - DOES NOT patch, replace, reskin or delete any Tetramon/base-game card.
-          - DOES NOT require Enhanced Prefab Loader.
+          CHANGES FROM v0.2
+          -----------------
+          - Removed the desktop/IMGUI window completely.
+          - Removed the F8 fallback completely.
+          - MultiTCG opens ONLY by tapping its Phone - Overhaul app icon.
+          - The app builds its UI as a child of the active Phone Overhaul screen/container,
+            so the content stays inside the smartphone instead of covering the game screen.
+          - Back button closes only the MultiTCG page and reveals the phone home screen again.
+          - Store, Collection and Language views remain available inside the phone app.
+          - No Enhanced Prefab Loader dependency.
+          - No Tetramon/base card replacement or patching.
 
           REQUIREMENTS
           ------------
-          Required: BepInEx 5.4.23.x (the game must already be modded with BepInEx).
-          Recommended: Phone - Overhaul 1.7.x. Without it, use F8.
+          - BepInEx 5.4.23.x
+          - Phone - Overhaul 1.7.x (required for this build)
 
           INSTALL
           -------
-          Extract this ZIP into the TCG Card Shop Simulator root folder and merge BepInEx.
-          If Phone - Overhaul is installed, the included app icon is placed in its App Images folder.
+          Delete/overwrite the previous BepInEx/plugins/MultiTCG folder, then extract this ZIP
+          into the TCG Card Shop Simulator root folder and merge BepInEx.
 
-          CURRENT TEST CATALOGUE
-          ----------------------
-          Text-only starter entries for Pokémon TCG, One Piece Card Game and Wankul are included
-          to validate navigation, languages, purchases, booster opening and separate collections.
-          No copyrighted card artwork is bundled in this test build.
+          TEST
+          ----
+          Open the in-game smartphone and tap MultiTCG. No separate desktop-style window should
+          appear. The MultiTCG page should occupy the phone screen while leaving the phone frame visible.
 
-          IMPORTANT
-          ---------
-          This v0.2 validates the self-contained MultiTCG + smartphone architecture. Physical
-          non-Tetramon cards/boxes placed in the 3D shop are a separate integration layer and are
-          intentionally not faked in this build.
+          If tapping the icon does nothing, send BepInEx/LogOutput.log. v0.3 logs the resolved phone
+          hierarchy so the container can be targeted exactly on your Phone Overhaul build.
           EOF
 
           test -f "$ROOT/MultiTCG.Core.dll"
           test -f "$ROOT/Data/starter_catalog.mtcg"
           test -f "$ICONDIR/MultiTCG.png"
+          ! grep -R "KeyCode.F8\|GUI.Window\|OnGUI" -n multitcg/src/MultiTCG.Core/MultiTcgPhoneNativePlugin.cs
           ! find build/package -type f | grep -qi 'prefabloader'
           ! find build/package -type f | grep -Eqi 'resources\.assets|sharedassets|Assembly-CSharp'
 
           cd build/package
-          zip -qr ../MultiTCG_v0.2.0.zip .
+          zip -qr ../MultiTCG_v0.3.0.zip .
           cd ..
-          unzip -l MultiTCG_v0.2.0.zip
-          sha256sum MultiTCG_v0.2.0.zip
+          unzip -l MultiTCG_v0.3.0.zip
+          sha256sum MultiTCG_v0.3.0.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: MultiTCG-v0.2.0
-          path: build/MultiTCG_v0.2.0.zip
+          name: MultiTCG-v0.3.0
+          path: build/MultiTCG_v0.3.0.zip
           if-no-files-found: error
