@@ -1,0 +1,154 @@
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'maven-publish'
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+}
+
+import groovy.json.JsonOutput
+
+group = 'fr.vox'
+version = '0.1.0'
+
+base {
+    archivesName = 'partialdestruction'
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(17)
+}
+
+minecraft {
+    mappings channel: 'official', version: '1.20.1'
+    copyIdeResources = true
+
+    runs {
+        client {
+            workingDirectory project.file('run')
+            property 'forge.logging.console.level', 'debug'
+            mods {
+                partialdestruction { source sourceSets.main }
+            }
+        }
+        server {
+            workingDirectory project.file('run-server')
+            property 'forge.logging.console.level', 'debug'
+            mods {
+                partialdestruction { source sourceSets.main }
+            }
+        }
+    }
+}
+
+repositories {
+}
+
+dependencies {
+    minecraft 'net.minecraftforge:forge:1.20.1-47.4.10'
+}
+
+sourceSets.main.resources.srcDir layout.buildDirectory.dir('generated-resources')
+
+def generatedDir = layout.buildDirectory.dir('generated-resources')
+
+tasks.register('generatePartialDestructionResources') {
+    outputs.dir generatedDir
+    doLast {
+        File root = generatedDir.get().asFile
+        File blockstates = new File(root, 'assets/partialdestruction/blockstates')
+        File models = new File(root, 'assets/partialdestruction/models/block')
+        blockstates.mkdirs()
+        models.mkdirs()
+
+        def variants = [:]
+        def rotations = [
+            north: [x: 0, y: 0],
+            east : [x: 0, y: 90],
+            south: [x: 0, y: 180],
+            west : [x: 0, y: 270],
+            up   : [x: 270, y: 0],
+            down : [x: 90, y: 0]
+        ]
+        rotations.each { face, rot ->
+            (1..7).each { stage ->
+                variants["face=${face},stage=${stage}"] = [
+                    model: "partialdestruction:block/partial_${stage}",
+                    x: rot.x,
+                    y: rot.y,
+                    uvlock: true
+                ]
+            }
+        }
+        new File(blockstates, 'partial_block.json').text = JsonOutput.prettyPrint(JsonOutput.toJson([variants: variants]))
+
+        def encode = { int x, int y, int z -> x * 16 + y * 4 + z }
+        def score = { int x, int y, int z ->
+            // Base models are carved from the NORTH side (z = 0).
+            double cx = (x + 0.5d) / 4.0d
+            double cy = (y + 0.5d) / 4.0d
+            int depth = z
+            double radial = (cx - 0.5d) * (cx - 0.5d) + (cy - 0.5d) * (cy - 0.5d)
+            return depth * 100.0d + radial * 10.0d + (x + y + z) * 0.001d
+        }
+
+        def all = []
+        (0..3).each { x -> (0..3).each { y -> (0..3).each { z -> all << [x:x, y:y, z:z] } } }
+        all.sort { a, b -> score(a.x,a.y,a.z) <=> score(b.x,b.y,b.z) }
+
+        (1..7).each { stage ->
+            Set removed = all.take(stage * 8).collect { encode(it.x,it.y,it.z) } as Set
+            def elements = []
+            (0..3).each { x ->
+                (0..3).each { y ->
+                    (0..3).each { z ->
+                        if (!removed.contains(encode(x,y,z))) {
+                            def faces = [:]
+                            def neighbors = [
+                                north:[0,0,-1], south:[0,0,1], west:[-1,0,0], east:[1,0,0], down:[0,-1,0], up:[0,1,0]
+                            ]
+                            neighbors.each { dir, d ->
+                                int nx = x + d[0]
+                                int ny = y + d[1]
+                                int nz = z + d[2]
+                                boolean outside = nx < 0 || nx > 3 || ny < 0 || ny > 3 || nz < 0 || nz > 3
+                                if (outside || removed.contains(encode(nx,ny,nz))) {
+                                    faces[dir] = [texture:'#all']
+                                }
+                            }
+                            elements << [
+                                from:[x*4, y*4, z*4],
+                                to:[(x+1)*4, (y+1)*4, (z+1)*4],
+                                shade:true,
+                                faces:faces
+                            ]
+                        }
+                    }
+                }
+            }
+            def model = [
+                ambientocclusion:true,
+                textures:[all:'minecraft:block/stone', particle:'minecraft:block/stone'],
+                elements:elements
+            ]
+            new File(models, "partial_${stage}.json").text = JsonOutput.prettyPrint(JsonOutput.toJson(model))
+        }
+    }
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    dependsOn tasks.named('generatePartialDestructionResources')
+}
+
+tasks.named('jar', Jar).configure {
+    manifest {
+        attributes([
+            'Specification-Title'     : 'Partial Destruction',
+            'Specification-Vendor'    : 'VOX',
+            'Specification-Version'   : '1',
+            'Implementation-Title'    : project.name,
+            'Implementation-Version'  : project.jar.archiveVersion,
+            'Implementation-Vendor'   : 'VOX'
+        ])
+    }
+    finalizedBy 'reobfJar'
+}
