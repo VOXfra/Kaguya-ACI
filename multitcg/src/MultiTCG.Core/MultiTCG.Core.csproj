@@ -8,6 +8,9 @@
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="MultiTcgCorePlugin.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <Reference Include="BepInEx">
       <HintPath>../../../deps/BepInEx.dll</HintPath>
       <Private>false</Private>
@@ -20,16 +23,16 @@
       <HintPath>../../../deps/UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <Reference Include="UnityEngine.IMGUIModule">
-      <HintPath>../../../deps/UnityEngine.IMGUIModule.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="UnityEngine.InputLegacyModule">
-      <HintPath>../../../deps/UnityEngine.InputLegacyModule.dll</HintPath>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>../../../deps/UnityEngine.UIModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.TextRenderingModule">
       <HintPath>../../../deps/UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>../../../deps/UnityEngine.UI.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
