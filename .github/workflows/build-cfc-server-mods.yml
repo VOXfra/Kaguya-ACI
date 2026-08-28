@@ -1,0 +1,103 @@
+name: Build CFC Server Mods
+
+on:
+  push:
+    branches:
+      - cfc-pack-build
+    paths:
+      - '.github/workflows/build-cfc-server-mods.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download server mods
+        run: |
+          mkdir -p mods
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/lhGA9TYQ/versions/1MKTLiiG/architectury-9.2.14-forge.jar -o mods/architectury-9.2.14-forge.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/Bh6ZOMvp/versions/Pg7m0oCv/smarterfarmers-1.20-2.1.2.jar -o mods/smarterfarmers-1.20-2.1.2.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/LNytGWDc/versions/8amzvn9x/create-1.20.1-6.0.8.jar -o mods/create-1.20.1-6.0.8.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/KSwrk5EA/versions/VWJubf2M/cfc-0.3.1.jar -o mods/cfc-0.3.1.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/u6dRKJwZ/versions/zzpNSbJZ/jei-1.20.1-forge-15.20.0.116.jar -o mods/jei-1.20.1-forge-15.20.0.116.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/OsZiaDHq/versions/m9VEcxwz/CreativeCore_FORGE_v2.12.39_mc1.20.1.jar -o mods/CreativeCore_FORGE_v2.12.39_mc1.20.1.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/Dh6v8Snj/versions/LfzWNsMD/woodencog-1.2.10-1.20.1.jar -o mods/woodencog-1.2.10-1.20.1.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/PhnM3Lkv/versions/PA25BnBO/Sacks%20%27N%20Such-1.20.1-1.2.4.jar -o 'mods/Sacks '"'"'N Such-1.20.1-1.2.4.jar'
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/ZELi9Nbx/versions/VTGPKRxl/tfccanes-2.1.2.jar -o mods/tfccanes-2.1.2.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/ZM3tt6p1/versions/1dUfq2IK/createdieselgenerators-1.20.1-1.3.5.jar -o mods/createdieselgenerators-1.20.1-1.3.5.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/WrpuIfhw/versions/7fc0hJN6/corpse-forge-1.20.1-1.0.23.jar -o mods/corpse-forge-1.20.1-1.0.23.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/JaCEZUhg/versions/tzI7ngJN/TerraFirmaCraft-Forge-1.20.1-3.2.19.jar -o mods/TerraFirmaCraft-Forge-1.20.1-3.2.19.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/T38eAZQC/versions/5vppyenb/kubejs-create-forge-2001.3.0-build.8.jar -o mods/kubejs-create-forge-2001.3.0-build.8.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/umyGl7zF/versions/g5igndAv/kubejs-forge-2001.6.5-build.16.jar -o mods/kubejs-forge-2001.6.5-build.16.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/5bKeBHw2/versions/eaGYPROS/Firmalife-1.20.1-2.1.24.jar -o mods/Firmalife-1.20.1-2.1.24.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/zrzYrlm0/versions/pM1sxjGG/spawnanimations-v1.11.2-mc1.17-1.21.10-mod.jar -o mods/spawnanimations-v1.11.2-mc1.17-1.21.10-mod.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/D157Rgyf/versions/iv3Hdpa6/lexiconfig-forge-1.4.18-1.jar -o mods/lexiconfig-forge-1.4.18-1.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/9s6osm5g/versions/t8TXrZvZ/cloth-config-11.1.136-forge.jar -o mods/cloth-config-11.1.136-forge.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/jJfV67b1/versions/lTAAe4sZ/citadel-2.6.3-1.20.1.jar -o mods/citadel-2.6.3-1.20.1.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/ONgsGaM9/versions/ohy689Kk/waterflasks-3.0.10.jar -o mods/waterflasks-3.0.10.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/wcXLQVhg/versions/vYF9TsDY/crawlondemand-1.20-1.20.1-1.3.0%2Bforge.jar -o mods/crawlondemand-1.20-1.20.1-1.3.0+forge.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/6iTJugQR/versions/nJORWvdh/amendments-1.20-2.2.6.jar -o mods/amendments-1.20-2.2.6.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/EsAfCjCV/versions/XdXDExVF/appleskin-forge-mc1.20.1-2.5.1.jar -o mods/appleskin-forge-mc1.20.1-2.5.1.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/u58R1TMW/versions/1MQDrKN7/Connector-1.0.0-beta.49%2B1.20.1.jar -o mods/Connector-1.0.0-beta.49+1.20.1.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/S7b8mMXS/versions/YNYTaait/simpleradio-forge-1.20.1-3.4.6.jar -o mods/simpleradio-forge-1.20.1-3.4.6.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/6o49a8Vz/versions/NCjI8fvd/FirmaCivilization-1.20.1-1.0.9.jar -o mods/FirmaCivilization-1.20.1-1.0.9.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/Aqlf1Shp/versions/g0MxcWXy/fabric-api-0.92.6%2B1.11.15%2B1.20.1.jar -o mods/fabric-api-0.92.6+1.11.15+1.20.1.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/fFEIiSDQ/versions/S0TIJ1hU/supplementaries-1.20-3.1.43-forge.jar -o mods/supplementaries-1.20-3.1.43-forge.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/nU0bVIaL/versions/8Qyw08ld/Patchouli-1.20.1-84.1-FORGE.jar -o mods/Patchouli-1.20.1-84.1-FORGE.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/mo64mR1W/versions/KsTniWUD/morejs-forge-1.20.1-0.10.1.jar -o mods/morejs-forge-1.20.1-0.10.1.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/7ETmpdgC/versions/UuXfR7kU/TFCDesirePaths-1.20.1-1.3.jar -o mods/TFCDesirePaths-1.20.1-1.3.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/CfBPXHvv/versions/mEeItafC/opacbonusclaims-1.2.0-1.20.1.jar -o mods/opacbonusclaims-1.2.0-1.20.1.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/p06DPXOV/versions/Eq7rlKJL/dfc-0.8.1.jar -o mods/dfc-0.8.1.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/qQpWCN75/versions/eeLBdNBF/xercamusic-1.20.1-1.0.2.jar -o mods/xercamusic-1.20.1-1.0.2.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/R2OftAxM/versions/UiX0eEUW/FarmersDelight-1.20.1-1.3.3.jar -o mods/FarmersDelight-1.20.1-1.3.3.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/mnLFouB0/versions/p3r1QBKd/astikorcarts-1.20.1-1.1.8.jar -o mods/astikorcarts-1.20.1-1.1.8.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/WYvV2Kci/versions/wSasbQOH/TFCCaelum-1.20.1-1.2.jar -o mods/TFCCaelum-1.20.1-1.2.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/cQPcBgTD/versions/vRv24IE6/alexsmobsinteraction-6.0-all.jar -o mods/alexsmobsinteraction-6.0-all.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/Zh7v8m6u/versions/n1f1ARi7/TFCRegrowingForests-1.20.1-2.1.jar -o mods/TFCRegrowingForests-1.20.1-2.1.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/J81TRJWm/versions/skYziQQL/konkrete_forge_1.8.0_MC_1.20-1.20.1.jar -o mods/konkrete_forge_1.8.0_MC_1.20-1.20.1.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/vvuO3ImH/versions/IPQlZkz1/curios-forge-5.14.1%2B1.20.1.jar -o mods/curios-forge-5.14.1+1.20.1.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/6fOyWxrE/versions/5c1Fc17J/TFCHotOrNot-1.20.1-1.0.13.jar -o mods/TFCHotOrNot-1.20.1-1.0.13.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/rLLJ1OZM/versions/6rPDKAT8/coroutil-forge-1.20.1-1.3.7.jar -o mods/coroutil-forge-1.20.1-1.3.7.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/xuDOzCLy/versions/l9IrZYLt/JadeAddons-1.20.1-Forge-5.5.1.jar -o mods/JadeAddons-1.20.1-Forge-5.5.1.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/6txNkua3/versions/DYpJU8lA/immersive_paintings-0.6.13%2B1.20.1-forge.jar -o mods/immersive_paintings-0.6.13+1.20.1-forge.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/2cMuAZAp/versions/XoIASRVU/alexsmobs-1.22.9.jar -o mods/alexsmobs-1.22.9.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/qyVF9oeo/versions/qeWNOzYk/sound-physics-remastered-forge-1.20.1-1.4.10.jar -o mods/sound-physics-remastered-forge-1.20.1-1.4.10.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/mhtClB2S/versions/MjZPkQtU/kubejs_tfc-1.20.1-1.1.3.jar -o mods/kubejs_tfc-1.20.1-1.1.3.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/6AJNcGU2/versions/ekJO4GUI/ChiselsBitsTFC-1.0.0-forge-1.20.1.jar -o mods/ChiselsBitsTFC-1.0.0-forge-1.20.1.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/gF3BGWvG/versions/3HgfsZeU/open-parties-and-claims-forge-1.20.1-0.25.6.jar -o mods/open-parties-and-claims-forge-1.20.1-0.25.6.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/vuNeeDyl/versions/VX4fjmf1/alekiNiftyShips-FORGE-1.20.1-1.0.14.jar -o mods/alekiNiftyShips-FORGE-1.20.1-1.0.14.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/zg2tT2Vu/versions/s7gFqeVL/gml-4.0.10-all.jar -o mods/gml-4.0.10-all.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/Jdbbtt0i/versions/wjKJbg4D/CreateNumismatics-1.0.15%2Bforge-mc1.20.1.jar -o 'mods/CreateNumismatics-1.0.15+forge-mc1.20.1 (1).jar'
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/4hwXMFif/versions/9Q9Ec6TM/map_atlases-1.20-6.0.17.jar -o mods/map_atlases-1.20-6.0.17.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/9J0ZbWyM/versions/45lrHx4I/firmasupps-1.3.1.jar -o mods/firmasupps-1.3.1.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/WXhDTEXL/versions/GDjt10B2/FarmersDelightTFC-1.0.6-forge-1.20.1.jar -o mods/FarmersDelightTFC-1.0.6-forge-1.20.1.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/NRjRiSSD/versions/3w0IxNtk/memoryleakfix-forge-1.17%2B-1.1.5.jar -o mods/memoryleakfix-forge-1.17+-1.1.5.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/9eGKb6K1/versions/ppDpEP1j/voicechat-forge-1.20.1-2.6.6.jar -o mods/voicechat-forge-1.20.1-2.6.6.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/ca9X1Phr/versions/Y0yuTr8v/rnr-0.2.5-1.20.1.jar -o mods/rnr-0.2.5-1.20.1.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/Q7dNt3PU/versions/UVsPFqtl/TFCAstikorCarts-1.20.1-1.1.8.3.jar -o mods/TFCAstikorCarts-1.20.1-1.1.8.3.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/K7eNiRnX/versions/dSotPtx8/tfcambiental-1.20.1-3.4.0.jar -o mods/tfcambiental-1.20.1-3.4.0.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/zLNixZZC/versions/fk7c0BTO/artisanal-1.7.5.jar -o mods/artisanal-1.7.5.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/sk9knFPE/versions/uNALdylI/rhino-forge-2001.2.3-build.10.jar -o mods/rhino-forge-2001.2.3-build.10.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/wbgfS34j/versions/lSiHA1qU/FramedBlocks-9.4.3.jar -o mods/FramedBlocks-9.4.3.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/nmDcB62a/versions/CixO1IdG/modernfix-forge-5.24.4%2Bmc1.20.1.jar -o mods/modernfix-forge-5.24.4+mc1.20.1.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/rQG4GU1V/versions/egVcVZO3/TFCVolcanoes-1.20.1-1.3.16.jar -o mods/TFCVolcanoes-1.20.1-1.3.16.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/ordsPcFz/versions/Zsh14XeQ/kotlinforforge-4.12.0-all.jar -o mods/kotlinforforge-4.12.0-all.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/9q4wtMjp/versions/pxyePina/afc-1.0.23-1.20.1.jar -o mods/afc-1.0.23-1.20.1.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/uXXizFIs/versions/DG5Fn9Sz/ferritecore-6.0.1-forge.jar -o mods/ferritecore-6.0.1-forge.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/nvQzSEkH/versions/xJQHCmWJ/Jade-1.20.1-Forge-11.13.3.jar -o mods/Jade-1.20.1-Forge-11.13.3.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/twkfQtEc/versions/43kjMXMx/moonlight-1.20-2.16.34-forge.jar -o mods/moonlight-1.20-2.16.34-forge.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/AtB5mHky/versions/GpiXMxvP/watut-forge-1.20.1-1.2.3.jar -o mods/watut-forge-1.20.1-1.2.3.jar
+          curl -fL --retry 4 --retry-delay 2 https://cdn.modrinth.com/data/YOs4tZea/versions/Ia6GOvCO/xercapaint-1.20.1-1.0.1.jar -o mods/xercapaint-1.20.1-1.0.1.jar
+      - name: Verify count
+        run: |
+          echo "Downloaded $(find mods -type f -name '*.jar' | wc -l) jars"
+          test "$(find mods -type f -name '*.jar' | wc -l)" -eq 73
+      - name: Upload server mods
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfc-server-mods
+          path: mods/
+          compression-level: 0
