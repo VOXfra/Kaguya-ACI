@@ -1,0 +1,29 @@
+name: Fetch CFC Mods
+
+on:
+  push:
+    branches:
+      - cfc-pack-build
+    paths:
+      - '.github/workflows/fetch-cfc-mods.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download mods
+        run: |
+          mkdir -p out
+          curl -fL 'https://cdn.modrinth.com/data/KpICtuVx/versions/DyzZZhxQ/incontrol-1.20-9.4.6.jar' -o out/incontrol-1.20-9.4.6.jar
+          curl -fL 'https://cdn.modrinth.com/data/OuyCgP8t/versions/Zh7HJ29w/ItemPhysicLite_FORGE_v1.6.11_mc1.20.1.jar' -o out/ItemPhysicLite_FORGE_v1.6.11_mc1.20.1.jar
+          sha1sum out/*
+          sha512sum out/*
+      - name: Upload mods
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfc-extra-mods
+          path: out/*.jar
