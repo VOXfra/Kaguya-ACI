@@ -1,0 +1,27 @@
+name: Fetch Power Grid
+
+on:
+  push:
+    branches:
+      - cfc-pack-build
+    paths:
+      - '.github/workflows/fetch-power-grid.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Power Grid
+        run: |
+          mkdir -p out
+          curl -fL 'https://www.curseforge.com/api/v1/mods/1321420/files/8738573/download' -o out/powergrid-mc1.20.1-0.6.1.jar
+          sha256sum out/powergrid-mc1.20.1-0.6.1.jar
+      - name: Upload Power Grid
+        uses: actions/upload-artifact@v4
+        with:
+          name: power-grid-0.6.1-forge-1.20.1
+          path: out/powergrid-mc1.20.1-0.6.1.jar
