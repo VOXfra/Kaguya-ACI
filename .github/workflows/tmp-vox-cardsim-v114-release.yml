@@ -1,0 +1,267 @@
+name: VOX CardSim V1.2.0 Consolidated Integrity
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'cardsim-v03/**'
+      - '.github/workflows/tmp-vox-cardsim-v114-release.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The complete 1.1.6 catalog is a signed, already validated release artifact.
+      # Using it as the immutable French baseline makes 1.2.0 reproducible even
+      # when api.tcgdex.net is temporarily unreachable from GitHub runners.
+      - name: Restore validated V1.1.6 catalog baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: VOX-CardSim-v1.1.6-audited-collation
+          path: ${{ runner.temp }}/v116baseline
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 32521286548
+
+      - name: Generate and validate V1.2.0 data
+        shell: bash
+        run: |
+          set -euo pipefail
+          A=cardsim-v03/app/src/main/assets
+          BASEAPK="$RUNNER_TEMP/v116baseline/VOX_CardSim_v1.1.6.apk"
+          test -s "$BASEAPK"
+          mkdir -p "$A/img" "$A/img/v109" "$A/img/v109/me05_cards"
+          rm -rf "$A/catalog/fr" "$A/img/v115/products" "$A/img/v117/energy" "$A/img/v120"
+
+          # Extract only generated data/assets. Runtime source files remain those
+          # from the current 1.2.0 branch and are never overwritten by the old APK.
+          TMPBASE="$RUNNER_TEMP/v116assets"
+          rm -rf "$TMPBASE" && mkdir -p "$TMPBASE"
+          unzip -oq "$BASEAPK" \
+            'assets/catalog/fr/*' \
+            'assets/v111_collection_index.json' 'assets/v111_collection_index.js' 'assets/v111_import_report.json' \
+            'assets/v115_sealed_catalog.json' 'assets/v115_sealed_catalog.js' \
+            'assets/eevee_heroes.json' 'assets/eevee_heroes_embed.js' \
+            'assets/standard_sets_embed.js' 'assets/master_variants_embed.js' 'assets/pitch_black_embed.js' \
+            'assets/v105_catalog.json' 'assets/v105_catalog_embed.js' \
+            'assets/img/v109/*' 'assets/img/v115/products/*' \
+            -d "$TMPBASE"
+          cp -a "$TMPBASE/assets/catalog" "$A/"
+          for f in v111_collection_index.json v111_collection_index.js v111_import_report.json \
+                   v115_sealed_catalog.json v115_sealed_catalog.js \
+                   eevee_heroes.json eevee_heroes_embed.js standard_sets_embed.js master_variants_embed.js pitch_black_embed.js \
+                   v105_catalog.json v105_catalog_embed.js; do
+            cp "$TMPBASE/assets/$f" "$A/$f"
+          done
+          mkdir -p "$A/img/v109" "$A/img/v115/products"
+          cp -a "$TMPBASE/assets/img/v109/." "$A/img/v109/"
+          cp -a "$TMPBASE/assets/img/v115/products/." "$A/img/v115/products/"
+
+          # 1.2.0 no longer depends on a live TCGdex rebuild. It cross-checks the
+          # validated FR baseline against independent public data below.
+          python cardsim-v03/tools/fetch_v117_energy_assets.py
+          python cardsim-v03/tools/finalize_v117_products.py
+          python cardsim-v03/tools/finalize_v117_binders.py
+
+          # Cross-source integrity: exact historical rarities / missing cards,
+          # high-resolution TCGplayer wrapper art and strict product confidence.
+          python cardsim-v03/tools/finalize_v120_integrity.py
+          python cardsim-v03/tools/finalize_v117_binders.py
+
+          # Collation is regenerated after rarity enrichment so Base/Jungle/Fossil
+          # get distinct Rare and Rare Holo pools.
+          python cardsim-v03/tools/generate_v116_collation_profiles.py
+          python cardsim-v03/tools/test_v116_collation_profiles.py
+          node cardsim-v03/tools/test_v116_collation_runtime.js
+
+          for f in "$A"/*.js; do node --check "$f"; done
+          python -m py_compile \
+            cardsim-v03/tools/import_all_collections.py \
+            cardsim-v03/tools/import_all_collections_release.py \
+            cardsim-v03/tools/import_physical_collections_release.py \
+            cardsim-v03/tools/import_physical_collections_v117.py \
+            cardsim-v03/tools/import_verified_sealed_products.py \
+            cardsim-v03/tools/import_verified_sealed_products_v117.py \
+            cardsim-v03/tools/finalize_v117_products.py \
+            cardsim-v03/tools/finalize_v117_binders.py \
+            cardsim-v03/tools/finalize_v120_integrity.py \
+            cardsim-v03/tools/fetch_v117_energy_assets.py \
+            cardsim-v03/tools/fetch_release_assets.py \
+            cardsim-v03/tools/generate_v116_collation_profiles.py \
+            cardsim-v03/tools/test_v116_collation_profiles.py
+
+          python - <<'PY'
+          import json,re
+          from pathlib import Path
+          a=Path('cardsim-v03/app/src/main/assets')
+          idx=json.loads((a/'v111_collection_index.json').read_text(encoding='utf-8'))
+          sets=idx['sets']; s=idx['stats']; by_id={x['id']:x for x in sets}; ids=set(by_id)
+          assert idx['schema']==111 and idx['language']=='fr',idx
+          assert s['failed']==0 and s['imported']==s['discovered']==len(sets),s
+          assert len(sets)>=180 and all(x.get('seriesId')!='tcgp' for x in sets)
+          for required in ['base1','base2','base3','base5','neo1','sm8','swsh10','sv03.5','me02.5','me03','me04','me05']:
+              assert required in ids,required
+          assert 'A1' not in ids and 'P-A' not in ids
+          assert int(s.get('v120ExternalSets') or 0)>=40,s
+          assert int(s.get('v120RarityUpgrades') or 0)>0,s
+          for x in sets:
+              p=a/'catalog'/'fr'/x['file'];assert p.is_file() and p.stat().st_size>40,(x['id'],p)
+              d=json.loads(p.read_text(encoding='utf-8'))
+              assert d.get('set',{}).get('id')==x['id'],x['id']
+              assert len(d.get('cards') or [])==int(x.get('cards') or 0)==int(x.get('total') or 0),x['id']
+          assert len(list((a/'catalog'/'fr').glob('*.json')))==len(sets)
+
+          # 1999 regression contracts.
+          for sid in ['base1','base2','base3']:
+              d=json.loads((a/'catalog'/'fr'/by_id[sid]['file']).read_text(encoding='utf-8'))
+              assert len(d.get('cards') or [])>40,(sid,len(d.get('cards') or []))
+              assert int(by_id[sid].get('missingScans') or 0)==0,(sid,by_id[sid].get('missingScans'))
+          base=json.loads((a/'catalog'/'fr'/by_id['base1']['file']).read_text(encoding='utf-8'))
+          rar=[str(c.get('rarityRaw') or '') for c in base['cards']]
+          assert sum('Rare Holo' in r for r in rar)>=15, sum('Rare Holo' in r for r in rar)
+          assert sum(r=='Rare' for r in rar)>=10, sum(r=='Rare' for r in rar)
+
+          # Local energy prints by era, never global SVE artwork.
+          energy=[p for p in (a/'img'/'v117'/'energy').rglob('*') if p.is_file()]
+          assert len(energy)==57,len(energy)
+          assert (a/'v117_energy_catalog.js').is_file()
+          assert all(p.stat().st_size>12000 for p in energy)
+          for folder,count in [('sm',9),('swsh_2020',8),('swsh_2022',8),('sv_2023',8),('sv_2024',8),('sv_2025',8),('me',8)]:
+              assert len([p for p in (a/'img'/'v117'/'energy'/folder).glob('*') if p.is_file()])==count,folder
+
+          sealed=json.loads((a/'v115_sealed_catalog.json').read_text(encoding='utf-8'))
+          ss=sealed['stats']; products=[p for rows in sealed['sets'].values() for p in rows]
+          assert sealed['schema']==115 and sealed.get('v120Finalized') is True,sealed.keys()
+          assert ss['canonicalBoosterSets']>=90,ss
+          assert ss['boosterArtworks']>=ss['canonicalBoosterSets'],ss
+          assert ss['v120HdBoosterSets']>=50,ss
+          assert ss.get('usableBinderProducts',0)>=5,ss
+          assert ss.get('v120ShopVerifiedProducts',0)>0,ss
+          assert not any('pack créatif' in str(p.get('name','')).casefold() for p in products)
+          assert not any(re.search(r'illustration\s+\d+',str(p.get('name','')),re.I) for p in products)
+          for sid,rows in sealed['sets'].items():
+              loose=[p for p in rows if p.get('mode')=='loose']
+              assert len(loose)<=1,(sid,len(loose))
+              if loose:
+                  p=loose[0];assert p.get('v117CanonicalBooster') and p.get('opens')==1 and p.get('verifiedContents') is True,p
+                  assert p.get('artworks'),(sid,p)
+                  for img in p['artworks']:assert (a/img).is_file(),(sid,img)
+          assert any(p.get('contentKind')=='binder' and p.get('v117UsableBinder') for p in products)
+
+          col=json.loads((a/'v116_collation_profiles.json').read_text(encoding='utf-8'))
+          assert col['schema']==116 and len(col.get('sets') or {})>=90,col.get('stats')
+          for sid in ['base1','ecard1','ex1','dp1','hgss1','bw1','xy1','sm1','swsh1','sv01','me01','me05','det1','cel25']:
+              assert sid in col['sets'],sid
+
+          text=(a/'pitch_black_embed.js').read_text(encoding='utf-8')
+          m=re.search(r'window\.V090_PITCH_BLACK_DATA=(.*);\s*$',text,re.S);assert m
+          cards=json.loads(m.group(1))['cards'];assert len(cards)==120
+          assert [int(c['localId']) for c in cards if c.get('v109BundledFrenchScan')]==list(range(75,90))
+          print('Physical catalog:',s,'sets=',len(sets))
+          print('V1.2 products:',ss)
+          print('Collation:',col.get('stats'))
+          PY
+
+          test -s "$A/img/missing-card.svg"
+          grep -q 'versionCode = 44' cardsim-v03/app/build.gradle.kts
+          grep -q 'versionName = "1.2.0"' cardsim-v03/app/build.gradle.kts
+          grep -q "V120_VERSION='1.2.0'" "$A/v120fix.js"
+          grep -q 'v117_energy_catalog.js' "$A/v111boot.js"
+          grep -q 'v117energyfix.js' "$A/v111boot.js"
+          grep -q 'v117finalfix.js' "$A/v111boot.js"
+          grep -q 'v120fix.js' "$A/v111boot.js"
+          grep -q 'v117-storage-binder-' "$A/v117fix.js"
+          grep -q 'v115_sealed_catalog.js' "$A/index.html"
+          grep -q 'readCatalogFile' cardsim-v03/app/src/main/java/com/vox/cardsim/OfflineQueueBridge.java
+          grep -q 'WorkManager' cardsim-v03/app/src/main/java/com/vox/cardsim/OfflineQueueBridge.java
+
+      - name: Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          S="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$S"
+          if [ ! -d "$ANDROID_HOME/platforms/android-35" ] || [ ! -d "$ANDROID_HOME/build-tools/35.0.0" ]; then
+            yes | "$S" --licenses >/dev/null || true
+            "$S" 'platforms;android-35' 'build-tools;35.0.0'
+          fi
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+          cache-read-only: true
+          cache-cleanup: on-success
+
+      - name: Clean release build without Gradle cache
+        working-directory: cardsim-v03
+        run: |
+          rm -rf app/build .gradle
+          gradle clean :app:assembleRelease --no-daemon --no-build-cache --rerun-tasks
+
+      - name: Inspect unsigned APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=cardsim-v03/app/build/outputs/apk/release/app-release-unsigned.apk
+          test -s "$APK"
+          for f in v111boot.js v111catalogfix.js v112fix.js v113fix.js v114fix.js v115fix.js v115_sealed_catalog.js v115_sealed_catalog.json \
+            v116fix.js v116hotfix.js v116_collation_profiles.js v116_collation_profiles.json \
+            v117_energy_catalog.js v117fix.js v117energyfix.js v117finalfix.js v120fix.js v111_collection_index.js v111_collection_index.json; do
+            unzip -l "$APK" | grep -q "assets/$f"
+          done
+          unzip -p "$APK" assets/v120fix.js | grep -q "V120_VERSION='1.2.0'"
+          unzip -p "$APK" assets/v115_sealed_catalog.json | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("v120Finalized") is True; assert d["stats"]["canonicalBoosterSets"]>=90; assert d["stats"]["v120HdBoosterSets"]>=50'
+          EXPECTED=$(unzip -p "$APK" assets/v111_collection_index.json | python -c 'import json,sys; print(len(json.load(sys.stdin)["sets"]))')
+          COUNT=$(unzip -l "$APK" | grep -c 'assets/catalog/fr/.*\.json')
+          test "$COUNT" -eq "$EXPECTED"
+          for f in base1.json base2.json base3.json; do unzip -l "$APK" | grep -q "assets/catalog/fr/$f"; done
+          test "$(unzip -l "$APK" | grep -c 'assets/img/v109/me05_cards/')" -eq 15
+          test "$(unzip -l "$APK" | grep -c 'assets/img/v117/energy/')" -eq 57
+          test "$(unzip -l "$APK" | grep -c 'assets/img/v120/boosters/')" -ge 50
+
+      - name: Restore permanent signing key
+        uses: actions/download-artifact@v4
+        with:
+          name: VOX-CardSim-signing-key-v04-baseline
+          path: ${{ runner.temp }}/signing
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 32137945543
+
+      - name: Sign and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          SP="$(sed -n 's/^Store password: //p' "$RUNNER_TEMP/signing/signing-info.txt")"
+          KP="$(sed -n 's/^Key password: //p' "$RUNNER_TEMP/signing/signing-info.txt")"
+          OUT="$RUNNER_TEMP/VOX_CardSim_v1.2.0.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+            --ks "$RUNNER_TEMP/signing/vox-cardsim-release.jks" \
+            --ks-key-alias vox-cardsim \
+            --ks-pass "pass:$SP" \
+            --key-pass "pass:$KP" \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+            --out "$OUT" cardsim-v03/app/build/outputs/apk/release/app-release-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$OUT"
+          sha256sum "$OUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VOX-CardSim-v1.2.0-consolidated-integrity
+          path: ${{ runner.temp }}/VOX_CardSim_v1.2.0.apk
+          if-no-files-found: error

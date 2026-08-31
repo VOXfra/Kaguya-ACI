@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "157376631096",
+    "project_id": "vox-card-sim",
+    "storage_bucket": "vox-card-sim.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:157376631096:android:d23a4e5aadd227f674f1cd",
+        "android_client_info": {
+          "package_name": "com.vox.cardsim"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "157376631096-j1be27ric428evas0ikh8o34ephng2ok.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.vox.cardsim",
+            "certificate_hash": "9dcb28bb08bfca8009941cfaba150a13d95be833"
+          }
+        },
+        {
+          "client_id": "157376631096-arkjmf7marve06aca33shndp82oeb4ta.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDEHf9VrnmOcDdFXCKElhx6QClwrXPzskg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "157376631096-arkjmf7marve06aca33shndp82oeb4ta.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
