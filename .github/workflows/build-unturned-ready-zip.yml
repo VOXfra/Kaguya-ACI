@@ -1,0 +1,112 @@
+name: Build Unturned Ready ZIP
+
+on:
+  push:
+    branches:
+      - unturned-graphics-overhaul
+    paths:
+      - "Unturned/**"
+      - ".github/workflows/build-unturned-ready-zip.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Kaguya-ACI
+        uses: actions/checkout@v4
+
+      - name: Lire la baseline officielle
+        id: lock
+        shell: bash
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          with open('Unturned/upstream.lock.json', encoding='utf-8') as f:
+              d = json.load(f)
+          print('repo=' + d['repository'])
+          print('commit=' + d['commit'])
+          print('unity=' + d['unity_version'])
+          PY
+
+      - name: Cloner U3-SDK au commit verrouillé
+        shell: bash
+        run: |
+          git clone "${{ steps.lock.outputs.repo }}" package/Unturned-VOX
+          cd package/Unturned-VOX
+          git checkout "${{ steps.lock.outputs.commit }}"
+
+      - name: Appliquer les patches VOX
+        shell: bash
+        run: |
+          cd package/Unturned-VOX
+          for patch in ../../Unturned/patches/*.patch; do
+            [ -e "$patch" ] || continue
+            echo "Application: $patch"
+            git apply --check "$patch"
+            git apply "$patch"
+          done
+
+      - name: Appliquer l'overlay VOX
+        shell: bash
+        run: |
+          if [ -d Unturned/overlay ]; then
+            cp -a Unturned/overlay/. package/Unturned-VOX/
+          fi
+
+      - name: Valider le package HDRP
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          p='package/Unturned-VOX/Packages/manifest.json'
+          with open(p, encoding='utf-8') as f:
+              d=json.load(f)
+          version=d['dependencies'].get('com.unity.render-pipelines.high-definition')
+          assert version == '14.0.12', f'HDRP inattendu: {version!r}'
+          print('HDRP:', version)
+          PY
+          grep -q 'm_EditorVersion: 2022.3.62f3' package/Unturned-VOX/ProjectSettings/ProjectVersion.txt
+          test -f package/Unturned-VOX/Assets/GameStartup.unity
+
+      - name: Nettoyer les métadonnées Git
+        shell: bash
+        run: |
+          rm -rf package/Unturned-VOX/.git
+          cat > package/START_HERE.txt <<'EOF'
+          UNTURNED VOX - PREMIER TEST HDRP
+          =================================
+
+          1. Extraire le ZIP dans un dossier simple (exemple: D:\Unturned-VOX).
+          2. Installer Unity 2022.3.62f3 dans Unity Hub si nécessaire.
+          3. Dans Unity Hub: Add / Open -> sélectionner le dossier "Unturned-VOX".
+          4. Laisser Unity importer les packages et compiler.
+          5. Ouvrir Assets/GameStartup.unity.
+          6. Regarder la Console Unity et lancer Play si la compilation termine.
+
+          Ce premier package sert uniquement à vérifier que le SDK Unturned charge HDRP 14.0.12.
+          Des matériaux roses ou un rendu incorrect sont acceptables à ce stade.
+          Si la Console affiche des erreurs, envoyer les erreurs à ChatGPT: le développement et les corrections sont pris en charge côté projet.
+          EOF
+          printf '%s\n' "Baseline U3-SDK: ${{ steps.lock.outputs.commit }}" > package/BUILD_INFO.txt
+          printf '%s\n' "Unity: ${{ steps.lock.outputs.unity }}" >> package/BUILD_INFO.txt
+          printf '%s\n' "HDRP: 14.0.12" >> package/BUILD_INFO.txt
+
+      - name: Créer le ZIP final
+        shell: bash
+        run: |
+          cd package
+          zip -qr ../Unturned-VOX-HDRP-v0.01.zip .
+          ls -lh ../Unturned-VOX-HDRP-v0.01.zip
+
+      - name: Publier l'archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: Unturned-VOX-HDRP-v0.01
+          path: Unturned-VOX-HDRP-v0.01.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
