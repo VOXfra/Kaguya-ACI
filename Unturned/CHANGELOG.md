@@ -1,5 +1,36 @@
 # Changelog — Unturned VOX
 
+## 2026-09-03 — VOX Overhaul v0.2.0 Full Stack Alpha
+
+### Pourquoi
+- Le module client Steam v0.1.4 est validé en jeu : le point d'entrée `IModuleNexus` fonctionne et l'overlay F8 confirme l'exécution runtime.
+- VOX demande de ne plus livrer des micro-patches séparés mais d'attaquer directement l'ensemble du rendu et de l'immersion.
+- L'absence de corps visible en première personne doit être corrigée dans la même branche de modernisation.
+
+### Quoi
+- Passage de `VOX Graphics` à `VOX Overhaul` pour la distribution runtime.
+- Tonemapping ACES et color grading injectés dans le Post Processing Stack déjà utilisé par Unturned.
+- AO, bloom et SSR renforcés ; renderer deferred forcé par défaut pour la pile de réflexions écran.
+- Atmosphère jour/nuit, brouillard, HDR, depth/depth-normal/motion-vector buffers et ombres 4 cascades.
+- Première implémentation `VOX GI` : six probes lumineuses locales pilotées par raycasts, couleur des surfaces et environnement, plus `DynamicGI.UpdateEnvironment`.
+- `Hybrid Reflections` : SSR + deux ReflectionProbes temps réel autour du joueur avec budgets de mise à jour différents.
+- Matériaux stylisés enrichis : metallic, smoothness, occlusion, reflection/light probes et normal maps procédurales pour métal, verre, route, bois, pierre, plastique et surfaces génériques. Les normal maps existantes sont conservées.
+- Première implémentation du corps FPS : réactivation du modèle troisième personne local, crâne et épaules/bras TP masqués afin de conserver les bras viewmodel.
+- Ajout de toggles runtime : F8 overlay, F7 VOX GI, F6 matériaux.
+- Ajout de `overlay/VOXGraphics/VOXGraphics.module`, `graphics.ini` et documentation runtime.
+- Mise à jour d'`AGENT.md` : le module Steam devient la milestone runtime prioritaire ; HDRP reste de la R&D historique et n'est plus une dépendance de test.
+
+### Validation effectuée
+- Syntaxe du source limitée à C# 5 pour rester compatible avec le `csc.exe` Windows utilisé par l'installateur.
+- Manifest `.module` conforme au chargeur officiel : fichier dans le dossier du module et chemin d'assembly relatif `/VOX.Graphics.dll`.
+- Protections ajoutées contre le reclonage infini des matériaux VOX.
+- Les normal maps déjà présentes ne sont pas écrasées.
+- Le corps forcé est explicitement masqué à la mort du joueur.
+
+### Validation restante
+- Compilation réelle contre les DLL de l'installation Steam du testeur.
+- Test visuel sur une map : post-process, matériaux, GI, probes, performances et clipping du corps FPS dans toutes les stances / véhicules.
+
 ## 2026-09-02 — Backlog communauté et modernisation globale
 
 ### Pourquoi
