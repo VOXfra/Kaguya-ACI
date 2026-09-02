@@ -1,5 +1,29 @@
 # Changelog — Unturned VOX
 
+## 2026-09-02 — Premier patch HDRP
+
+### Pourquoi
+- Avant de convertir les matériaux ou de créer les nouveaux volumes graphiques, il faut vérifier qu'Unturned peut au minimum charger HDRP et recompiler avec le package présent.
+- Unity 2022.3.62f3 utilise la branche HDRP 14 ; la baseline retenue est `14.0.12`.
+
+### Quoi
+- Ajout de `patches/001-add-hdrp-package.patch`.
+- Le patch ajoute `com.unity.render-pipelines.high-definition` version `14.0.12` au `Packages/manifest.json` officiel.
+- Le package historique `com.unity.postprocessing` reste temporairement présent pour éviter de casser prématurément les références existantes du jeu.
+
+### Comment
+1. Lecture du `Packages/manifest.json` exact au commit U3-SDK verrouillé.
+2. Création d'un patch minimal limité à l'ajout du package HDRP.
+3. Validation locale du patch avec `git apply --check` sur une reproduction exacte du manifest.
+4. Validation du JSON après application et exécution de `git diff --check`.
+
+### État avant modification
+- Le manifest officiel n'incluait aucun Scriptable Render Pipeline.
+- Aucun patch de migration HDRP n'existait dans le workspace VOX.
+
+### Validation restante
+- Le test décisif reste le premier import Unity : résolution du package, compilation C# et ouverture de `Assets/GameStartup.unity`.
+
 ## 2026-09-02 — Initialisation du workspace graphique Unturned
 
 ### Pourquoi
