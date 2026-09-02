@@ -6,3 +6,9 @@ kaguya_snapshot.json
 kaguya_snapshot.json.bak
 
 logs/
+
+# Unturned VOX workspace: SDK officiel cloné localement, builds et caches Unity.
+Unturned/SDK/
+Unturned/Builds/
+Unturned/Logs/
+Unturned/.cache/
