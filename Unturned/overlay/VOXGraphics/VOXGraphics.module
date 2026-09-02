@@ -1,0 +1,13 @@
+{
+  "IsEnabled": true,
+  "Name": "VOX.Graphics",
+  "Version": "0.2.0.0",
+  "Dependencies": [],
+  "Assemblies": [
+    {
+      "Path": "/VOX.Graphics.dll",
+      "Role": "Client",
+      "Load_As_Byte_Array": true
+    }
+  ]
+}
