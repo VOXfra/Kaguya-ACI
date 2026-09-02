@@ -1,5 +1,26 @@
 # Changelog — Unturned VOX
 
+## 2026-09-02 — Backlog communauté et modernisation globale
+
+### Pourquoi
+- Le scope ne se limite plus au rendu : le projet doit aussi corriger les irritants QoL et systèmes qui font paraître Unturned daté.
+- Une première passe de recherche 2024–2026 sur Reddit, Steam et U3-SDK fait ressortir plusieurs thèmes récurrents : performances / stutters, inventaire / crafting, UI scaling, véhicules, zombies / pathfinding, confort des scopes et incohérence visuelle des anciens contenus.
+- Pendant le test runtime VOX, l'absence de corps visible en regardant vers le bas a également été ajoutée comme cible d'immersion prioritaire.
+
+### Quoi
+- Ajout de `COMMUNITY_BACKLOG.md`.
+- Classement en P0 / P1 / P2 avec sources et cibles techniques VOX.
+- Ajout officiel du `full first-person body` : torse, jambes, pieds, vêtements / équipement, synchronisation animations et base future pour IK / blessures localisées.
+- Intégration du gros overhaul graphique complet : tonemapping, atmosphère, volumétriques, matériaux enrichis, réflexions hybrides, VOX GI et chemin RT-like avec fallback logiciel.
+- Ajout des chantiers modernisation : inventaire, UI responsive, zombies, véhicules, audio, interaction monde, survie systémique et Workshop / compatibilité.
+
+### Principes figés
+- Un seul package utilisateur `VOX Overhaul`, avec modules internes séparés.
+- Ne pas réduire le scope à des micro-patches graphiques isolés.
+- Ne pas sacrifier la DA cubique / stylisée pour du photoréalisme générique.
+- Effets coûteux budgétés et scalables ; GI / RT avec fallback.
+- Installation et désinstallation réversibles autant que possible.
+
 ## 2026-09-02 — Premier patch HDRP
 
 ### Pourquoi
