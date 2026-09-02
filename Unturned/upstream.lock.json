@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/SmartlyDressedGames/U3-SDK.git",
+  "branch": "main",
+  "commit": "6d72628501ee97753a48a0812c64446f3932eefa",
+  "unityVersion": "2022.3.62f3",
+  "startupScene": "Assets/GameStartup.unity",
+  "lockedAt": "2026-09-02"
+}
