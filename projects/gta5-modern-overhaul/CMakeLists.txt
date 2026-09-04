@@ -25,8 +25,10 @@ endfunction()
 
 add_library(vox_core STATIC
     src/core/src/Config.cpp
+    src/core/src/EntityRegistry.cpp
     src/core/src/GameInstall.cpp
     src/core/src/Logger.cpp
+    src/core/src/WorldState.cpp
 )
 
 target_include_directories(vox_core
