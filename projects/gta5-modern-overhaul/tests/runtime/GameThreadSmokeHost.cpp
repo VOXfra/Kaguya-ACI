@@ -62,7 +62,13 @@ int main() {
         const std::filesystem::path root = CurrentExecutableDirectory();
         const std::filesystem::path scriptHookPath = root / L"ScriptHookV.dll";
         const std::filesystem::path asiPath = root / L"VOXModernOverhaul.asi";
+        const std::filesystem::path corePath = root / L"VOXModernCore.dll";
         const std::filesystem::path logPath = root / L"VOXModernOverhaul" / L"runtime_game_thread.log";
+
+        if (!std::filesystem::is_regular_file(corePath)) {
+            std::cerr << "FAIL_STAGE=CORE_DLL_MISSING\n";
+            return 1;
+        }
 
         std::error_code ec;
         std::filesystem::remove(logPath, ec);
@@ -73,7 +79,6 @@ int main() {
             return 1;
         }
 
-        // Ensure the fake really forces the new fallback path.
         if (GetProcAddress(scriptHook, kHistoricalScriptRegisterExport) != nullptr ||
             GetProcAddress(scriptHook, kHistoricalScriptWaitExport) != nullptr) {
             std::cerr << "FAIL_STAGE=FALLBACK_PRECONDITION: historical exact ABI unexpectedly exported\n";
@@ -125,15 +130,25 @@ int main() {
 
         bool sawEnter = false;
         bool sawResume = false;
+        bool sawCoreStart = false;
+        bool sawCoreEntity = false;
+        bool sawCoreBridge = false;
         std::size_t heartbeatCount = 0;
+        std::size_t coreTickCount = 0;
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
         while (std::chrono::steady_clock::now() < deadline) {
             const std::string text = ReadTextFile(logPath);
             sawEnter = text.find("VOX_SCRIPT_MAIN_ENTER") != std::string::npos;
             sawResume = text.find("VOX_SCRIPT_MAIN_RESUMED_AFTER_WAIT") != std::string::npos;
+            sawCoreStart = text.find("VOX_CORE_START") != std::string::npos;
+            sawCoreEntity = text.find("VOX_CORE_ENTITY_ID=1") != std::string::npos;
+            sawCoreBridge = text.find("VOX_CORE_BRIDGE_READY") != std::string::npos;
             heartbeatCount = CountOccurrences(text, "VOX_SCRIPT_HEARTBEAT");
-            if (sawEnter && sawResume && heartbeatCount >= 5) {
-                std::cout << "PASS: export-name drift fallback, registration, ScriptMain entry, wait/resume and five heartbeats observed\n";
+            coreTickCount = CountOccurrences(text, "VOX_CORE_TICK=");
+
+            if (sawEnter && sawResume && sawCoreStart && sawCoreEntity && sawCoreBridge &&
+                heartbeatCount >= 5 && coreTickCount >= 5) {
+                std::cout << "PASS: ScriptHookV lifecycle and isolated C++ core bridge handshake observed\n";
                 return 0;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds{20});
@@ -143,6 +158,14 @@ int main() {
             std::cerr << "FAIL_STAGE=SCRIPT_MAIN_NOT_EXECUTED\n";
         } else if (!sawResume) {
             std::cerr << "FAIL_STAGE=SCRIPT_WAIT_NOT_RESUMED\n";
+        } else if (!sawCoreStart) {
+            std::cerr << "FAIL_STAGE=CORE_START_NOT_OBSERVED\n";
+        } else if (!sawCoreEntity) {
+            std::cerr << "FAIL_STAGE=CORE_ENTITY_ID_NOT_OBSERVED\n";
+        } else if (!sawCoreBridge) {
+            std::cerr << "FAIL_STAGE=CORE_BRIDGE_NOT_READY\n";
+        } else if (coreTickCount < 5) {
+            std::cerr << "FAIL_STAGE=CORE_TICK_COUNT: observed=" << coreTickCount << " expected>=5\n";
         } else {
             std::cerr << "FAIL_STAGE=HEARTBEAT_COUNT: observed=" << heartbeatCount << " expected>=5\n";
         }
