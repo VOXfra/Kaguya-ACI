@@ -8,6 +8,9 @@ option(VOX_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 
 function(vox_apply_warnings target)
     if(MSVC)
+        # Prevent legacy Windows min/max macros from corrupting standard-library calls
+        # such as std::numeric_limits<T>::max(). Apply this to every MSVC target.
+        target_compile_definitions(${target} PRIVATE NOMINMAX)
         target_compile_options(${target} PRIVATE /W4 /permissive- /EHsc)
         if(VOX_WARNINGS_AS_ERRORS)
             target_compile_options(${target} PRIVATE /WX)
