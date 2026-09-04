@@ -169,7 +169,7 @@ static void VoxScriptMain(void)
     }
 }
 
-__declspec(dllexport) BOOL WINAPI VoxDllEntry(HINSTANCE module, DWORD reason, LPVOID reserved)
+BOOL WINAPI VoxDllEntry(HINSTANCE module, DWORD reason, LPVOID reserved)
 {
     HMODULE scriptHook;
     VoxScriptRegisterFn scriptRegister;
