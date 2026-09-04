@@ -42,7 +42,7 @@ Legend:
   - [x] reproducible crash-capture package + artifact
 - [ ] obtain real GTA crash minidump/exception/module if instability recurs
 - [ ] analyze real dump and identify faulting module/offset if captured
-- [ ] add production crash/exception capture only after stable live runtime exists
+- [ ] add production crash/exception capture only after stable live core bridge exists
 - [x] startup environment/build report foundation — dev.8 real execution observed
 - [ ] full runtime dependency/build compatibility report
 
@@ -52,7 +52,8 @@ Legend:
 - [x] resumable `EntityIdGenerator` — D3 cross-platform
 - [x] zero reserved as invalid ID
 - [x] fail-closed 64-bit exhaustion
-- [ ] Entity Registry — **NEXT AFTER DEV.11 D4**
+- [x] first `EntityId` allocation through isolated live-core API path — D3 synthetic dev.13
+- [ ] Entity Registry — **NEXT AFTER DEV.13 D4**
 - [ ] GTA runtime handle ↔ stable EntityId adapter
 - [ ] persisted high-water mark integration
 - [ ] duplicate/corrupt ID database recovery test
@@ -66,7 +67,7 @@ Legend:
 - [x] concurrent publication test (4 × 1000)
 - [x] subscription-ID fail-closed exhaustion
 - [ ] explicit event taxonomy / namespaces
-- [ ] queued/deferred game-thread dispatch adapter — follows Entity Registry
+- [ ] queued/deferred game-thread dispatch adapter — follows Entity Registry + dev.13 real bridge
 - [ ] handler failure isolation policy
 - [ ] event tracing hooks
 
@@ -130,47 +131,54 @@ Legend:
   - [x] dev.10 `/NODEFAULTLIB` + custom `/ENTRY` build
   - [x] dev.10 PE zero-import/TLS validation + independent inspection
   - [x] dev.10 synthetic load/residency/unload — D3, run `33873756374`
-  - [x] dev.10 initial real GTA crash sequence observed
-  - [x] external crash capture + controlled baseline tooling created
-  - [x] dev.10 later remove/restore load succeeds
-  - [x] dev.10 repeated normal launches now reported by user — **D4 stable load baseline**
+  - [x] dev.10 repeated normal launches reported — **D4 stable load baseline**
   - [x] reject free-thread-from-DllMain architecture permanently
-  - [x] current ScriptHookV x64 `scriptRegister`/`scriptWait` ABI boundary documented
-  - [x] dev.11 custom-entry no-CRT runtime dynamically resolves already-loaded ScriptHookV
-  - [x] dev.11 does not call `LoadLibrary` from loader callback
-  - [x] dev.11 registers one `ScriptMain` callback
-  - [x] dev.11 CI PE boundary: only intended Kernel32 API, no CRT/TLS/direct ScriptHookV import
-  - [x] dev.11 fake ScriptHookV with explicit ABI export aliases
-  - [x] dev.11 smoke gate: exact ABI exports found
-  - [x] dev.11 smoke gate: `scriptRegister` actually called
-  - [x] dev.11 smoke gate: ScriptMain executed
-  - [x] dev.11 smoke gate: `scriptWait(0)` resumed
-  - [x] dev.11 smoke gate: five scheduled heartbeats observed
-  - [ ] dev.11 real GTA stability + game-thread markers — **CURRENT USER CHECKPOINT**
+  - [x] dev.11 custom-entry no-CRT ScriptHookV lifecycle attempt
+  - [x] dev.11 synthetic registration/ScriptMain/wait-resume/five-heartbeat proof
+  - [ ] dev.11 real registration — **FAILED: ASI loaded, ScriptHookV registration absent**
+  - [x] dev.12 export-name fallback: exact → undecorated → unique PE export-stem scan
+  - [x] dev.12 ambiguity fails closed
+  - [x] dev.12 synthetic fallback regression forces drifted export names
+  - [x] dev.12 real ScriptHookV registration — **D4 PASS**
+  - [x] dev.12 real ScriptMain entry — **D4 PASS**
+  - [x] dev.12 real `scriptWait(0)` resume — **D4 PASS**
+  - [x] dev.12 real five heartbeats — **D4 PASS**
+  - [x] dev.12 real GTA stability during checkpoint — **D4 PASS**
+  - [x] dev.13 split minimal ASI host from normal C++ `VOXModernCore.dll`
+  - [x] dev.13 plain-C versioned ASI↔Core ABI
+  - [x] dev.13 loads C++ core only after ScriptMain has resumed
+  - [x] dev.13 synthetic core `Start` / first EntityId / `Tick` handshake — D3 Windows
+  - [ ] dev.13 real GTA isolated C++ core bridge — **CURRENT USER CHECKPOINT**
   - [ ] first safe GTA native read-only call
   - [ ] supported-build policy + graceful disable
-  - [ ] plugin unload/shutdown lifecycle
-- [ ] first stable GTA V Enhanced **active** runtime validation
+  - [ ] plugin/core unload/shutdown lifecycle
+- [x] first stable GTA V Enhanced **active** runtime validation — dev.12 D4
 
-### dev.11 implementation defects caught before delivery
+### Runtime implementation defects / blockers caught
 
-- [x] duplicate `NOMINMAX` in test targets caused MSVC C4005 under `/WX`; removed local duplicates and kept one shared build definition
-- [x] unnecessary exported custom PE entrypoint created linker warning debt; entrypoint made private while `/ENTRY:VoxDllEntry` stays authoritative
-- [x] CI incorrectly assumed `dumpbin.exe` was in PATH; now resolved via `vswhere` + actual x64 MSVC toolchain
-- [x] fake ScriptHookV compiler-generated mangling differed from pinned real ABI; replaced by explicit linker export aliases
-- [x] smoke test upgraded to isolate ABI export / registration / ScriptMain / wait-resume / heartbeat failures separately
+- [x] dev.8 free thread from loader callback rejected after real crash
+- [x] dev.9 hidden CRT startup identified by PE inspection
+- [x] Windows `max` macro contamination fixed globally with `NOMINMAX`
+- [x] duplicate `NOMINMAX` caught by `/WX` and removed from local test targets
+- [x] unnecessary custom-entrypoint export removed
+- [x] CI `dumpbin` PATH assumption removed; resolved through `vswhere`
+- [x] fake ScriptHookV compiler-mangling dependency replaced with explicit export aliases
+- [x] dev.11 real export-resolution incompatibility isolated through absence of ScriptHookV registration
+- [x] dev.12 fallback tested with deliberately drifted export names
+- [x] dev.13 initial package detected with stale dev.12 README before user delivery; instructions corrected and final documented artifact rebuild required
 
 ### Quarantined paths
 
 - dev.8 `CreateThread`-from-`DllMain` bootstrap: permanently quarantined; never use as production lifecycle.
 - dev.9 default MSVC CRT startup pattern: not accepted as a zero-work baseline.
-- No GTA world mutation is allowed until dev.11 is proven in the real game.
+- No GTA world mutation is allowed until dev.13 proves the isolated C++ core boundary in the real game.
 
 ## Packaging / rollback
 
 - [x] reproducible PowerShell runtime checkpoint packager — D3 Windows
 - [x] package contains only project files; no third-party binaries
 - [x] ASI SHA-256 recorded in `BUILD_INFO.txt`
+- [x] Core DLL SHA-256 recorded in `BUILD_INFO.txt` from dev.13 onward
 - [x] commit/version recorded in `BUILD_INFO.txt`
 - [x] generated runtime ZIP extracted and required files verified in CI
 - [x] first-test instructions packaged
@@ -179,12 +187,15 @@ Legend:
 - [x] dev.9 artifact upload — run `33872399873`
 - [x] dev.10 artifact upload — run `33873756374`
 - [x] crash-capture tooling package — run `33875088958`
-- [x] dev.11 packaging path rejects accidental test `ScriptHookV.dll` redistribution
+- [x] dev.11/dev.12 package rejects accidental test `ScriptHookV.dll` redistribution
+- [x] dev.13 package requires `VOXModernCore.dll`
+- [x] dev.13 synthetic artifact run `33881321657` fully green
+- [ ] final dev.13 documented artifact rebuild with corrected README — IN PROGRESS
 - [ ] installer/automatic root detection for later public builds
 
 ## Story compatibility foundation
 
-- [ ] mission/story detector research — begins after dev.11 + persistence primitive
+- [ ] mission/story detector research — begins after dev.13 + persistence primitive
 - [ ] detect mission-active state reliably
 - [ ] Story Compatibility Manager skeleton
 - [ ] canonical overlay interface
@@ -195,7 +206,7 @@ Runtime checkpoints intentionally do not mutate story/world state.
 
 ## Asset pipeline
 
-- [ ] identify on-screen asset → source resource proof
+- [ ] identify on-screen asset → source resource proof — starts after dev.13 D4
 - [ ] asset dependency locator
 - [ ] export working copy
 - [ ] Enhanced conversion validation
@@ -206,37 +217,38 @@ Runtime checkpoints intentionally do not mutate story/world state.
 
 ## Current checkpoint
 
-**Checkpoint 0E — real GTA V Enhanced ScriptHookV game-thread validation (`0.0.1-dev.11`)**
+**Checkpoint 0G — real GTA V Enhanced isolated C++ core bridge (`0.0.1-dev.13`)**
 
-Synthetic proof already complete:
+Already proven:
 
-1. Windows/Linux core builds — PASS.
-2. ASan + UBSan — PASS.
-3. custom-entry ASI build — PASS.
-4. intended Kernel32-only runtime boundary — PASS.
-5. CRT/C++ runtime/TLS/direct ScriptHookV import rejection — PASS.
-6. exact ScriptHookV ABI export lookup — PASS.
-7. `scriptRegister` callback registration — PASS.
-8. ScriptMain execution — PASS.
-9. `scriptWait(0)` yield/resume proof — PASS.
-10. five scheduled heartbeat markers — PASS.
-11. user package excludes fake ScriptHookV.dll — PASS.
+1. dev.12 real GTA ScriptHookV registration — PASS.
+2. dev.12 real ScriptMain execution — PASS.
+3. dev.12 real `scriptWait(0)` resume — PASS.
+4. dev.12 real five heartbeats — PASS.
+5. GTA stability during dev.12 checkpoint — PASS.
+6. Windows/Linux core builds — PASS.
+7. ASan + UBSan — PASS.
+8. CRT-free minimal ASI boundary — PASS.
+9. ScriptHook export-drift fallback regression — PASS.
+10. `VOXModernCore.dll` build — PASS.
+11. core DLL loaded only after ScriptMain resume in synthetic host — PASS.
+12. `VOX_CORE_START` — PASS synthetic.
+13. `VOX_CORE_ENTITY_ID=1` — PASS synthetic.
+14. `VOX_CORE_BRIDGE_READY` — PASS synthetic.
+15. five `VOX_CORE_TICK=n` markers — PASS synthetic.
+16. ASI + Core package verification — PASS.
+17. fake ScriptHookV excluded from package — PASS.
 
-Real-game test:
-
-1. Replace dev.10 `VOXModernOverhaul.asi` with dev.11.
-2. Delete any old `VOXModernOverhaul/runtime_game_thread.log`.
-3. Leave ScriptHookV/dinput8/RageOpenV/SHVDN/TrainerV unchanged.
-4. Launch Story Mode and stay in-game at least 10 seconds.
-5. Quit normally if stable.
-6. Return `VOXModernOverhaul/runtime_game_thread.log`.
-
-Required real markers:
+Required real dev.13 markers:
 - `VOX_SCRIPT_MAIN_ENTER`
 - `VOX_SCRIPT_MAIN_RESUMED_AFTER_WAIT`
-- exactly five fresh `VOX_SCRIPT_HEARTBEAT` lines
+- `VOX_CORE_START`
+- `VOX_CORE_ENTITY_ID=1`
+- `VOX_CORE_BRIDGE_READY`
+- at least five `VOX_CORE_TICK=n`
+- at least five `VOX_SCRIPT_HEARTBEAT`
 
 Decision:
-- **PASS:** begin Entity Registry + queued game-thread EventBus + first atomic persistent state.
-- **CRASH:** do not alter other plugins; collect WER evidence immediately using the existing crash-capture pack.
-- **NO LOG:** inspect real ScriptHookV ABI/module resolution without adding gameplay code.
+- **PASS:** implement Persistent Entity Registry + queued game-thread EventBus + first atomic state; begin asset locator/override tooling in parallel.
+- **CRASH:** do not alter other plugins; collect WER evidence immediately.
+- **CORE_LOAD_FAILED:** verify exact ASI/Core pair and core location before changing architecture.
