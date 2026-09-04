@@ -20,7 +20,7 @@ Validation levels are defined in `QUALITY_GATES.md`.
 | Previous-state backup recovery | D3 cross-platform | corrupt primary recovers valid `.bak` in tests; real recovery event not forced |
 | Persistent EntityId high-water restoration | **D4 real GTA PASS** | dev.14 two-launch test restored EntityId 1/count 1/next ID 2; later intentional deletion simply created a new empty early-state file |
 | EventBus | D3 cross-platform | normal/re-entrant/unsubscribe/concurrent tests pass |
-| Bounded game-thread dispatch queue | **D4 real GTA PASS / D3 regression** | real dev.14/dev.15.1 logs `VOX_GAME_THREAD_QUEUE_DISPATCHED=1`; concurrency/bounds/failure isolation tested |
+| Bounded game-thread dispatch queue | **D4 real GTA PASS / D3 regression** | real dev.14/dev.15 logs `VOX_GAME_THREAD_QUEUE_DISPATCHED=1`; concurrency/bounds/failure isolation tested |
 | GTA runtime handle ↔ EntityId adapter | D0 | next identity/runtime integration step |
 | Simulation tier primitive | D3 cross-platform | ordering invariant tested |
 | Spatial Simulation Manager | D0 | not implemented |
@@ -32,20 +32,21 @@ Validation levels are defined in `QUALITY_GATES.md`.
 | dev.10 no-CRT ASI | **D4 stable load baseline** | repeated normal launches reported |
 | dev.11 ScriptHookV lifecycle | D3 synthetic / **real registration failed** | exact decorated exports were brittle |
 | dev.12 ScriptHookV game-thread execution | **D4 real GTA PASS** | registration, ScriptMain, wait/resume, five heartbeats |
-| isolated `VOXModernCore.dll` bridge | **D4 real GTA PASS** | dev.13/dev.14/dev.15.1 real logs prove core start/bridge/ticks |
+| isolated `VOXModernCore.dll` bridge | **D4 real GTA PASS** | dev.13+ real logs prove core start/bridge/ticks |
 | dev.14 persistent runtime | **D4 real GTA PASS** | real first launch NEW+SAVE_OK; second launch LOADED with same persistent identity; queue marker healthy |
 | Mission/story detector | D0 | read-only work queued in parallel with visual track |
 | Story Compatibility runtime | D0 | contract only |
 | Visual installer environment/bootstrap | **D4 real setup PASS / D3 Windows regression** | dev.15.1 real machine completes venv/FiveFury/self-test/retail scan; CI executes exact bootstrap path |
 | Enhanced retail asset locator/extraction | **D4 real PASS** | dev.15.1 real scan selected and extracted `prop_roadcone02a` from base `x64f.rpf` |
-| Gen9 YDR transform tooling | **D3 synthetic / real runtime compatibility UNPROVEN** | transformed YDR is not required for the observed crash because dev.15.2 still crashes with source-identical bytes |
+| Gen9 YDR transform tooling | **D3 synthetic / real runtime compatibility UNPROVEN** | transformed YDR is not required for the original crash because dev.15.2 also crashes with source-identical target bytes |
 | RageOpenV one-file nested-RPF directory probe | **D4 real FAIL** | dev.15.1 transformed target crashes; dev.15.2 source-identical target at same one-file archive path also crashes |
-| Complete nested-RPF mirror strategy | **D3 synthetic / D4 pending** | dev.15.3 mirrors every indexed member before target substitution; real Story Mode test pending |
-| First visible graphics replacement | **D4 FAILED / blocked on complete-archive test** | no stable visible modified frame yet |
-| Byte-identical override isolation | **D4 real FAIL as one-file archive** | source-identical target still crashes, proving modified target bytes are not necessary for crash |
+| Complete nested-RPF directory mirror | **D4 functional / PERFORMANCE FAIL** | dev.15.3 lets Story Mode run but user reports roughly 5 FPS; directory-as-RPF strategy rejected for production |
+| Real compact nested-RPF file strategy | **D3 tooling / D4 pending** | dev.15.4 extracts the original nested RPF bytes as one real file; identity performance/stability test pending |
+| First visible graphics replacement | **D4 FAILED / pending compact-RPF proof** | no stable modified frame at acceptable performance yet |
+| Byte-identical override isolation | **D4 real FAIL as one-file directory** | source-identical target still crashes, proving modified target bytes are not necessary for that crash |
 | Runtime checkpoint packaging | D3 Windows | ASI+Core+visual tools required; fake ScriptHook/user state/YDR/RPF assets excluded; package version/readme checked |
-| GitHub Windows/Linux CI | D3 | current jobs pass when final checkpoint CI is green |
-| ASan + UBSan CI | D3 | current sanitizer jobs pass |
+| GitHub Windows/Linux CI | D3 | consolidated current workflow must be green before delivery |
+| ASan + UBSan CI | D3 | sanitizer job retained in consolidated workflow |
 
 ## Real-game evidence
 
@@ -68,28 +69,48 @@ The transformed target was replaced at the exact same path with the preserved Ro
 
 Conclusion:
 - transformed FiveFury YDR bytes are not required to trigger the crash;
-- the one-file custom directory-archive layout is now the primary suspect;
+- the one-file custom directory-archive layout is the primary suspect for that failure;
 - no visible pipeline D4 pass exists yet.
 
-## dev.15.3 current complete-archive checkpoint
+### dev.15.3 — complete directory archive runs but collapses performance
+The complete `v_construction.rpf` member set was mirrored as a directory so RageOpenV could satisfy sibling resource requests. The user reached Story Mode, but reports the game running at about **5 FPS**.
 
-### Source-based hypothesis
-RageOpenV mounts `newmods/platform/` as `platform:/`. Its custom archive hook checks whether the requested archive path resolves to a custom-device directory and then treats that directory as the archive. A directory named `v_construction.rpf` containing only one YDR can therefore shadow the complete Rockstar nested RPF instead of merging with it.
+That result is useful but not acceptable:
+- missing-member shadowing was a real problem with the one-file directory;
+- a full directory-backed RPF avoids the immediate missing-member failure;
+- the directory-backed archive path is far too slow for a production graphics pipeline and is permanently rejected as the runtime strategy.
 
-### dev.15.3 strategy
-- enumerate every indexed asset whose logical path is below the selected nested RPF;
-- extract standalone bytes for the whole nested archive into staging;
-- verify the selected target still equals the original source hash;
-- replace the incomplete one-file directory only after the complete mirror is ready;
-- record the complete mirrored file set and per-file SHA-256;
-- first test with a source-identical target;
-- only after that loads, enable the preserved transformed target inside the complete archive;
-- rollback only after exact set/hash verification.
+Fresh user logs from the subsequent attempts still show:
+- ASI loader finishing plugin loading;
+- ScriptHookV Enhanced `1.0.1158.13` initialization and VOX registration;
+- VOX Core start, persistence save, bridge ready, game-thread queue dispatch and five ticks/heartbeats;
+- RageOpenV release log only reporting initialization.
+
+Those logs do not expose the performance cause or a later archive operation, but they continue to show that the known VOX runtime path itself reaches its expected markers.
+
+## dev.15.4 current compact-RPF checkpoint
+
+### Strategy
+Do not emulate `v_construction.rpf` with a filesystem directory. Instead:
+- read the selected source path from the existing manifest;
+- open the user's base `x64f.rpf` with FiveFury/Enhanced crypto context;
+- extract the nested `levels/gta5/props/roadside/v_construction.rpf` as a real RPF byte stream;
+- reopen it and prove `prop_roadcone02a.ydr` equals the source SHA-256 recorded by dev.15.1;
+- migrate the owned dev.15.3 directory to a single real `newmods/platform/.../v_construction.rpf` file only after staging/verification;
+- first test the exact original compact RPF with no visual change;
+- only if performance and stability are normal, rebuild the preserved compact copy with the transformed YDR.
+
+### Transform integrity gate
+For the transformed compact RPF, tooling requires:
+- identical member path set to the identity RPF;
+- transformed target SHA-256 exactly matches the preserved dev.15.1 generated YDR;
+- every non-target standalone member SHA-256 remains unchanged;
+- active RPF file hash is recorded for rollback ownership.
 
 ### D4 interpretation
-- Complete identity mirror loads -> incomplete archive shadowing hypothesis supported; proceed to transformed full archive.
-- Complete identity mirror still crashes -> custom directory-archive mount remains incompatible/deeper bug; capture WER/minidump or replace RageOpenV route.
-- Transformed full archive loads and visible model changes -> first stable visible asset replacement D4 PASS.
+- Identity compact RPF loads at normal FPS -> real-file RageOpenV archive path is viable; proceed to transformed compact RPF.
+- Identity compact RPF crashes or remains unusably slow -> reject this RageOpenV platform-RPF route and switch strategy rather than adding another directory workaround.
+- Transformed compact RPF loads at normal FPS and shows the oversized cone -> first stable visible asset replacement D4 PASS.
 
 ## Rule
 
