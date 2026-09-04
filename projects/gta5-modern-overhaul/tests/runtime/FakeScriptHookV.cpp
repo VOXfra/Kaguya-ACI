@@ -28,6 +28,10 @@ __declspec(dllexport) void scriptWait(DWORD time) {
     Sleep(time > 10 ? 10 : time);
 }
 
+extern "C" __declspec(dllexport) BOOL VoxFakeWasRegistered() {
+    return g_registeredScript.load(std::memory_order_acquire) != nullptr ? TRUE : FALSE;
+}
+
 extern "C" __declspec(dllexport) void VoxFakeRunRegisteredScript() {
     const ScriptMain script = g_registeredScript.load(std::memory_order_acquire);
     if (script != nullptr) {
