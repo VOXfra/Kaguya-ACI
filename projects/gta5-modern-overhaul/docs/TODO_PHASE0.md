@@ -80,7 +80,8 @@ Legend:
 - [x] live host-callback markers
 - [x] reversible external WER crash-capture pack
 - [x] dev.15.1 crash narrowed to post-runtime visual path by returned logs
-- [ ] capture WER/minidump for visual crash only if byte-identical mount test still crashes
+- [x] dev.15.2 proves transformed target bytes are not required: source-identical one-file archive still crashes
+- [ ] capture WER/minidump if the complete nested-RPF identity mirror still crashes
 - [ ] log rotation / bounded size
 - [ ] structured subsystem fields
 
@@ -111,7 +112,8 @@ Legend:
 - [x] dev.15 user setup failure isolated before any newmods write
 - [x] dev.15.1 package version/readme boundary enforced in CI
 - [x] dev.15.2 package includes byte-identical visual crash-isolation tools
-- [x] package rejects bundled `.ydr`, FiveFury environment and visual-probe user state
+- [x] dev.15.3 package includes complete nested-RPF mirror + transform + hash-safe full rollback tools
+- [x] package rejects bundled `.ydr`, `.rpf`, FiveFury environment and visual-probe user state
 - [ ] general installer/root discovery for later public builds
 
 ## Story compatibility foundation
@@ -126,13 +128,13 @@ Legend:
 ## Asset pipeline — visual priority
 
 - [x] choose non-destructive Enhanced override path using existing RageOpenV `newmods/platform` mount — implementation boundary
-- [x] pin local authoring dependency FiveFury 0.4.21 (Unlicense; not bundled)
+- [x] pin local authoring dependency FiveFury 0.4.21 (not bundled)
 - [x] Python 3.11+ isolated-venv installer
 - [x] dev.15 PowerShell→Python quoting defect isolated from real user error
 - [x] quote-free venv Python compatibility/version probes
 - [x] existing venv >=3.11 validation
 - [x] executable `-EnvironmentOnly` setup path
-- [x] fresh Windows venv → Python version → FiveFury install → Gen9 self-test — **D3 EXECUTED PASS, run 33893214202**
+- [x] fresh Windows venv → Python version → FiveFury install → Gen9 self-test — **D3 EXECUTED PASS**
 - [x] base-game `x64*.rpf` asset-path acceptance / update-DLC rejection
 - [x] traversal / drive-style path rejection
 - [x] visible-prop candidate selection without overwriting an existing loose override
@@ -145,51 +147,54 @@ Legend:
 - [x] generated SHA-256 verification before atomic loose-file install
 - [x] deterministic `x64*.rpf/...` → `newmods/platform/...` mapping
 - [x] manifest records source/generated hashes + exact override path
-- [x] hash-safe rollback implementation
+- [x] initial hash-safe single-file rollback implementation
 - [x] synthetic Gen9 v159 transform self-test — **D3 Windows PASS**
 - [x] PowerShell wrapper parser checks — **D3 Windows PASS**
-- [x] package contains no Rockstar YDR and no locally installed FiveFury runtime
-- [x] real transformed loose override installed at expected `newmods/platform` path — **D4 execution PASS**
-- [x] real game launch with transformed override attempted — **D4 FAIL: Story Mode crash**
-- [ ] determine whether crash is mount/path vs transformed YDR — **CURRENT dev.15.2 D4 TEST**
-- [x] byte-identical source override replacement implementation — dev.15.2
-- [x] byte-identical source override synthetic hash/manifest regression — **D3 Windows target**
-- [ ] real Story Mode launch with byte-identical source override
-- [ ] stable RageOpenV mount proof
+- [x] package contains no Rockstar YDR/RPF and no locally installed FiveFury runtime
+- [x] real transformed one-file loose override installed — **D4 execution PASS**
+- [x] real Story Mode launch with transformed one-file archive — **D4 FAIL: crash**
+- [x] byte-identical source override at same one-file archive path — **D4 FAIL: crash**
+- [x] conclude transformed YDR bytes are not necessary for crash
+- [x] inspect RageOpenV custom-device behavior: `.rpf` directory is treated as archive
+- [x] implement complete nested-RPF mirror staging
+- [x] enumerate every indexed member below selected nested RPF
+- [x] extract standalone bytes for all mirrored members
+- [x] require current incomplete destination contain only the owned identity target
+- [x] verify selected target equals source hash inside staged complete archive
+- [x] record complete mirrored file set + per-file SHA-256
+- [x] implement full-archive transformed-target switch
+- [x] implement exact set/hash-safe recursive full-archive rollback
+- [x] synthetic archive-mirror layout self-test — **D3**
+- [ ] real Story Mode launch with complete archive + source-identical target — **CURRENT dev.15.3 D4 TEST**
+- [ ] if identity passes, real Story Mode launch with complete archive + transformed target
 - [ ] stable rewritten retail YDR proof
 - [ ] **first visible in-game asset replacement**
-- [ ] real rollback proof restores vanilla visual
+- [ ] real full-archive rollback proof restores vanilla visual
 - [ ] replace exaggerated proof with first meaningful visual upgrade
 - [ ] first graphical vertical slice
 
 ## Current checkpoint
 
-**Checkpoint 0I.2 — isolate the first real visual crash (`0.0.1-dev.15.2`)**
+**Checkpoint 0I.3 — complete nested-RPF mirror (`0.0.1-dev.15.3`)**
 
-Real dev.15.1 outcome:
+What dev.15.2 established in the real game:
 
-1. corrected installer environment path — PASS.
-2. Python 3.11.4 + FiveFury 0.4.21 install — PASS.
-3. Gen9 self-test — PASS.
-4. retail Enhanced scan — PASS.
-5. candidate selection — PASS: `prop_roadcone02a`.
-6. source extraction — PASS: `x64f.rpf/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr`.
-7. 1.65x rewrite/validation/hash/install — PASS at tool level.
-8. loose destination — `newmods/platform/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr`.
-9. ASI loader / ScriptHookV / VOX Core lifecycle before crash — PASS.
-10. Story Mode entry — **CRASH**.
-11. visible oversized model — NOT REACHED.
+1. transformed one-file `v_construction.rpf` directory — Story Mode CRASH.
+2. same one-file directory with byte-for-byte Rockstar `prop_roadcone02a.ydr` — Story Mode CRASH.
+3. therefore transformed target bytes are not necessary for the crash.
 
-Current differential test:
+Most likely structural defect now under test:
 
-- replace only the active transformed YDR with the exact extracted original bytes;
-- preserve the exact same `newmods/platform` destination;
-- require source SHA-256 equality before and after copy;
-- preserve transformed hash for diagnosis;
-- launch Story Mode once.
+RageOpenV treats a custom `.rpf` directory as the archive itself. A one-file `v_construction.rpf` directory can therefore hide all other members of Rockstar's archive. dev.15.3 builds the complete nested archive before activating the mount.
 
-Interpretation:
-- crash persists => investigate RageOpenV/newmods mount/path first;
-- game loads => investigate FiveFury retail YDR writer/round-trip first.
+Required dev.15.3 sequence:
 
-Only after that branch is known do we build the next visual fix. No visible-pipeline D4 success is claimed yet.
+1. keep existing dev.15.2 `visual_probe` state and `.venv-assets`;
+2. run `05_INSTALL_FULL_ARCHIVE_IDENTITY.cmd`;
+3. require `VOX_FULL_ARCHIVE_IDENTITY_INSTALLED` and a non-zero complete file count;
+4. launch Story Mode with no intended visual difference;
+5. if it loads, close GTA and run `06_ENABLE_SCALED_PROBE.cmd`;
+6. launch again and require the selected prop to be visibly oversized without a crash;
+7. run `07_ROLLBACK_FULL_ARCHIVE_PROBE.cmd` and require exact set/hash verification before removal.
+
+If step 4 still crashes, stop using this one-file-vs-complete-file hypothesis and move to WER/minidump or a different non-destructive mount strategy. No visible-pipeline D4 success is claimed until a modified asset reaches a stable frame.
