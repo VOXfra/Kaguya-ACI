@@ -158,7 +158,7 @@ jobs:
           New-Item -ItemType Directory -Path $probe -Force | Out-Null
           $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $probe 'visual_probe_manifest.json') -Encoding UTF8
 
-          & ./projects/gta5-modern-overhaul/tools/assets/Isolate-VisualProbeCrash.ps1 -GtaRootOverride $root
+          & pwsh -NoProfile -File ./projects/gta5-modern-overhaul/tools/assets/Isolate-VisualProbeCrash.ps1 -GtaRootOverride $root
           if ($LASTEXITCODE -ne 0) { throw "Identity crash-isolation script failed with exit code $LASTEXITCODE." }
           $activeHash = (Get-FileHash $override -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($activeHash -ne $sourceHash) { throw "Identity override does not exactly match source bytes." }
@@ -168,7 +168,7 @@ jobs:
           if (([string]$updated.transformed_sha256).ToLowerInvariant() -ne $generatedHash) { throw "Original transformed hash was not preserved for diagnosis." }
           Write-Host "PASS: transformed override -> hash-verified byte-identical original replacement."
 
-          & ./projects/gta5-modern-overhaul/tools/assets/Rollback-VisualProbe.ps1 -GtaRootOverride $root
+          & pwsh -NoProfile -File ./projects/gta5-modern-overhaul/tools/assets/Rollback-VisualProbe.ps1 -GtaRootOverride $root
           if ($LASTEXITCODE -ne 0) { throw "Identity override rollback failed with exit code $LASTEXITCODE." }
           if (Test-Path -LiteralPath $override -PathType Leaf) { throw "Rollback left the identity override behind." }
           if (Test-Path -LiteralPath (Join-Path $probe 'visual_probe_manifest.json') -PathType Leaf) { throw "Rollback left the manifest behind." }
