@@ -2,6 +2,104 @@
 
 This is the precise engineering trace for the project. Patch notes summarize changes; this log records what was done, why, validation performed and what is still unproven.
 
+## 2026-09-04 — dev.11 ScriptHookV game-thread lifecycle checkpoint
+
+### Trigger / user validation
+- User reports the dev.10 no-CRT baseline now launches GTA V Enhanced normally/repeatably after the earlier remove/restore cycle.
+- dev.10 is therefore promoted from provisional to the stable ASI **load baseline**.
+- Earlier intermittent crash root cause remains unknown; WER capture tooling remains available instead of inventing a cause after the fact.
+
+### Production lifecycle decision
+- The dev.8 `CreateThread`-from-`DllMain` design remains permanently quarantined.
+- dev.11 follows the ScriptHookV script lifecycle instead of creating a free-running bootstrap thread.
+- The ASI retains a custom CRT-free entrypoint and `/NODEFAULTLIB`.
+- ScriptHookV is not directly linked/imported and is not loaded from inside the loader callback.
+- On `DLL_PROCESS_ATTACH`, the runtime calls `GetModuleHandleW(L"ScriptHookV.dll")`, then dynamically resolves the pinned x64 `scriptRegister` and `scriptWait` exports.
+- If ScriptHookV or either export is absent, the checkpoint fails closed and returns success to the host without scheduling any runtime work.
+- When both exports exist, the ASI stores `scriptWait` and calls `scriptRegister(module, VoxScriptMain)`.
+
+### ScriptMain proof design
+- `VoxScriptMain` is the only repeated runtime execution path.
+- It writes `VOX_SCRIPT_MAIN_ENTER`.
+- It calls `scriptWait(0)`.
+- Only after that call returns does it write `VOX_SCRIPT_MAIN_RESUMED_AFTER_WAIT`.
+- It then performs five `scriptWait(1000)` cycles and writes one `VOX_SCRIPT_HEARTBEAT` after each resume.
+- After five heartbeats it remains resident but inert, calling only `scriptWait(1000)` forever.
+- No GTA native, memory patch, gameplay hook, save mutation or world mutation exists in dev.11.
+
+### Runtime binary boundary
+- The dev.11 ASI imports only the required Kernel32 APIs for module/export lookup and bounded diagnostic file output.
+- CI rejects CRT/C++ runtime imports, TLS and any direct `ScriptHookV.dll` import.
+- CI verifies the custom non-zero PE entrypoint and the intended Kernel32 API list.
+- `dumpbin.exe` is resolved through Visual Studio `vswhere` and the actual x64 MSVC toolchain rather than assuming PATH configuration.
+
+### Synthetic scheduler harness
+Added a test-only fake `ScriptHookV.dll` and `gta5_enhanced.exe` host.
+
+The harness proves these stages separately:
+1. fake DLL exposes the exact ScriptHookV x64 ABI export names expected by production runtime;
+2. ASI loading actually invokes `scriptRegister`;
+3. registered ScriptMain executes;
+4. ScriptMain resumes after `scriptWait(0)`;
+5. five heartbeat resumes occur.
+
+The fake ScriptHookV is never included in the GTA user package; package verification fails if a `ScriptHookV.dll` is present.
+
+### Blocker 1 — duplicate NOMINMAX under /WX
+- First Windows build of the new test targets failed with MSVC C4005 because `NOMINMAX` was defined both by the common CMake platform policy and locally in two new C++ test files.
+- Linux and sanitizer paths were unaffected.
+- Fix: removed the local macro definitions; the shared CMake definition is the single authority.
+- Regression protection: `/WX` remains enabled, so future macro redefinition debt cannot silently ship.
+
+### Blocker 2 — unnecessary PE entrypoint export
+- Linker diagnostics showed the custom PE entry function did not need to be exported.
+- Fix: removed `__declspec(dllexport)` from `VoxDllEntry` while keeping `/ENTRY:VoxDllEntry`.
+- This removes warning debt without changing the runtime entry mechanism.
+
+### Blocker 3 — dumpbin PATH assumption
+- Runtime PE verification initially failed despite a successful ASI build because the Windows 2025 / Visual Studio 2026 Actions environment did not expose `dumpbin.exe` on PATH.
+- This was a CI tooling failure, not a binary failure.
+- Fix: resolve Visual Studio using `vswhere.exe`, locate the installed Hostx64/x64 `dumpbin.exe`, then run import verification with its absolute path.
+- The same step subsequently passed and proved the intended dependency boundary.
+
+### Blocker 4 — fake ScriptHookV ABI mismatch
+- First scheduler smoke test produced no runtime marker.
+- The smoke host was upgraded to fail at explicit stages rather than a generic heartbeat timeout.
+- The next run failed specifically at `ABI_EXPORT_SCRIPT_REGISTER`, proving the fake DLL did not expose the exact pinned production export name.
+- Cause: relying on compiler-generated C++ mangling in the fake test DLL made the test ABI compiler-version-dependent.
+- Production runtime ABI strings were not changed simply to satisfy the fake.
+- Fix: fake implementation uses plain internal C functions plus explicit linker `/EXPORT:` aliases for the exact production ABI names.
+- Result: exact ABI lookup, registration, ScriptMain execution, wait/resume and five-heartbeat smoke all pass.
+
+### Latest synthetic validation
+- Windows core build/tests: PASS.
+- Linux core build/tests: PASS.
+- ASan + UBSan: PASS.
+- dev.11 ASI build: PASS.
+- custom PE / intended Kernel32 boundary: PASS.
+- no CRT/C++ runtime/TLS/direct ScriptHookV import: PASS.
+- exact fake ScriptHookV ABI exports: PASS.
+- `scriptRegister` invoked by ASI: PASS.
+- ScriptMain execution: PASS.
+- `scriptWait(0)` resume: PASS.
+- five heartbeat resumes: PASS.
+- GTA-ready package creation and required-content verification: PASS.
+- fake ScriptHookV redistribution guard: PASS.
+
+### Current evidence boundary
+- The ScriptHookV lifecycle is D3 Windows synthetic, not yet D4 real GTA execution.
+- The next user package is `0.0.1-dev.11`.
+- Required real-game evidence is `VOXModernOverhaul/runtime_game_thread.log` containing ENTER, RESUMED_AFTER_WAIT and five fresh HEARTBEAT lines while GTA remains stable.
+- Persistence, game natives, Entity Registry wiring and mission detection remain intentionally disconnected until this gate passes.
+
+### Next work after real D4 pass
+1. Persistent Entity Registry.
+2. Queued/deferred EventBus adapter so non-game threads never call GTA APIs directly.
+3. First atomic versioned persistent-state file including EntityId high-water mark.
+4. Read-only mission-active detector.
+5. Story Compatibility Manager skeleton / canonical-overlay interface.
+6. Begin Enhanced asset locator/override tooling for the visual vertical slice in parallel once runtime boundaries are proven.
+
 ## 2026-09-04 — dev.10 intermittent behavior: successful load after remove/restore
 
 ### New user evidence
@@ -12,169 +110,49 @@ This is the precise engineering trace for the project. Patch notes summarize cha
 - dev.10 itself remains intentionally silent because it has no imports, CRT, logging, GTA calls or ScriptHookV calls.
 
 ### Interpretation
-- This proves the exact dev.10 loading concept is **not deterministically incompatible** with the current GTA V Enhanced + plugin environment.
-- It does **not** prove the earlier crashes were caused by a stale file, loader timing, plugin coexistence, or some unrelated game/mod condition.
-- It also does not yet prove sustained stability; one successful launch after multiple failed launches is insufficient for stable D4 promotion.
-- The runtime architecture therefore remains frozen at the zero-work checkpoint until repeatability is demonstrated.
-
-### Traceability decision
-- `dev.10` status changed from unconditional D4 stability failure to **D4 provisional**.
-- Patch notes advanced to `0.0.1-debug.2`.
-- Phase 0 current checkpoint changed from baseline/crash capture to **repeatable dev.10 stability**.
-- External WER crash capture remains available and should be used immediately if the failure recurs before files are changed again.
-
-### Promotion test
-To promote the loader path to stable D4:
-1. keep the exact current plugin folder unchanged;
-2. sustain Story Mode/free roam for roughly 10 minutes;
-3. quit normally;
-4. relaunch without modifying files and reach Story Mode again;
-5. repeat at least one additional launch if practical;
-6. on any recurring crash, collect WER/minidump evidence before replacing/removing the ASI.
-
-### Next implementation if stable
-- Acquire/document the exact ScriptHookV SDK/API boundary used by the Enhanced build.
-- Register the VOX runtime through the proper ScriptHookV script/game-thread lifecycle.
-- Add a one-tick, no-world-mutation runtime probe.
-- Do **not** resurrect the dev.8 free-thread-from-`DllMain` bootstrap.
+- This proves the exact dev.10 loading concept is not deterministically incompatible with the current GTA V Enhanced + plugin environment.
+- At the time of this entry it was kept provisional; the later user report of normal repeatable launches promoted it to the stable load baseline used for dev.11.
+- The exact earlier crash cause remains unresolved.
 
 ## 2026-09-04 — dev.9 real crash, binary inspection, dev.10 no-CRT isolation
 
 ### User evidence received for dev.9
-- User reports GTA V Enhanced still crashes with `0.0.1-dev.9`.
-- `asiloader(1).log` shows the Enhanced ASI loader loaded `RageOpenV.asi`, `ScriptHookVDotNet.asi`, `TrainerV.asi`, then `VOXModernOverhaul.asi`, and finished plugin loading.
-- `ScriptHookV(1).log` reports successful initialization for `VER_EN_1_0_1158_13` and registration of ScriptHookVDotNet/TrainerV.
-- `RageOpenV(1).log` reports successful RageOpenV initialization.
-- No VOX log is expected from dev.9 because explicit project logging was removed.
-- Available logs still do not include an exception code, crashing module or stack trace.
-
-### Blocker protocol: move below application logic
-- dev.9 had already removed `CreateThread`, project logging, filesystem/config access, Enhanced probing, version reads, project-core linkage, ScriptHookV calls, GTA natives, hooks and world/save writes from the ASI's project code.
-- Because the real game still crashed, no additional application/runtime feature work was added.
-- The exact packaged dev.9 `VOXModernOverhaul.asi` was extracted and its PE headers/import table inspected independently.
+- User reported GTA V Enhanced still crashed with `0.0.1-dev.9`.
+- ASI loader showed RageOpenV, ScriptHookVDotNet, TrainerV and VOX all loaded; adjacent framework logs showed successful initialization.
+- No VOX log was expected because explicit project logging had been removed.
 
 ### Important dev.9 binary finding
-- Despite an intentionally empty project `DllMain`, the MSVC-generated DLL still had a normal CRT startup entrypoint.
-- dev.9 imported `VCRUNTIME140.dll` (`__std_type_info_destroy_list`, `__C_specific_handler`, `memcpy`).
-- dev.9 imported `api-ms-win-crt-runtime-l1-1-0.dll`, including `_cexit`, `_execute_onexit_table`, `_initialize_onexit_table`, `_initialize_narrow_environment`, `_configure_narrow_argv`, `_seh_filter_dll`, `_initterm_e` and `_initterm`.
-- It also imported several KERNEL32 timing/process functions through the runtime startup path.
-- Therefore dev.9 did **not** prove that zero non-game code executed during DLL load. It only proved that our explicit application body did no work.
-- Root cause is still not declared; CRT startup became the next isolated layer.
+- Despite inert project code, the MSVC-generated DLL still used normal CRT startup.
+- Imports included `VCRUNTIME140.dll` and `api-ms-win-crt-runtime-l1-1-0.dll` initialization/termination routines.
+- Therefore dev.9 did not prove zero associated startup execution.
 
-### dev.10 design
-- Added `src/runtime/windows/NoCrtEntry.c`.
-- Entry function accepts the three DLL-loader arguments, intentionally ignores them and returns success.
-- ASI target links with `/NODEFAULTLIB` and custom `/ENTRY:VoxDllEntry`.
-- ASI compile disables `/GS` security-cookie dependency and omits default-library directives (`/Zl`).
-- No project core, STL, CRT, Win32 API, ScriptHookV or GTA code is linked into the dev.10 ASI.
-
-### New binary correctness gate
-- GitHub Actions now parses the generated ASI bytes before packaging.
-- Requires valid PE32+ format and non-zero custom entrypoint.
-- Requires Import Directory RVA = 0 and size = 0.
-- Requires TLS Directory RVA = 0 and size = 0.
-- Synthetic host still performs Windows `LoadLibraryW` -> residency -> `FreeLibrary` on the exact generated ASI.
-
-### dev.10 automated evidence
-- Exact package commit: `a193e307a443e491f13e6576f8ea18896f91945c`.
-- GitHub Actions run: `33873756374`.
-- Windows/MSVC core build + tests: PASS.
-- Linux core build + tests: PASS.
-- ASan + UBSan: PASS.
-- no-CRT x64 ASI build: PASS.
-- PE zero-import/zero-TLS check: PASS.
-- synthetic load/residency/unload: PASS.
-- package creation/extraction verification: PASS.
-- artifact upload: PASS.
-
-### Independent downloaded-package verification
-- Inner GTA-ready ZIP SHA-256: `6ba7a17a3c7958cff0224b29895a8408bbf480e3b47dc7e59c7f99a33fcb1d6a`.
-- ASI SHA-256: `c77d3c2b43081fadf05165155a032f154189f8a3fec8406a81266ee3101fc63b`.
-- `BUILD_INFO.txt` contains the same ASI hash and commit `a193e307a443e491f13e6576f8ea18896f91945c`.
-- Independent `objdump -x` inspection shows Import Directory = 0, IAT = 0, TLS = 0, Load Configuration = 0, Delay Import = 0, CLR = 0.
-- `.text` is only 6 bytes in the downloaded ASI; no imported DLL/function table exists.
-
-### Decision boundary at that time
-- Initial real GTA tests of dev.10 crashed, so application code and CRT startup were both eliminated as deterministic prerequisites.
-- External crash capture and controlled-baseline tooling were added instead of changing application logic again.
-- A later successful remove/restore launch is recorded in the newer section above and changes dev.10 classification to provisional/intermittent rather than deterministically failing.
+### dev.10 design and proof
+- Added `NoCrtEntry.c` with `/NODEFAULTLIB`, `/ENTRY:VoxDllEntry`, `/GS-`, `/Zl`.
+- No project core, STL, CRT, Win32 API, ScriptHookV or GTA code linked into dev.10.
+- PE gates required custom entrypoint, zero import directory and zero TLS.
+- Run `33873756374`: Windows/Linux/sanitizers/no-CRT load smoke/package PASS.
+- Independent downloaded-package inspection confirmed zero Import/IAT/TLS/LoadConfig/DelayImport/CLR and a tiny `.text` path.
 
 ## 2026-09-04 — Real GTA dev.8 crash + dev.9 inert isolation
 
-### User evidence received
-- `bootstrap.log` shows the dev.8 ASI executed inside the user's real GTA V Enhanced process at `2026-09-04 14:02:29`.
-- Process path resolved as `E:\\Jeux Epic\\GTAVEnhanced\\GTA5_Enhanced.exe`.
-- Enhanced probe returned `valid`.
-- Windows file version returned `1.0.1158.13`.
-- ASI loader and ScriptHookV were detected as present.
-- Packaged config parsed with `diagnostic_bootstrap_enabled=true`.
-- Exact final marker was written: `CHECKPOINT_OK: ASI loaded in GTA V Enhanced; no gameplay hooks or memory patches are active.`
-- `asiloader.log` independently confirms load order including `RageOpenV.asi`, `ScriptHookVDotNet.asi`, `TrainerV.asi`, then `VOXModernOverhaul.asi`.
-- `ScriptHookV.log` reports successful initialization for `VER_EN_1_0_1158_13`.
-- `RageOpenV.log` reports successful initialization.
-- User reports the game then crashed.
-
-### Classification
-- dev.8 proved real-game ASI loading and successful bootstrap execution, but **failed D4 stability**.
-- The available logs contain no exception code, crash module or stack trace.
-- The asynchronous bootstrap created a Win32 thread from `DllMain` and immediately performed C++/filesystem/logging work outside the normal ScriptHookV game-thread lifecycle; this path was quarantined rather than extended.
-
-### Blocker protocol applied
-- Stopped building additional systems on top of dev.8.
-- Reduced explicit project runtime work to dev.9 `DllMain` immediate success.
-- Removed project-core linkage, logger, filesystem access, config access, Enhanced probing, version reading, ScriptHookV calls, native calls, hooks, memory writes and save/world changes from dev.9 project logic.
-
-### dev.9 automated isolation harness
-- Added `InertSmokeHost.cpp`.
-- Synthetic host loads the exact generated ASI, holds it resident for two seconds, verifies module residency and unloads it with `FreeLibrary`.
-- Exact implementation commit: `818376c8c3a3a8afaa2499ee44225ab68850b266`.
-- GitHub Actions run: `33872399873`.
-- Windows/MSVC core build + tests: PASS.
-- Linux core build + tests: PASS.
-- ASan + UBSan: PASS.
-- Windows x64 inert ASI build: PASS.
-- inert ASI load/residency/unload smoke: PASS.
-- package creation/extraction verification/artifact upload: PASS.
-
-### dev.9 package identity
-- ASI SHA-256: `c8d3db56304565da90c6d69dc83c48c09cc771a8fc174f99902e473414a2cde7`.
-- Inner GTA-ready ZIP SHA-256: `e50a393791f94d8cd60ba5a6ea84f15449569ba0ff39f5aa5c6c207191d73b44`.
-- GitHub Actions outer artifact digest: `sha256:23e3152fbdf50f5e2f5ebe29bfa29398441938bd2a919b4e735289f1d2062ec1`.
+- dev.8 real log proved Enhanced `1.0.1158.13`, config/dependency detection and exact `CHECKPOINT_OK`, then the game crashed.
+- The free thread created from `DllMain` was quarantined rather than extended.
+- dev.9 removed project core/logger/filesystem/config/probing/ScriptHook/natives/hooks/memory/save/world work and reduced project logic to immediate success.
+- Synthetic inert load passed, but real game still crashed; later CRT inspection motivated dev.10.
 
 ## 2026-09-04 — Checkpoint 0: GTA-ready diagnostic ASI + reproducible package
 
-### Development contract
-- Added project-local `AGENT.md` as the authoritative working contract.
-- Recorded continuous-checkpoint, blocker/root-cause, ask-before-guessing, mandatory traceability and GTA-ready packaging rules.
-
-### Diagnostic ASI implemented
-- Added Windows x64 `VOXModernOverhaul.asi` target.
-- Bootstrap performed no GTA native calls, gameplay hooks, memory patches, save writes or world changes.
-- Validated Enhanced process/install/build, config and dependencies and wrote exact `CHECKPOINT_OK` marker.
-
-### Synthetic Windows runtime smoke harness
-- Added a synthetic x64 `gta5_enhanced.exe` host that `LoadLibraryW`s the generated ASI and requires the expected checkpoint marker.
-
-### Packaging
-- Added reproducible `PackageCheckpoint.ps1`.
-- Package records commit + ASI SHA-256 and is extracted/revalidated in CI before artifact upload.
-
-### Build blocker / correction
-- Windows CI exposed legacy `windows.h` `max` macro pollution at `std::numeric_limits<...>::max()`.
-- Root cause was fixed globally with `NOMINMAX` for every MSVC target rather than patching individual call sites.
-
-### Exact validation evidence
-- Source checkpoint commit: `389e5cb5a12de7bd33eecca999479ec86e2822da`.
-- GitHub Actions run: `33865763371`.
-- Windows, Linux, ASan+UBSan, ASI smoke, packaging and artifact upload: PASS.
-- Later real-game test reached `CHECKPOINT_OK` but crashed, so D4 stability failed.
+- Added project-local `AGENT.md` as authoritative development contract.
+- Added Windows x64 diagnostic ASI and synthetic host.
+- Added reproducible `PackageCheckpoint.ps1` with commit and ASI hash in `BUILD_INFO.txt`.
+- Windows CI exposed `windows.h` `max` macro pollution; fixed globally with `NOMINMAX`.
+- Run `33865763371`: Windows/Linux/sanitizers/ASI smoke/package PASS before real-game test.
 
 ## 2026-09-04 — GTA V Enhanced install/build probe foundation
 
 - Added explicit-root Enhanced installation probe requiring `gta5_enhanced.exe`.
 - Validates root, executable, MZ/PE signature and AMD64 machine.
 - Added Windows file-version reader with `VS_FIXEDFILEINFO` validation.
-- Portable probe positive/negative fixtures and Windows version tests pass.
 
 ## 2026-09-04 — Phase 0 execution checklist + config CI promotion
 
