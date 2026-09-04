@@ -27,11 +27,25 @@ Legend:
 - [x] thread-safe file logger foundation — D3 cross-platform
 - [ ] log rotation / bounded size
 - [ ] structured subsystem/event fields
-- [ ] crash/exception capture
-- [ ] minidump or equivalent Windows crash artifact
+- [x] external Windows crash capture tooling — D3 tooling
+  - [x] per-app WER `LocalDumps` configuration for `GTA5_Enhanced.exe`
+  - [x] default minidump (`DumpType=1`) capture
+  - [x] pre-existing WER value backup
+  - [x] reversible WER restore
+  - [x] recent Application/WER event collection
+  - [x] recent dump collection
+  - [x] plugin/game hash inventory
+  - [x] relevant GTA/mod log collection
+  - [x] evidence ZIP generation
+  - [x] PowerShell parser CI
+  - [x] fake-GTA evidence collector smoke test
+  - [x] reproducible crash-capture package + artifact
+- [ ] obtain real GTA crash minidump/exception/module from current user environment
+- [ ] analyze real dump and identify faulting module/offset
+- [ ] add production crash/exception capture to runtime only after stable loader path exists
+- [ ] log rotation / bounded size for future runtime logs
 - [x] startup environment/build report foundation — dev.8 real execution observed
 - [ ] full runtime dependency/build compatibility report
-- [ ] capture Windows crash code/module/stack for future D4 failures instead of relying only on adjacent logs
 
 ## Persistent identity
 
@@ -104,7 +118,7 @@ Legend:
 
 ## Native runtime adapter
 
-- [ ] complete native runtime adapter — IN PROGRESS / crash isolation active
+- [ ] complete native runtime adapter — BLOCKED ON LOADER/CRASH ISOLATION
   - [x] minimal Windows x64 ASI binary target — D3
   - [x] dev.8 real GTA process loads ASI and reaches exact `CHECKPOINT_OK`
   - [ ] dev.8 real GTA stability — **FAILED**
@@ -120,8 +134,15 @@ Legend:
   - [x] dev.10 CI gate: TLS Directory = 0
   - [x] dev.10 independent downloaded-binary inspection: Import/IAT/TLS/LoadConfig all zero
   - [x] dev.10 synthetic load/residency/unload — D3, run `33873756374`
-  - [ ] dev.10 real GTA stability — **CURRENT USER CHECKPOINT**
-  - [ ] if dev.10 fails: isolate ASI image/loader/plugin coexistence and add external crash-module capture before any further application changes
+  - [ ] dev.10 real GTA stability — **FAILED**
+  - [x] stop speculative application/runtime changes after dev.10 failure
+  - [x] add controlled baseline tool that disables only VOX ASI by rename
+  - [x] add external crash-module/minidump capture tooling
+  - [ ] run otherwise-identical GTA baseline with VOX ASI disabled — **CURRENT USER CHECKPOINT**
+  - [ ] if baseline stable: reproduce dev.10 crash with capture enabled
+  - [ ] if baseline crashes: investigate non-VOX mod/loader environment first
+  - [ ] obtain faulting module/exception/offset
+  - [ ] determine whether simple ASI presence/image/coexistence is root cause
   - [ ] ScriptHookV SDK acquisition/documented dependency for native calls
   - [ ] ScriptHookV/game-thread registration adapter
   - [ ] one safe in-game tick
@@ -131,21 +152,28 @@ Legend:
 
 ### Quarantined paths
 
-- dev.8 `CreateThread`-from-`DllMain` bootstrap: quarantined; do not reuse as the production lifecycle.
-- dev.9 default MSVC CRT startup pattern: not accepted as a zero-work isolation baseline because binary inspection proved CRT startup imports remained.
+- dev.8 `CreateThread`-from-`DllMain` bootstrap: quarantined; do not reuse as production lifecycle.
+- dev.9 default MSVC CRT startup pattern: not accepted as a zero-work isolation baseline because CRT startup imports remained.
+- New application/gameplay code on top of dev.10: forbidden until baseline + external crash evidence identifies the failing layer.
 
 ## Packaging / rollback
 
-- [x] reproducible PowerShell checkpoint packager — D3 Windows
+- [x] reproducible PowerShell runtime checkpoint packager — D3 Windows
 - [x] package contains only project files; no third-party binaries
 - [x] ASI SHA-256 recorded in `BUILD_INFO.txt`
 - [x] commit/version recorded in `BUILD_INFO.txt`
-- [x] generated ZIP extracted and required files verified in CI
+- [x] generated runtime ZIP extracted and required files verified in CI
 - [x] first-test instructions packaged
 - [x] explicit removal/rollback instructions packaged
 - [x] dev.8 artifact upload
 - [x] dev.9 artifact upload — run `33872399873`
 - [x] dev.10 artifact upload — run `33873756374`
+- [x] crash-capture tooling package — run `33875088958`
+  - [x] parser validation
+  - [x] evidence collector smoke test
+  - [x] package build
+  - [x] package content verification
+  - [x] artifact upload
 - [ ] installer/automatic root detection for later public builds
 
 ## Story compatibility foundation
@@ -172,32 +200,26 @@ Runtime isolation checkpoints intentionally do not mutate story/world state. Sto
 
 ## Current checkpoint
 
-**Checkpoint 0C — real GTA V Enhanced no-CRT/zero-import ASI stability (`0.0.1-dev.10`)**
+**Checkpoint 0D — controlled baseline + external crash evidence**
 
-Automated validation is complete:
+Automated tooling validation is complete:
 
-1. Windows/MSVC core build + tests — PASS.
-2. Linux core build + tests — PASS.
-3. ASan + UBSan — PASS.
-4. Windows no-CRT x64 ASI build — PASS.
-5. PE32+ custom non-zero entrypoint — PASS.
-6. Import Directory = 0 — PASS.
-7. TLS Directory = 0 — PASS.
-8. synthetic ASI load/residency/unload — PASS.
-9. package generation + extraction/verification — PASS.
-10. artifact upload — PASS.
-11. exact GitHub Actions run: `33873756374`.
+1. Crash capture PowerShell parse checks — PASS.
+2. Evidence collector fake-GTA smoke test — PASS.
+3. Crash-capture package build — PASS.
+4. Package extraction/required-file verification — PASS.
+5. Artifact upload — PASS.
+6. Exact GitHub Actions run: `33875088958`.
+7. User ZIP SHA-256: `30414e69d05283d8f326b289b38c87d372faf1e0d9588ad1604cabd4911ed27a`.
 
-User test:
+User test sequence:
 
-1. Replace only `VOXModernOverhaul.asi` with `dev.10`.
-2. Leave the other existing ASI/plugins unchanged.
-3. Launch GTA V Enhanced and enter Story Mode if possible.
-4. Remain loaded beyond the usual crash point (target 2–5 minutes).
-5. Report stable/crash and approximate timing/context.
-6. No VOX log is expected.
+1. Enable crash capture.
+2. Disable only `VOXModernOverhaul.asi` using the packaged rename tool.
+3. Launch the otherwise identical modded GTA V Enhanced installation.
+4. If it crashes, collect evidence immediately and leave VOX disabled.
+5. If stable, quit normally, restore dev.10 ASI, reproduce the crash and collect evidence.
+6. Upload the generated `VOX-Crash-Evidence-*.zip`.
+7. Do not change other plugins between baseline and VOX run.
 
-Decision after result:
-
-- **Stable:** CRT/default-library startup becomes the primary dev.9 compatibility suspect; proceed to a controlled ScriptHookV/game-thread runtime architecture.
-- **Still crashes:** application logic + CRT are both eliminated; stop changing application code and move to ASI-loader/file-image/plugin coexistence isolation plus external crash capture.
+No runtime feature development resumes until this checkpoint identifies the failing layer.
