@@ -7,7 +7,7 @@ Validation levels are defined in `QUALITY_GATES.md`.
 | Capability | Status | Evidence / boundary |
 |---|---|---|
 | Project architecture | D1 | Architecture/TODO/roadmap/story contract/data model written and reviewed |
-| Project-local development contract (`AGENT.md`) | D1 active | Continuous-checkpoint, blocker, traceability, packaging and ask-before-guessing rules recorded |
+| Project-local development contract (`AGENT.md`) | D1 active | Continuous-checkpoint, blocker, traceability, packaging, ask-before-guessing and executable-installer-smoke rules recorded |
 | C++20 standalone core scaffold | D3 cross-platform | Windows/Linux CI and sanitizer jobs pass |
 | Core warnings policy | D3 cross-platform | warnings-as-errors CI passes |
 | Win32 macro-isolation policy | D3 Windows | `NOMINMAX` globally applied after MSVC regression |
@@ -36,10 +36,11 @@ Validation levels are defined in `QUALITY_GATES.md`.
 | dev.14 persistent runtime | **D4 real GTA PASS** | real first launch NEW+SAVE_OK; second launch LOADED with same persistent identity; queue marker healthy |
 | Mission/story detector | D0 | read-only work queued in parallel with visual track |
 | Story Compatibility runtime | D0 | contract only |
-| Enhanced asset locator / transform tooling | **D3 Windows synthetic IN PROGRESS** | FiveFury 0.4.21 Gen9 YDR rewrite + path-safety self-test passes in dev.15 CI; real GTA install/visual proof pending |
-| RageOpenV loose override integration | **D2 implementation / D4 pending** | dev.15 maps base `x64*.rpf/...` to `newmods/platform/...`; real mount visibility pending |
-| First visible graphics replacement | **D4 pending user test** | dev.15 current checkpoint; intentionally oversized common static prop |
-| Runtime checkpoint packaging | D3 Windows | ASI+Core+visual tools required; fake ScriptHook/user state/YDR assets excluded |
+| Visual installer environment/bootstrap | **D3 Windows executed PASS** | dev.15.1 CI run `33893214202` creates a fresh venv, queries Python 3.11.9, installs FiveFury 0.4.21 and runs Gen9 self-test through the actual packaged setup script |
+| Enhanced asset locator / transform tooling | **D3 Windows synthetic IN PROGRESS** | FiveFury 0.4.21 Gen9 YDR rewrite + path-safety self-test passes; retail GTA archive scan/extract still D4 pending |
+| RageOpenV loose override integration | **D2 implementation / D4 pending** | dev.15.1 maps base `x64*.rpf/...` to `newmods/platform/...`; real mount visibility pending |
+| First visible graphics replacement | **D4 pending user test** | dev.15.1 current checkpoint; intentionally oversized common static prop |
+| Runtime checkpoint packaging | D3 Windows | ASI+Core+visual tools required; fake ScriptHook/user state/YDR assets excluded; package version/readme checked |
 | GitHub Windows/Linux CI | D3 | current jobs pass |
 | ASan + UBSan CI | D3 | current sanitizer jobs pass |
 
@@ -74,32 +75,28 @@ Second launch without deleting state:
 
 This promotes the persistent Entity Registry, high-water restoration and live queue path to **D4 real-game validation**.
 
-## dev.15 current visual checkpoint
+## dev.15.1 current visual checkpoint
+
+### dev.15 real setup outcome
+The first real dev.15 installer attempt failed after successfully creating `.venv-assets` but before dependency install/GTA scan. The failure was a PowerShell→Python quoting defect in the venv version query. It did **not** test or disprove the FiveFury retail scan, Gen9 transform or RageOpenV mount because execution never reached those stages.
+
+### Corrected setup evidence
+CI run `33893214202` executes the actual setup script's new `-EnvironmentOnly` path on Windows rather than only parsing it. A fresh venv is created; the script reports Python 3.11.9, installs FiveFury 0.4.21, runs `VOX_VISUAL_PROBE_SELF_TEST_OK` and exits with `VOX_VISUAL_ENVIRONMENT_SMOKE_OK`.
 
 ### Goal
 Prove the first non-destructive Enhanced asset round trip in the user's actual installation:
 
 `base x64*.rpf asset -> FiveFury index/extract -> Gen9 YDR render transform -> validate -> newmods/platform mirror -> RageOpenV -> visible GTA instance`.
 
-### Synthetic/tooling proof required before delivery
-- FiveFury pinned to 0.4.21, Python >=3.11;
-- public-domain dependency is installed locally at test time and never bundled;
-- synthetic Gen9 YDR v159 is rewritten, reopened and validated;
-- render vertices and bounds change by the expected factor while version remains v159;
-- base-RPF to RageOpenV platform path mapping is deterministic;
-- update/DLC/traversal/drive-style paths fail closed;
-- PowerShell wrappers parse;
-- package contains no YDR, no FiveFury environment, no extracted user asset and no persistent user state;
-- rollback is manifest/hash scoped to the exact generated loose file.
-
 ### D4 promotion rule
-`dev.15` becomes the first visible graphics-pipeline foundation only when the real GTA test proves:
-1. setup report says `status=INSTALLED`;
-2. source is a supported base `x64*.rpf` path;
-3. generated file is installed under `newmods/platform`;
-4. GTA remains stable;
-5. a real streamed instance of the selected model visibly reflects the exaggerated geometry change;
-6. rollback removes only the generated override and returns the model to vanilla appearance.
+`dev.15.1` becomes the first visible graphics-pipeline foundation only when the real GTA test proves:
+1. corrected setup environment path completes;
+2. setup report says `status=INSTALLED`;
+3. source is a supported base `x64*.rpf` path;
+4. generated file is installed under `newmods/platform`;
+5. GTA remains stable;
+6. a real streamed instance of the selected model visibly reflects the exaggerated geometry change;
+7. rollback removes only the generated override and returns the model to vanilla appearance.
 
 ## Rule
 
