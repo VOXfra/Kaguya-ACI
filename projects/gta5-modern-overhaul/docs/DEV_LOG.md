@@ -2,6 +2,108 @@
 
 This is the precise engineering trace for the project. Patch notes summarize changes; this log records what was done, why, validation performed and what is still unproven.
 
+## 2026-09-04 — dev.15.3 complete directory archive performance failure → dev.15.4 real compact RPF
+
+### Real dev.15.3 outcome
+The complete nested `v_construction.rpf` directory mirror changed the real-game behavior materially: the user reached Story Mode instead of the immediate one-file-directory crash, but reports the game running at roughly **5 FPS**.
+
+That establishes two separate facts:
+1. the previous one-file `.rpf` directory was structurally incomplete and could not stand in for the original nested archive;
+2. mirroring the entire archive as a filesystem directory is far too expensive to use as the production override strategy.
+
+The complete directory approach is therefore retired even though it was a useful differential test. It is recorded as functional enough to load but a **D4 performance failure**.
+
+### Fresh logs after the failed visual experiments
+The newest returned log set still shows the known runtime path reaching all expected markers:
+- the ASI loader maps RageOpenV, ScriptHookVDotNet, TrainerV and VOX, then finishes plugin loading;
+- ScriptHookV identifies Enhanced `VER_EN_1_0_1158_13` and registers VOX;
+- VOX enters/resumes ScriptMain, starts the Core, saves persistence, reaches runtime/bridge ready, dispatches the game-thread queue, then produces five Core ticks and five ScriptHook heartbeats;
+- RageOpenV's release log still only says `RageOpenV Inited!`.
+
+These logs do not prove why the directory mirror costs so much; they only continue to show that the validated VOX runtime lifecycle itself reaches its expected checkpoints during these tests. No deeper RageOpenV operation is claimed from its sparse release log.
+
+### Why the next strategy is a real RPF file
+Re-reading RageOpenV's `OpenArchiveHook` shows its special archive behavior is conditional on the custom-device path having `FILE_ATTRIBUTE_DIRECTORY`. If the path is a **real `.rpf` file**, that directory-mode override is not selected and the archive is left on the normal packfile-open path.
+
+The new strategy is therefore:
+
+`newmods/platform/levels/gta5/props/roadside/v_construction.rpf`
+
+as one actual RPF file, not a directory named `.rpf`.
+
+This keeps the override non-destructive while avoiding thousands of individual filesystem-backed resource lookups.
+
+### dev.15.4 compact RPF implementation
+Added `vox_compact_rpf_probe.py` plus:
+- `Install-CompactRpfIdentityProbe.ps1`;
+- `Enable-CompactRpfTransformedProbe.ps1`;
+- `Rollback-CompactRpfProbe.ps1`;
+- `08_INSTALL_COMPACT_RPF_IDENTITY.cmd`;
+- `09_ENABLE_COMPACT_SCALED_PROBE.cmd`;
+- `10_ROLLBACK_COMPACT_RPF_PROBE.cmd`.
+
+The identity path deliberately does **not rebuild** the original nested RPF. It:
+1. loads the existing visual-probe manifest and preserves the real dev.15.1 source/transformed YDR hashes;
+2. derives outer archive `x64f.rpf`, nested entry `levels/gta5/props/roadside/v_construction.rpf`, target `prop_roadcone02a.ydr`, and final compact destination from the real source logical path;
+3. initializes FiveFury's Enhanced `GameFileCache` to obtain the game's crypto context;
+4. opens the user's own outer Rockstar `x64f.rpf` and reads the nested RPF as a standalone byte stream;
+5. reopens those exact nested bytes as an RPF and verifies the contained target standalone SHA-256 matches the `source_sha256` already recorded by the real dev.15.1 extraction;
+6. snapshots all nested member paths and standalone SHA-256 values;
+7. verifies ownership of the currently active VOX directory archive before migration — complete dev.15.3 mirrors require exact set + per-file hash equality, older one-file states require their exact owned target;
+8. stages the exact original nested RPF as a file and verifies its SHA-256;
+9. moves the old VOX directory out of the active path only after staging is complete;
+10. swaps the real RPF file into place and restores the previous directory automatically if the final swap fails;
+11. records `COMPACT_RPF_IDENTITY`, compact RPF SHA-256 and member count in the manifest.
+
+No Rockstar RPF/YDR is distributed. All bytes are recovered from the user's own installed game.
+
+### Transformed compact RPF integrity design
+Only after the user proves the **identity** compact RPF loads at normal performance can the transformed stage run.
+
+The transformed stage starts from the preserved identity RPF and replaces only the target member with the already preserved Gen9 YDR from dev.15.1. Because rebuilding an RPF can legitimately change archive-level byte layout, verification is performed at the meaningful member boundary:
+- the rebuilt RPF is reopened;
+- member path set must be exactly identical;
+- target standalone SHA-256 must equal the preserved transformed YDR SHA-256;
+- every non-target standalone member SHA-256 must remain identical to the identity RPF;
+- active transformed RPF SHA-256 is recorded for ownership-safe rollback.
+
+The production real path carries the FiveFury Enhanced crypto context through source/rebuild validation. The synthetic self-test uses unencrypted RPFs.
+
+### FiveFury API defect caught before user delivery
+During source review, the first compact script imported `RpfFileEntry` from the FiveFury top-level package. Inspection of FiveFury's actual `__init__.py` showed `RpfArchive` is exported but `RpfFileEntry` is not.
+
+The compact script was corrected before delivery to import `RpfArchive` / `RpfFileEntry` from `fivefury.rpf`. This is exactly the type of boundary error that previously escaped the first dev.15 wrapper, so the consolidated CI executes the real installed wheel rather than trusting static assumptions.
+
+### CI consolidation
+The project had accumulated a current core workflow and a checkpoint-specific dev.15.3 workflow. Keeping both caused unnecessary duplicate builds and made it easier for stale checkpoint packaging rules to remain active.
+
+Actions taken:
+- retired `.github/workflows/gta5-modern-overhaul-core.yml`;
+- retired `.github/workflows/gta5-modern-overhaul-dev153.yml`;
+- added one `.github/workflows/gta5-modern-overhaul.yml` current workflow.
+
+The consolidated workflow requires:
+- Windows and Linux warnings-as-errors core builds/tests;
+- Linux ASan + UBSan;
+- real FiveFury 0.4.21 install on Windows;
+- Python compile + Gen9 visual self-test + legacy mirror self-test + compact-RPF extraction/rebuild self-test;
+- PowerShell parsing for every shipped visual wrapper;
+- exact user-facing environment bootstrap in a **fresh** venv, then compact-RPF self-test from that installer-created venv;
+- runtime x64 ASI/Core build;
+- CRT-free/no-TLS ASI dependency boundary;
+- two separate synthetic runtime processes proving persistence create→restore;
+- dev.15.4 package creation;
+- package boundary rejecting any `.ydr`, `.rpf`, user state, local venv or ScriptHookV redistribution.
+
+### Current evidence boundary
+The compact-RPF tool is still D3 until a final documentation-aligned CI build is green and the user's real GTA performs the identity test.
+
+D4 sequence is intentionally two-stage:
+1. `08_INSTALL_COMPACT_RPF_IDENTITY.cmd`: no intended visual difference; require Story Mode to load and FPS to return to normal;
+2. only after that pass, `09_ENABLE_COMPACT_SCALED_PROBE.cmd`: require normal FPS and a visibly oversized `prop_roadcone02a`.
+
+If stage 1 crashes or remains unusably slow, the `newmods/platform` nested-RPF route itself is rejected instead of adding another filesystem workaround. No visible D4 pass is claimed until a modified asset reaches a stable frame at acceptable performance.
+
 ## 2026-09-04 — dev.15.2 source-identical crash → dev.15.3 complete nested-RPF mirror
 
 ### Real dev.15.2 result
