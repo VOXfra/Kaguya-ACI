@@ -51,6 +51,7 @@ See:
 
 - `docs/ARCHITECTURE.md`
 - `docs/TODO.md`
+- `docs/TODO_TRANSVERSAL.md`
 - `docs/ROADMAP.md`
 - `docs/STORY_COMPATIBILITY.md`
 - `docs/DATA_MODEL.md`
