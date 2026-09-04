@@ -130,7 +130,7 @@ def _make_cache(gta_root: Path) -> Any:
 
 
 def _archive_snapshot(archive: Any) -> dict[str, str]:
-    from fivefury import RpfFileEntry
+    from fivefury.rpf import RpfFileEntry
 
     result: dict[str, str] = {}
     for entry in archive.iter_entries(include_directories=False, include_root=False):
@@ -152,7 +152,7 @@ def _extract_original_nested_rpf(
     target_relative: str,
     source_target_hash: str,
 ) -> tuple[bytes, dict[str, str]]:
-    from fivefury import RpfArchive, RpfFileEntry
+    from fivefury.rpf import RpfArchive, RpfFileEntry
 
     cache = _make_cache(gta_root)
     try:
@@ -376,11 +376,12 @@ def _build_transformed_rpf(
     target_relative: str,
     transformed_bytes: bytes,
     transformed_hash: str,
+    crypto: Any | None = None,
 ) -> tuple[str, int]:
-    from fivefury import RpfArchive, RpfFileEntry
+    from fivefury.rpf import RpfArchive, RpfFileEntry
 
     identity_bytes = identity_path.read_bytes()
-    source_archive = RpfArchive.from_bytes(identity_bytes, name=identity_path.name)
+    source_archive = RpfArchive.from_bytes(identity_bytes, name=identity_path.name, crypto=crypto)
     try:
         source_snapshot = _archive_snapshot(source_archive)
     finally:
@@ -389,7 +390,7 @@ def _build_transformed_rpf(
     if target_key not in source_snapshot:
         raise CompactRpfError("Target is absent from preserved identity RPF.")
 
-    archive = RpfArchive.from_bytes(identity_bytes, name=identity_path.name)
+    archive = RpfArchive.from_bytes(identity_bytes, name=identity_path.name, crypto=crypto)
     try:
         archive.file(target_relative, transformed_bytes)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -397,7 +398,7 @@ def _build_transformed_rpf(
     finally:
         archive.close()
 
-    rebuilt = RpfArchive.from_path(output_path)
+    rebuilt = RpfArchive.from_path(output_path, crypto=crypto)
     try:
         rebuilt_snapshot = _archive_snapshot(rebuilt)
         target = rebuilt.find_entry(target_relative)
@@ -444,10 +445,19 @@ def enable_transformed(gta_root: Path) -> int:
         raise CompactRpfError("Preserved transformed YDR is missing or changed.")
     target_relative = str(manifest.get("compact_rpf_target_relative", ""))
 
-    staging = _work_root(gta_root) / "compact_rpf" / "staging" / (destination.name + ".transformed")
-    transformed_rpf_hash, member_count = _build_transformed_rpf(
-        identity_path, staging, target_relative, transformed.read_bytes(), transformed_hash
-    )
+    cache = _make_cache(gta_root)
+    try:
+        staging = _work_root(gta_root) / "compact_rpf" / "staging" / (destination.name + ".transformed")
+        transformed_rpf_hash, member_count = _build_transformed_rpf(
+            identity_path,
+            staging,
+            target_relative,
+            transformed.read_bytes(),
+            transformed_hash,
+            crypto=cache.crypto,
+        )
+    finally:
+        cache.close()
     if transformed_rpf_hash == identity_rpf_hash:
         raise CompactRpfError("Transformed compact RPF is byte-identical to identity RPF.")
     os.replace(staging, destination)
@@ -524,7 +534,8 @@ def rollback(gta_root: Path) -> int:
 
 
 def self_test() -> int:
-    from fivefury import Vector2, Vector3, YdrGen9Shader, YdrMeshInput, RpfArchive, create_ydr, read_ydr
+    from fivefury import Vector2, Vector3, YdrGen9Shader, YdrMeshInput, create_ydr, read_ydr
+    from fivefury.rpf import RpfArchive
 
     outer, nested, target, relative = compact_archive_info(
         "x64f.rpf/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr"
