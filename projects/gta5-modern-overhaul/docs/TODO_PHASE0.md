@@ -63,6 +63,7 @@ Legend:
 - [x] dev.12 real registration / ScriptMain / wait-resume / heartbeats — **D4 PASS**
 - [x] dev.13 minimal ASI → normal C++ `VOXModernCore.dll` bridge — **D4 PASS**
 - [x] dev.14 persistent Registry + queue in real Core — **D4 PASS**
+- [x] dev.15.1 crash logs still prove runtime reaches Core ready + queue + five ticks before visual crash
 - [ ] first safe GTA native read-only call
 - [ ] supported-build policy + graceful disable
 - [ ] robust plugin/core unload/shutdown lifecycle
@@ -78,9 +79,10 @@ Legend:
 - [x] file logger foundation
 - [x] live host-callback markers
 - [x] reversible external WER crash-capture pack
+- [x] dev.15.1 crash narrowed to post-runtime visual path by returned logs
+- [ ] capture WER/minidump for visual crash only if byte-identical mount test still crashes
 - [ ] log rotation / bounded size
 - [ ] structured subsystem fields
-- [ ] production crash capture only if needed
 
 ## Simulation fidelity
 
@@ -108,6 +110,7 @@ Legend:
 - [x] dev.15 introduced source-only visual tool scripts
 - [x] dev.15 user setup failure isolated before any newmods write
 - [x] dev.15.1 package version/readme boundary enforced in CI
+- [x] dev.15.2 package includes byte-identical visual crash-isolation tools
 - [x] package rejects bundled `.ydr`, FiveFury environment and visual-probe user state
 - [ ] general installer/root discovery for later public builds
 
@@ -133,11 +136,12 @@ Legend:
 - [x] base-game `x64*.rpf` asset-path acceptance / update-DLC rejection
 - [x] traversal / drive-style path rejection
 - [x] visible-prop candidate selection without overwriting an existing loose override
-- [x] local asset extraction from user's own installation — implementation; retail execution pending
-- [x] editable Gen9 YDR render-geometry transformation
-- [x] recompute render bounding box / sphere / LOD distances
-- [x] preserve source YDR version across rewrite
-- [x] reopen + FiveFury validation before install
+- [x] real user's Enhanced scan selects a source asset — **D4 PASS: prop_roadcone02a**
+- [x] real local extraction from user's own x64f.rpf — **D4 PASS**
+- [x] editable Gen9 YDR render-geometry transformation — D3 synthetic
+- [x] recompute render bounding box / sphere / LOD distances — D3 synthetic
+- [x] preserve source YDR version across rewrite — D3 synthetic
+- [x] reopen + FiveFury validation before install — D3 synthetic + real tool path reached
 - [x] generated SHA-256 verification before atomic loose-file install
 - [x] deterministic `x64*.rpf/...` → `newmods/platform/...` mapping
 - [x] manifest records source/generated hashes + exact override path
@@ -145,57 +149,47 @@ Legend:
 - [x] synthetic Gen9 v159 transform self-test — **D3 Windows PASS**
 - [x] PowerShell wrapper parser checks — **D3 Windows PASS**
 - [x] package contains no Rockstar YDR and no locally installed FiveFury runtime
-- [ ] real user's Enhanced scan selects a compatible source asset — **CURRENT D4 TEST**
-- [ ] real RageOpenV mount serves generated YDR — **CURRENT D4 TEST**
-- [ ] **first visible in-game asset replacement — CURRENT D4 TEST**
+- [x] real transformed loose override installed at expected `newmods/platform` path — **D4 execution PASS**
+- [x] real game launch with transformed override attempted — **D4 FAIL: Story Mode crash**
+- [ ] determine whether crash is mount/path vs transformed YDR — **CURRENT dev.15.2 D4 TEST**
+- [x] byte-identical source override replacement implementation — dev.15.2
+- [x] byte-identical source override synthetic hash/manifest regression — **D3 Windows target**
+- [ ] real Story Mode launch with byte-identical source override
+- [ ] stable RageOpenV mount proof
+- [ ] stable rewritten retail YDR proof
+- [ ] **first visible in-game asset replacement**
 - [ ] real rollback proof restores vanilla visual
 - [ ] replace exaggerated proof with first meaningful visual upgrade
 - [ ] first graphical vertical slice
 
 ## Current checkpoint
 
-**Checkpoint 0I — corrected first visible GTA V Enhanced asset override (`0.0.1-dev.15.1`)**
+**Checkpoint 0I.2 — isolate the first real visual crash (`0.0.1-dev.15.2`)**
 
-Real dev.15 outcome:
+Real dev.15.1 outcome:
 
-1. packaged CMD/PowerShell launched from the user's actual GTA root — PASS.
-2. isolated `.venv-assets` creation — PASS.
-3. original Python version query — **FAIL** due malformed `-c` source caused by PowerShell/backslash quote handling.
-4. failure occurred before FiveFury install, GTA archive scan, asset generation or `newmods` installation.
+1. corrected installer environment path — PASS.
+2. Python 3.11.4 + FiveFury 0.4.21 install — PASS.
+3. Gen9 self-test — PASS.
+4. retail Enhanced scan — PASS.
+5. candidate selection — PASS: `prop_roadcone02a`.
+6. source extraction — PASS: `x64f.rpf/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr`.
+7. 1.65x rewrite/validation/hash/install — PASS at tool level.
+8. loose destination — `newmods/platform/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr`.
+9. ASI loader / ScriptHookV / VOX Core lifecycle before crash — PASS.
+10. Story Mode entry — **CRASH**.
+11. visible oversized model — NOT REACHED.
 
-Regression now proven before corrected delivery:
+Current differential test:
 
-1. dev.14 persistent-world two-launch real test — PASS.
-2. current C++ runtime Windows/Linux/ASan+UBSan regressions — PASS.
-3. FiveFury 0.4.21 installs in Windows CI — PASS.
-4. visual Python compiles — PASS.
-5. synthetic Enhanced/Gen9 YDR version 159 creation/rewrite/reopen — PASS.
-6. expected vertex scale survives binary round trip — PASS.
-7. YDR validation after rewrite — PASS.
-8. base-RPF → RageOpenV platform mirror mapping — PASS.
-9. update/DLC/traversal/drive path refusal — PASS.
-10. PowerShell parser validation — PASS.
-11. **actual packaged setup script creates a fresh Windows venv and executes both corrected version queries — PASS.**
-12. same setup script installs FiveFury 0.4.21 into that venv and executes Gen9 self-test — PASS.
-13. `VOX_VISUAL_ENVIRONMENT_SMOKE_OK` — PASS, run `33893214202`.
-14. runtime ASI/Core synthetic persistence regressions remain PASS.
-15. package boundary excludes YDR assets, user state, fake ScriptHookV and FiveFury venv — PASS.
+- replace only the active transformed YDR with the exact extracted original bytes;
+- preserve the exact same `newmods/platform` destination;
+- require source SHA-256 equality before and after copy;
+- preserve transformed hash for diagnosis;
+- launch Story Mode once.
 
-Required real dev.15.1 proof:
+Interpretation:
+- crash persists => investigate RageOpenV/newmods mount/path first;
+- game loads => investigate FiveFury retail YDR writer/round-trip first.
 
-- install corrected dev.15.1 over the current files; existing valid `.venv-assets` may remain;
-- run `VOXModernOverhaul/tools/assets/01_INSTALL_VISUAL_PROBE.cmd`;
-- environment bootstrap and Gen9 self-test complete;
-- report becomes `status=INSTALLED`;
-- report identifies the selected common model and exact base `x64*.rpf` source;
-- generated override exists only in the reported `newmods/platform` path;
-- GTA remains stable;
-- selected model is visibly ~1.65× normal size in Story Mode;
-- screenshot + `visual_probe_report.txt` provide D4 evidence;
-- then run rollback and confirm vanilla appearance returns before moving to real art.
-
-Decision after PASS:
-- remove the deliberately exaggerated proof;
-- keep the validated locator/extract/rebuild/override/rollback pipeline;
-- immediately build the first meaningful materials/foliage/road visual improvement;
-- continue toward the graphical vertical slice while read-only mission/story work proceeds in parallel.
+Only after that branch is known do we build the next visual fix. No visible-pipeline D4 success is claimed yet.
