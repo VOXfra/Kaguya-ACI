@@ -22,6 +22,11 @@ if ($AsiCandidates.Count -ne 1) {
     throw "Expected exactly one VOXModernOverhaul.asi under '$ResolvedBuild', found $($AsiCandidates.Count)."
 }
 
+$CoreCandidates = @(Get-ChildItem -LiteralPath $ResolvedBuild -Filter "VOXModernCore.dll" -File -Recurse)
+if ($CoreCandidates.Count -ne 1) {
+    throw "Expected exactly one VOXModernCore.dll under '$ResolvedBuild', found $($CoreCandidates.Count)."
+}
+
 $PackageRoot = Join-Path $OutputDirectory "package"
 $DataRoot = Join-Path $PackageRoot "VOXModernOverhaul"
 $ConfigRoot = Join-Path $DataRoot "config"
@@ -37,14 +42,17 @@ if (Test-Path -LiteralPath $ZipPath) {
 New-Item -ItemType Directory -Path $ConfigRoot -Force | Out-Null
 
 Copy-Item -LiteralPath $AsiCandidates[0].FullName -Destination (Join-Path $PackageRoot "VOXModernOverhaul.asi")
+Copy-Item -LiteralPath $CoreCandidates[0].FullName -Destination (Join-Path $PackageRoot "VOXModernCore.dll")
 Copy-Item -LiteralPath (Join-Path $ProjectRoot "packaging/config/core.cfg") -Destination (Join-Path $ConfigRoot "core.cfg")
 Copy-Item -LiteralPath (Join-Path $ProjectRoot "packaging/README_FIRST_TEST.txt") -Destination (Join-Path $PackageRoot "README_FIRST_TEST.txt")
 
 $AsiHash = (Get-FileHash -LiteralPath (Join-Path $PackageRoot "VOXModernOverhaul.asi") -Algorithm SHA256).Hash.ToLowerInvariant()
+$CoreHash = (Get-FileHash -LiteralPath (Join-Path $PackageRoot "VOXModernCore.dll") -Algorithm SHA256).Hash.ToLowerInvariant()
 $BuildInfo = @(
     "version=$Version",
     "commit=$Commit",
-    "asi_sha256=$AsiHash"
+    "asi_sha256=$AsiHash",
+    "core_sha256=$CoreHash"
 ) -join [Environment]::NewLine
 Set-Content -LiteralPath (Join-Path $PackageRoot "BUILD_INFO.txt") -Value $BuildInfo -Encoding utf8NoBOM
 
