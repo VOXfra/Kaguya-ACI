@@ -67,6 +67,44 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Python 3.11 for visual pipeline regression
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pinned FiveFury tooling dependency
+        run: python -m pip install --disable-pip-version-check --no-input fivefury==0.4.21
+
+      - name: Validate visual pipeline Python and Enhanced YDR rewrite
+        shell: pwsh
+        run: |
+          python -m py_compile ./projects/gta5-modern-overhaul/tools/assets/vox_visual_probe.py
+          if ($LASTEXITCODE -ne 0) { throw "Visual probe Python syntax validation failed." }
+          python ./projects/gta5-modern-overhaul/tools/assets/vox_visual_probe.py self-test
+          if ($LASTEXITCODE -ne 0) { throw "Visual probe FiveFury/Gen9 self-test failed." }
+
+          $expected = 'newmods/platform/levels/gta5/props/vegetation/v_trees.rpf/prop_tree_cedar_02.ydr'
+          $output = python -c "import importlib.util, pathlib; p=pathlib.Path(r'projects/gta5-modern-overhaul/tools/assets/vox_visual_probe.py'); s=importlib.util.spec_from_file_location('vp',p); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(m.rageopenv_platform_mirror_relative('x64i.rpf/levels/gta5/props/vegetation/v_trees.rpf/prop_tree_cedar_02.ydr').as_posix())"
+          if ($LASTEXITCODE -ne 0 -or $output.Trim() -ne $expected) { throw "RageOpenV platform mirror mapping regression: '$output'" }
+
+      - name: Parse visual pipeline PowerShell scripts
+        shell: pwsh
+        run: |
+          $scripts = @(
+            './projects/gta5-modern-overhaul/tools/assets/Setup-And-Install-VisualProbe.ps1',
+            './projects/gta5-modern-overhaul/tools/assets/Rollback-VisualProbe.ps1'
+          )
+          foreach ($script in $scripts) {
+            $content = Get-Content -LiteralPath $script -Raw
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseInput($content, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -ne 0) {
+              $messages = ($errors | ForEach-Object { $_.Message }) -join '; '
+              throw "PowerShell parser errors in $script : $messages"
+            }
+          }
+
       - name: Configure runtime x64
         run: cmake -S projects/gta5-modern-overhaul -B projects/gta5-modern-overhaul/build-runtime -A x64 -DVOX_BUILD_TESTS=OFF -DVOX_BUILD_RUNTIME=ON -DVOX_WARNINGS_AS_ERRORS=ON
 
@@ -136,10 +174,10 @@ jobs:
           ./projects/gta5-modern-overhaul/tools/PackageCheckpoint.ps1
           -BuildDirectory ./projects/gta5-modern-overhaul/build-runtime
           -OutputDirectory ./projects/gta5-modern-overhaul/dist
-          -Version 0.0.1-dev.14
+          -Version 0.0.1-dev.15
           -Commit $env:GITHUB_SHA
 
-      - name: Verify package contents
+      - name: Verify package contents and visual-tool boundary
         shell: pwsh
         run: |
           $zip = @(Get-ChildItem ./projects/gta5-modern-overhaul/dist -Filter "VOX-GTA5-Modern-Overhaul-*.zip" -File)
@@ -151,6 +189,12 @@ jobs:
             "VOXModernOverhaul.asi",
             "VOXModernCore.dll",
             "VOXModernOverhaul/config/core.cfg",
+            "VOXModernOverhaul/tools/assets/vox_visual_probe.py",
+            "VOXModernOverhaul/tools/assets/Setup-And-Install-VisualProbe.ps1",
+            "VOXModernOverhaul/tools/assets/Rollback-VisualProbe.ps1",
+            "VOXModernOverhaul/tools/assets/01_INSTALL_VISUAL_PROBE.cmd",
+            "VOXModernOverhaul/tools/assets/02_OPEN_VISUAL_PROBE_REPORT.cmd",
+            "VOXModernOverhaul/tools/assets/03_ROLLBACK_VISUAL_PROBE.cmd",
             "README_FIRST_TEST.txt",
             "BUILD_INFO.txt"
           )
@@ -166,11 +210,25 @@ jobs:
           if (Test-Path -LiteralPath (Join-Path $extract "VOXModernOverhaul/state/world_state.v1")) {
             throw "Package must never ship CI-generated persistent user state."
           }
+          if (Test-Path -LiteralPath (Join-Path $extract "VOXModernOverhaul/tools/.venv-assets")) {
+            throw "Package must not redistribute the local Python/FiveFury environment."
+          }
+          if (Test-Path -LiteralPath (Join-Path $extract "VOXModernOverhaul/visual_probe")) {
+            throw "Package must not ship extracted/generated user assets or visual-probe state."
+          }
+          $shippedYdr = @(Get-ChildItem -LiteralPath $extract -Filter '*.ydr' -File -Recurse)
+          if ($shippedYdr.Count -ne 0) {
+            throw "Package must never redistribute Rockstar or CI-generated YDR assets."
+          }
+          $buildInfo = Get-Content -LiteralPath (Join-Path $extract 'BUILD_INFO.txt') -Raw
+          if ($buildInfo -notmatch 'visual_probe_fivefury=0\.4\.21') {
+            throw "BUILD_INFO does not pin FiveFury 0.4.21."
+          }
 
       - name: Upload GTA-ready checkpoint ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: VOX-GTA5-Modern-Overhaul-0.0.1-dev.14
-          path: projects/gta5-modern-overhaul/dist/VOX-GTA5-Modern-Overhaul-0.0.1-dev.14.zip
+          name: VOX-GTA5-Modern-Overhaul-0.0.1-dev.15
+          path: projects/gta5-modern-overhaul/dist/VOX-GTA5-Modern-Overhaul-0.0.1-dev.15.zip
           if-no-files-found: error
           retention-days: 30
