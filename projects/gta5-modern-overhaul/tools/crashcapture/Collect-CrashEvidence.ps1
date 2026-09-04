@@ -118,7 +118,7 @@ if (Test-Path -LiteralPath $RegPath) {
 if (Test-Path -LiteralPath $ZipPath) {
     Remove-Item -LiteralPath $ZipPath -Force
 }
-Compress-Archive -LiteralPath (Join-Path $WorkDir '*') -DestinationPath $ZipPath -CompressionLevel Optimal
+Compress-Archive -Path (Join-Path $WorkDir '*') -DestinationPath $ZipPath -CompressionLevel Optimal
 
 Write-Host ''
 Write-Host 'Evidence collection complete.'
