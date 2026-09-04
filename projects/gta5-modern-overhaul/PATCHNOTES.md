@@ -2,6 +2,26 @@
 
 All user-visible, architectural and tooling changes are recorded here.
 
+## [0.0.1-dev.5] — 2026-09-04
+
+### Added
+- Added strict versioned configuration parser with mandatory `schema_version`.
+- Added typed boolean and unsigned-integer readers.
+- Added fail-closed validation for duplicate keys, missing schema and invalid schema values.
+
+### Hardened
+- Removed incorrect `noexcept` declarations from config lookup functions because they may allocate while converting a lookup key; this avoids turning allocation failure into unintended process termination.
+
+### Verified
+- Local GNU C++ 14.2.0 / C++20 build passes with warnings-as-errors.
+- ASan + UBSan pass.
+- Config positive/negative tests pass.
+- Previous CI run `33864368881` completed successfully across Windows/Linux plus sanitizers for the prior hardened core state.
+
+### Pending
+- Latest config commit must receive its own cross-platform CI result before config status is promoted to D3 cross-platform.
+- GTA V Enhanced runtime integration remains unimplemented.
+
 ## [0.0.1-dev.4] — 2026-09-04
 
 ### Added
@@ -16,9 +36,6 @@ All user-visible, architectural and tooling changes are recorded here.
 - ASan + UBSan pass.
 - Concurrent EventBus test reaches exactly 4000 delivered events.
 - CTest: 1/1 passing, 0 failures.
-
-### Pending external proof
-- Final GitHub CI run on Windows/MSVC, Linux and sanitizer job must complete successfully before cross-platform status is promoted.
 
 ## [0.0.1-dev.3] — 2026-09-04
 
@@ -35,10 +52,6 @@ All user-visible, architectural and tooling changes are recorded here.
 - Clean rebuild with GNU C++ 14.2.0 and C++20.
 - AddressSanitizer + UndefinedBehaviorSanitizer enabled for the validation build.
 - `ctest`: 1/1 tests passed, 0 failures.
-- Generator assertions are now confirmed present in the executable test source.
-
-### Validation boundary
-- These are standalone-core results only. GTA V Enhanced integration is still not claimed working until an actual runtime adapter is built and tested in-game.
 
 ## [0.0.1-dev.2] — 2026-09-04
 
@@ -46,17 +59,6 @@ All user-visible, architectural and tooling changes are recorded here.
 - Added typed native `EventBus` with subscription tokens, unsubscribe support and re-entrant publishing without holding the internal mutex during callbacks.
 - Added GitHub Actions core CI matrix for Windows and Linux.
 - Extended core tests to validate EventBus dispatch, re-entrant publishing and unsubscribe behavior.
-
-### Verified
-- Reproduced the exact committed core sources in an isolated local build environment.
-- CMake configuration succeeded with GNU C++ 14.2.0.
-- C++20 compilation and linking succeeded with `-Wall -Wextra -Wpedantic`.
-- `ctest`: 1/1 tests passed, 0 failures.
-
-### Validation boundary
-- Linux/GCC standalone core is validated at D3 for the tested primitives.
-- Windows/MSVC validation is delegated to CI and remains pending until a successful workflow run is observed.
-- GTA V Enhanced runtime integration remains unimplemented and therefore unvalidated.
 
 ## [0.0.1-dev.1] — 2026-09-04
 
@@ -71,13 +73,3 @@ All user-visible, architectural and tooling changes are recorded here.
 - Added stable `EntityId` type and simulation-fidelity tiers.
 - Added thread-safe file logger for early diagnostics.
 - Added native unit-test executable for core invariants.
-
-### Technical decisions
-- Critical runtime foundation will target native C++ rather than depending on official SHVDN Enhanced support.
-- GTA-specific integration is isolated behind adapters so world logic remains testable without launching GTA.
-- Modified game assets must be deployed non-destructively; original game files are never the canonical development copy.
-
-### Validation status
-- Source-level logic reviewed for invalid-ID, comparison and simulation-tier invariants.
-- Core scaffold is designed to compile without ScriptHookV SDK or GTA files.
-- GTA V Enhanced runtime integration is **not yet implemented or claimed working**.

@@ -1,3 +1,4 @@
+#include "vox/core/Config.hpp"
 #include "vox/core/EntityId.hpp"
 #include "vox/core/EntityIdGenerator.hpp"
 #include "vox/core/EventBus.hpp"
@@ -20,7 +21,22 @@ int main() {
     using vox::core::IsHigherFidelity;
     using vox::core::LogLevel;
     using vox::core::Logger;
+    using vox::core::ParseConfig;
     using vox::core::SimulationTier;
+    const auto validConfig = ParseConfig("# core test\r\nschema_version = 1\r\nsafe_mode=true\r\nmax_entities = 2048\r\n");
+    if (!validConfig.valid() || validConfig.schemaVersion != 1) return Fail("valid config must parse");
+    if (validConfig.GetBool("safe_mode") != std::optional<bool>{true}) return Fail("config bool parse failed");
+    if (validConfig.GetUnsigned("max_entities") != std::optional<std::uint64_t>{2048}) return Fail("config unsigned parse failed");
+
+    const auto duplicateConfig = ParseConfig("schema_version=1\nschema_version=2\n");
+    if (duplicateConfig.valid() || duplicateConfig.errors.empty()) return Fail("duplicate config key must fail closed");
+
+    const auto missingSchema = ParseConfig("safe_mode=true\n");
+    if (missingSchema.valid() || missingSchema.errors.empty()) return Fail("missing schema_version must fail closed");
+
+    const auto invalidSchema = ParseConfig("schema_version=not-a-number\n");
+    if (invalidSchema.valid() || invalidSchema.errors.empty()) return Fail("invalid schema_version must fail closed");
+
     const auto invalid = EntityId::Invalid();
     if (invalid.valid() || static_cast<bool>(invalid)) return Fail("EntityId::Invalid must never report valid");
     const auto first = EntityId::FromRaw(1);

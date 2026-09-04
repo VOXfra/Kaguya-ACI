@@ -20,6 +20,7 @@ function(vox_apply_warnings target)
 endfunction()
 
 add_library(vox_core STATIC
+    src/core/src/Config.cpp
     src/core/src/Logger.cpp
 )
 

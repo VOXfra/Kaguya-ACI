@@ -2,6 +2,39 @@
 
 This is the precise engineering trace for the project. Patch notes summarize changes; this log records what was done, why, validation performed and what is still unproven.
 
+## 2026-09-04 — Versioned configuration parser
+
+### Implemented
+- Added `ConfigParseResult` with structured errors, parsed values and explicit schema version.
+- Added strict `key=value` parser supporting blank lines, comments, CRLF/LF and trimmed whitespace.
+- `schema_version` is mandatory, numeric, non-zero and constrained to `uint32_t` range.
+- Duplicate keys fail closed.
+- Invalid keys fail closed.
+- Typed readers exist for exact lowercase booleans (`true`/`false`) and unsigned integers.
+
+### Correctness review
+- Initial lookup methods were declared `noexcept` while constructing a temporary `std::string` for unordered-map lookup could allocate and theoretically throw.
+- Removed those `noexcept` declarations before commit so allocation failure is not converted into unintended `std::terminate`.
+
+### Tests
+- valid CRLF config parses with schema 1
+- boolean read succeeds
+- unsigned read succeeds
+- duplicate schema key invalidates document
+- missing schema invalidates document
+- non-numeric schema invalidates document
+
+### Local validation
+- warnings as errors: PASS
+- ASan: PASS
+- UBSan: PASS
+- CTest: 1/1 PASS
+
+### Existing CI evidence
+- Workflow run `33864368881` for commit `610bd41699854a6cc0f3f2ef824005bb85b38a39`: SUCCESS.
+- That run validated Windows/Linux build/test plus sanitizer job for the preceding core state.
+- Config changes require a new exact-commit run before cross-platform promotion.
+
 ## 2026-09-04 — CI hardening / concurrent EventBus validation
 
 ### Build policy
@@ -12,23 +45,12 @@ This is the precise engineering trace for the project. Patch notes summarize cha
 
 ### Concurrent EventBus validation
 - Added one concurrent subscriber backed by an atomic counter.
-- Spawned 4 publishing threads.
-- Each thread publishes 1000 events.
-- Expected delivered count: 4000.
-- Observed locally: 4000.
+- Spawned 4 publishing threads × 1000 events.
+- Expected and observed delivered count: 4000.
 
 ### Sanitizer validation
-- Rebuilt with AddressSanitizer and UndefinedBehaviorSanitizer.
-- Warnings treated as errors simultaneously.
-- Configure: PASS.
-- Compile/link: PASS.
-- CTest: 1/1 PASS.
-- Sanitizer diagnostics: none observed in the executed test path.
-
-### CI changes
-- Windows + Linux build/test matrix remains mandatory.
-- Added dedicated Ubuntu ASan + UBSan job.
-- CI status is not promoted until the workflow result for the exact commit is observed.
+- AddressSanitizer + UndefinedBehaviorSanitizer: PASS.
+- Warnings treated as errors simultaneously: PASS.
 
 ### Traceability
 - Added `docs/STATUS.md` to distinguish design, local-test, cross-platform and in-game validation levels.
@@ -36,67 +58,47 @@ This is the precise engineering trace for the project. Patch notes summarize cha
 ## 2026-09-04 — Precommit defect catch / ID generator hardening
 
 ### Defects caught before in-game integration
-- During review of the first EventBus implementation, detected a use-after-invalidation risk: `Unsubscribe` could erase the map entry and then read the referenced vector's size. Fixed by computing the removal result before erasing the owning map entry.
-- Detected that the first automated edit intended to add `EntityIdGenerator` tests had only inserted the include/using declarations, not the actual assertions. The test source was inspected directly, corrected, then rebuilt.
-- Identified theoretical EventBus subscription-ID wraparound risk. Replaced naïve atomic increment behavior with fail-closed exhaustion semantics so token IDs can never silently wrap and collide.
+- Fixed EventBus use-after-invalidation risk in `Unsubscribe` by computing the result before erasing its owning map entry.
+- Detected that an automated test edit had failed to insert generator assertions; inspected test source, corrected it and rebuilt.
+- Replaced theoretical EventBus token-ID wraparound with fail-closed exhaustion semantics.
 
 ### ID allocation
 - Added `EntityIdGenerator`.
-- Zero remains permanently reserved for invalid IDs.
-- Generator can resume from a persisted next-ID/high-water value.
-- The maximum 64-bit ID is issued at most once; subsequent allocation returns failure rather than wrapping.
+- Zero permanently reserved for invalid IDs.
+- Resume from persisted next-ID/high-water value.
+- Maximum 64-bit ID issued at most once, then allocation fails closed.
 
-### Validation performed
-- Clean CMake rebuild.
+### Validation
 - GNU C++ 14.2.0 / C++20.
-- AddressSanitizer enabled.
-- UndefinedBehaviorSanitizer enabled.
-- Core test executable built and linked successfully.
-- `ctest`: 1/1 PASS, 0 failed.
+- ASan + UBSan.
+- CTest 1/1 PASS.
 
 ## 2026-09-04 — Core compile/test checkpoint
 
-### Event system
-- Added a typed native `EventBus`.
-- Subscriptions return explicit tokens carrying event type and unique ID.
-- Publish copies callback handles while holding the mutex, then releases the mutex before invoking callbacks, permitting re-entrant publication.
-
-### Automated build protection
-- Added GitHub Actions workflow for Linux and Windows.
-- Workflow configures, builds and runs CTest only for the GTA overhaul subproject.
-
-### Local validation performed
-- GNU C++ 14.2.0, CMake, C++20.
-- configure: PASS.
-- compile/link: PASS.
-- tests: 1/1 PASS.
-
-### Validation boundary
-- No GTA runtime adapter exists yet.
-- No claim is made about in-game behavior yet.
+- Added typed native EventBus.
+- Added GitHub Actions Windows/Linux workflow.
+- Core configure/compile/link/test passed locally.
+- No GTA runtime behavior claimed.
 
 ## 2026-09-04 — Project initialization / Phase 0 start
 
 ### Scope frozen
-- Created the project charter, architecture, TODO, roadmap, story-compatibility contract and initial data model.
-- Declared visual quality as the first production priority after tooling/audit.
-- Declared persistent consequences and procedural systems as architectural requirements.
-- Declared vanilla story compatibility as non-negotiable.
+- Created charter, architecture, TODO, roadmap, story-compatibility contract and initial data model.
+- Visual quality is first production priority after tooling/audit.
+- Persistence/procedural systems are architectural requirements.
+- Vanilla story compatibility is non-negotiable.
 
-### Runtime research
-- Confirmed current GTA V Enhanced support exists in ScriptHookV.
-- Confirmed official ScriptHookVDotNet does not provide a sufficiently reliable Enhanced foundation for this project.
-- Reviewed the Enhanced SHVDN fork and noted its documented threading limitation.
-- Decision: use native C++ for the critical runtime; keep GTA-specific calls behind adapters.
+### Runtime/tool research
+- ScriptHookV supports current Enhanced builds.
+- Official ScriptHookVDotNet is not considered a sufficiently reliable Enhanced foundation for this project's critical runtime.
+- Enhanced SHVDN fork threading limitation recorded.
+- Decision: native C++ critical runtime with GTA calls isolated behind adapters.
+- CodeWalker Enhanced/Gen9 detection confirmed.
+- Sollumz Enhanced conversion workflow recorded.
+- OpenRPF selected for non-destructive Enhanced asset override loading.
 
-### Asset-tool research
-- CodeWalker explicitly detects GTA V Enhanced / Gen9 installs.
-- Sollumz documents Enhanced asset conversion workflows.
-- OpenRPF is the intended non-destructive modified-RPF loader for Enhanced asset overrides.
-
-### Engineering rules introduced
-- Core world logic must compile without GTA or ScriptHook SDK dependencies.
-- Each persistent entity uses a stable project ID rather than relying on transient GTA handles.
-- Every feature receives a validation status: design-only, unit-tested, integration-tested, or in-game validated.
-- No feature is marked complete in TODO before its stated validation gate passes.
-- Every code/content change updates both this log and `PATCHNOTES.md` when it affects project state.
+### Engineering rules
+- Core logic compiles without GTA/ScriptHook SDK.
+- Stable project IDs, never transient GTA handles, represent persistent entities.
+- No TODO completion without its validation gate.
+- Patch notes and development log track every project-state change.
