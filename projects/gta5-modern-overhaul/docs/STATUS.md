@@ -18,9 +18,9 @@ Validation levels are defined in `QUALITY_GATES.md`.
 | World-state schema v1 | **D4 real path / D3 regression** | real `world_state.v1` create→load path observed; strict round-trip/checksum tests pass |
 | Atomic VOX world-state save | **D4 real path / D3 regression** | first real dev.14 launch reports `VOX_PERSISTENCE_SAVE_OK`; temp/flush/replace tested |
 | Previous-state backup recovery | D3 cross-platform | corrupt primary recovers valid `.bak` in tests; real recovery event not forced |
-| Persistent EntityId high-water restoration | **D4 real GTA PASS** | both dev.14 launches report EntityId 1, count 1, next ID 2 |
+| Persistent EntityId high-water restoration | **D4 real GTA PASS** | dev.14 two-launch test restored EntityId 1/count 1/next ID 2; later intentional deletion simply created a new empty early-state file |
 | EventBus | D3 cross-platform | normal/re-entrant/unsubscribe/concurrent tests pass |
-| Bounded game-thread dispatch queue | **D4 real GTA PASS / D3 regression** | real dev.14 logs `VOX_GAME_THREAD_QUEUE_DISPATCHED=1`; concurrency/bounds/failure isolation tested |
+| Bounded game-thread dispatch queue | **D4 real GTA PASS / D3 regression** | real dev.14/dev.15.1 logs `VOX_GAME_THREAD_QUEUE_DISPATCHED=1`; concurrency/bounds/failure isolation tested |
 | GTA runtime handle ↔ EntityId adapter | D0 | next identity/runtime integration step |
 | Simulation tier primitive | D3 cross-platform | ordering invariant tested |
 | Spatial Simulation Manager | D0 | not implemented |
@@ -32,16 +32,18 @@ Validation levels are defined in `QUALITY_GATES.md`.
 | dev.10 no-CRT ASI | **D4 stable load baseline** | repeated normal launches reported |
 | dev.11 ScriptHookV lifecycle | D3 synthetic / **real registration failed** | exact decorated exports were brittle |
 | dev.12 ScriptHookV game-thread execution | **D4 real GTA PASS** | registration, ScriptMain, wait/resume, five heartbeats |
-| isolated `VOXModernCore.dll` bridge | **D4 real GTA PASS** | dev.13/dev.14 real logs prove core start/bridge/ticks |
+| isolated `VOXModernCore.dll` bridge | **D4 real GTA PASS** | dev.13/dev.14/dev.15.1 real logs prove core start/bridge/ticks |
 | dev.14 persistent runtime | **D4 real GTA PASS** | real first launch NEW+SAVE_OK; second launch LOADED with same persistent identity; queue marker healthy |
 | Mission/story detector | D0 | read-only work queued in parallel with visual track |
 | Story Compatibility runtime | D0 | contract only |
-| Visual installer environment/bootstrap | **D3 Windows executed PASS** | dev.15.1 CI run `33893214202` creates a fresh venv, queries Python 3.11.9, installs FiveFury 0.4.21 and runs Gen9 self-test through the actual packaged setup script |
-| Enhanced asset locator / transform tooling | **D3 Windows synthetic IN PROGRESS** | FiveFury 0.4.21 Gen9 YDR rewrite + path-safety self-test passes; retail GTA archive scan/extract still D4 pending |
-| RageOpenV loose override integration | **D2 implementation / D4 pending** | dev.15.1 maps base `x64*.rpf/...` to `newmods/platform/...`; real mount visibility pending |
-| First visible graphics replacement | **D4 pending user test** | dev.15.1 current checkpoint; intentionally oversized common static prop |
+| Visual installer environment/bootstrap | **D4 real setup PASS / D3 Windows regression** | dev.15.1 real machine completes venv/FiveFury/self-test/retail scan; CI executes exact bootstrap path |
+| Enhanced retail asset locator/extraction | **D4 real PASS** | dev.15.1 real scan selected and extracted `prop_roadcone02a` from base `x64f.rpf` |
+| Gen9 YDR transform tooling | **D3 synthetic / real runtime compatibility FAILED OR UNPROVEN** | FiveFury synthetic rewrite validates, but the first real transformed YDR is associated with Story Mode crash and is not trusted |
+| RageOpenV `newmods/platform` mount integration | **D4 crash-isolation pending** | real loose override exists at expected path, but Story Mode crashes; source-identical override test is now required to separate mount from YDR writer |
+| First visible graphics replacement | **D4 FAILED / blocked on isolation** | dev.15.1 never reached a stable visible frame; Story Mode crashes immediately after transformed override installation |
+| Byte-identical override isolation | **D3 Windows synthetic / D4 pending** | dev.15.2 replaces active transformed file with exact source bytes at same path using manifest/hash ownership |
 | Runtime checkpoint packaging | D3 Windows | ASI+Core+visual tools required; fake ScriptHook/user state/YDR assets excluded; package version/readme checked |
-| GitHub Windows/Linux CI | D3 | current jobs pass |
+| GitHub Windows/Linux CI | D3 | current jobs pass when final checkpoint CI is green |
 | ASan + UBSan CI | D3 | current sanitizer jobs pass |
 
 ## Real-game evidence
@@ -53,50 +55,39 @@ Real GTA evidence proves ScriptHookV registration, ScriptMain entry, resume afte
 Real GTA evidence proves `VOXModernCore.dll` start, bridge ready, five core ticks and continued scheduler health.
 
 ### dev.14 — first persistent world substrate
-Two user-provided real-game logs prove the complete create/reload sequence.
+Two user-provided real-game logs prove the complete create/reload sequence. Persistent Entity Registry, high-water restoration and live queue path are D4.
 
-First clean launch:
-- `VOX_PERSISTENCE_STATUS=NEW`;
-- `VOX_PERSISTENCE_SYSTEM_ENTITY_ID=1`;
-- `VOX_PERSISTENCE_ENTITY_COUNT=1`;
-- `VOX_PERSISTENCE_NEXT_ENTITY_ID=2`;
-- `VOX_PERSISTENCE_SAVE_OK`;
-- `VOX_GAME_THREAD_QUEUE_DISPATCHED=1`;
-- five core ticks + five ScriptHook heartbeats.
+### dev.15.1 — installer/scan pass, visual runtime crash
+Real setup output proves:
+- Python 3.11.4 environment runs;
+- FiveFury 0.4.21 installs;
+- `VOX_VISUAL_PROBE_SELF_TEST_OK`;
+- real Enhanced archive scan completes;
+- selected model is `prop_roadcone02a`;
+- source is `x64f.rpf/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr`;
+- loose override is installed at `newmods/platform/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr`.
 
-Second launch without deleting state:
-- `VOX_PERSISTENCE_STATUS=LOADED`;
-- the same system EntityId 1;
-- the same entity count 1;
-- the same next EntityId 2;
-- game-thread queue marker remains healthy;
-- core/ScriptHook ticks remain healthy;
-- GTA remains stable.
+The subsequent game attempt crashes immediately entering Story Mode.
 
-This promotes the persistent Entity Registry, high-water restoration and live queue path to **D4 real-game validation**.
+The returned logs prove before crash:
+- ASI loader finishes loading RageOpenV, SHVDN, TrainerV and VOX;
+- ScriptHookV identifies `VER_EN_1_0_1158_13` and registers VOX;
+- VOX reaches `VOX_PERSISTENCE_SAVE_OK`, `VOX_CORE_RUNTIME_READY`, `VOX_CORE_BRIDGE_READY`, `VOX_GAME_THREAD_QUEUE_DISPATCHED=1`, five Core ticks and five ScriptHook heartbeats;
+- RageOpenV release log only reports successful initialization.
 
-## dev.15.1 current visual checkpoint
+Conclusion: the visual checkpoint is a **real D4 failure**. Existing evidence does not prove whether the crash is caused by RageOpenV/newmods routing or by the FiveFury-rebuilt retail YDR.
 
-### dev.15 real setup outcome
-The first real dev.15 installer attempt failed after successfully creating `.venv-assets` but before dependency install/GTA scan. The failure was a PowerShell→Python quoting defect in the venv version query. It did **not** test or disprove the FiveFury retail scan, Gen9 transform or RageOpenV mount because execution never reached those stages.
-
-### Corrected setup evidence
-CI run `33893214202` executes the actual setup script's new `-EnvironmentOnly` path on Windows rather than only parsing it. A fresh venv is created; the script reports Python 3.11.9, installs FiveFury 0.4.21, runs `VOX_VISUAL_PROBE_SELF_TEST_OK` and exits with `VOX_VISUAL_ENVIRONMENT_SMOKE_OK`.
+## dev.15.2 current crash-isolation checkpoint
 
 ### Goal
-Prove the first non-destructive Enhanced asset round trip in the user's actual installation:
+Keep the exact same loose override path but replace its transformed bytes with the exact extracted source bytes.
 
-`base x64*.rpf asset -> FiveFury index/extract -> Gen9 YDR render transform -> validate -> newmods/platform mirror -> RageOpenV -> visible GTA instance`.
+### Interpretation
+- Story Mode still crashes -> mount/path layer is implicated; transformed geometry is not necessary for the crash.
+- Story Mode loads -> mount/path layer can serve the exact original; FiveFury retail YDR reconstruction is implicated despite synthetic validation.
 
-### D4 promotion rule
-`dev.15.1` becomes the first visible graphics-pipeline foundation only when the real GTA test proves:
-1. corrected setup environment path completes;
-2. setup report says `status=INSTALLED`;
-3. source is a supported base `x64*.rpf` path;
-4. generated file is installed under `newmods/platform`;
-5. GTA remains stable;
-6. a real streamed instance of the selected model visibly reflects the exaggerated geometry change;
-7. rollback removes only the generated override and returns the model to vanilla appearance.
+### D4 rule
+No visual pipeline component is promoted from this test beyond what the evidence supports. A visible graphics replacement remains blocked until GTA can load a non-vanilla asset stably.
 
 ## Rule
 
