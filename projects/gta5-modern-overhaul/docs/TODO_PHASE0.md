@@ -84,6 +84,7 @@ Legend:
 - [x] dev.15.1 crash narrowed to post-runtime visual path by returned logs
 - [x] dev.15.2 proves transformed target bytes are not required: source-identical one-file archive still crashes
 - [x] dev.15.3 distinguishes structural completeness from performance: full directory archive runs but at ~5 FPS
+- [x] dev.15.4 failure isolated before GTA launch: stale `visual_probe_manifest.json` dependency
 - [ ] capture WER/minidump only if compact real-RPF identity still crashes
 - [ ] log rotation / bounded size
 - [ ] structured subsystem fields
@@ -116,6 +117,8 @@ Legend:
 - [x] dev.15.2 byte-identical visual crash-isolation tools
 - [x] dev.15.3 complete nested-RPF directory mirror tools
 - [x] dev.15.4 compact real-RPF identity/transform/rollback tools implemented
+- [x] dev.15.5 standalone compact recovery package removes prior-manifest dependency
+- [x] dev.15.5 rollback can restore a quarantined pre-existing target path after hash/set verification
 - [x] package rejects bundled `.ydr`, `.rpf`, FiveFury environment and visual-probe user state
 - [ ] general installer/root discovery for later public builds
 
@@ -147,16 +150,20 @@ Legend:
 - [x] reject directory-as-RPF strategy for production
 - [x] implement compact archive path mapping to a real `.rpf` file
 - [x] extract original nested RPF bytes from outer Rockstar archive using user's own install
-- [x] reopen compact identity RPF and cross-check selected YDR against dev.15.1 source hash
-- [x] stage compact identity before replacing owned virtual directory
-- [x] rollback to prior virtual directory on failed final swap
 - [x] build transformed compact RPF from preserved identity copy
 - [x] require identical RPF member path set after rebuild
 - [x] require every non-target standalone member SHA-256 unchanged
 - [x] require transformed target SHA-256 match preserved generated YDR
-- [x] hash-safe compact RPF rollback preserving local probe work
-- [x] synthetic compact nested-RPF extraction/rebuild self-test implemented
-- [ ] consolidated CI fully green on final documented dev.15.4 commit
+- [x] dev.15.4 user test exposed missing-manifest dependency before compact activation — **D4 TOOLING FAIL**
+- [x] remove old-manifest requirement from compact identity install
+- [x] fresh retail rescan/re-extraction path for dev.15.5
+- [x] regenerate source + transformed diagnostic YDR work state when manifest is absent
+- [x] quarantine any pre-existing target-path file/directory instead of deleting it
+- [x] write fresh schema-2 compact manifest from scratch
+- [x] recovery rollback restores quarantined prior target only after exact hash/file-set verification
+- [x] synthetic no-manifest + pre-existing-directory install/rollback self-test
+- [x] exact `Install-CompactRpfIdentityProbe.ps1 -SelfTest` executed in installer-created Windows venv — **D3 EXECUTED PASS**
+- [ ] final documented dev.15.5 CI fully green
 - [ ] real Story Mode with exact original compact `v_construction.rpf` file at normal FPS — **CURRENT D4 TEST**
 - [ ] if identity passes, real Story Mode with transformed compact RPF at normal FPS
 - [ ] stable rewritten retail YDR proof
@@ -167,26 +174,28 @@ Legend:
 
 ## Current checkpoint
 
-**Checkpoint 0I.4 — real compact nested RPF (`0.0.1-dev.15.4`)**
+**Checkpoint 0I.5 — standalone compact nested RPF (`0.0.1-dev.15.5`)**
 
 Real evidence leading here:
 
 1. one-file `.rpf` directory + transformed cone → CRASH.
 2. same one-file directory + byte-identical Rockstar cone → CRASH.
 3. complete `.rpf` directory with all sibling resources → Story Mode runs, but roughly **5 FPS**.
-4. latest returned ASI/ScriptHook/VOX logs still complete their expected startup/tick markers; RageOpenV's release log still exposes no per-archive diagnostics.
+4. dev.15.4 compact installer never reached GTA because it required an old `visual_probe_manifest.json` that was absent.
 
-Therefore the directory-form archive is now a dead end. dev.15.4 uses one real `v_construction.rpf` file under `newmods/platform`.
+That fourth point is now treated as a regression requirement rather than a user prerequisite.
+
+Dev.15.5 must work even when `VOXModernOverhaul\visual_probe\visual_probe_manifest.json` does not exist. It rescans the installed game, rebuilds source/generated work state, extracts the original nested real RPF, quarantines any currently active old target-path content, then creates a fresh compact manifest.
 
 Required sequence:
 
-1. keep existing `VOXModernOverhaul\visual_probe` state and `.venv-assets`;
-2. install final dev.15.4 package;
+1. install final dev.15.5 package over the GTA root;
+2. no old visual-probe manifest is required;
 3. run `08_INSTALL_COMPACT_RPF_IDENTITY.cmd`;
-4. require `VOX_COMPACT_RPF_IDENTITY_INSTALLED`;
+4. require `VOX_COMPACT_RPF_STANDALONE_BOOTSTRAP_OK` and `VOX_COMPACT_RPF_IDENTITY_INSTALLED`;
 5. launch Story Mode and check only stability + normal FPS; no visual change expected;
 6. only if step 5 is good, close GTA and run `09_ENABLE_COMPACT_SCALED_PROBE.cmd`;
 7. launch again and require normal FPS plus visibly oversized `prop_roadcone02a`;
-8. use `10_ROLLBACK_COMPACT_RPF_PROBE.cmd` for hash-safe removal.
+8. use `10_ROLLBACK_COMPACT_RPF_PROBE.cmd` for hash-safe removal/restoration.
 
 If step 5 crashes or remains unusably slow, reject the RageOpenV platform-RPF route instead of iterating another directory workaround. No visual-pipeline D4 success is claimed until a modified asset reaches a stable frame at acceptable performance.
