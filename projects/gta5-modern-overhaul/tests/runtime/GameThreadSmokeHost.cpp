@@ -64,6 +64,8 @@ int main() {
         const std::filesystem::path asiPath = root / L"VOXModernOverhaul.asi";
         const std::filesystem::path corePath = root / L"VOXModernCore.dll";
         const std::filesystem::path logPath = root / L"VOXModernOverhaul" / L"runtime_game_thread.log";
+        const std::filesystem::path statePath = root / L"VOXModernOverhaul" / L"state" / L"world_state.v1";
+        const bool stateExistedBeforeLaunch = std::filesystem::is_regular_file(statePath);
 
         if (!std::filesystem::is_regular_file(corePath)) {
             std::cerr << "FAIL_STAGE=CORE_DLL_MISSING\n";
@@ -131,24 +133,49 @@ int main() {
         bool sawEnter = false;
         bool sawResume = false;
         bool sawCoreStart = false;
-        bool sawCoreEntity = false;
+        bool sawPersistenceStatus = false;
+        bool sawSystemEntity = false;
+        bool sawEntityCount = false;
+        bool sawNextEntityId = false;
+        bool sawRuntimeReady = false;
         bool sawCoreBridge = false;
+        bool sawQueueDispatch = false;
         std::size_t heartbeatCount = 0;
         std::size_t coreTickCount = 0;
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{8};
         while (std::chrono::steady_clock::now() < deadline) {
             const std::string text = ReadTextFile(logPath);
             sawEnter = text.find("VOX_SCRIPT_MAIN_ENTER") != std::string::npos;
             sawResume = text.find("VOX_SCRIPT_MAIN_RESUMED_AFTER_WAIT") != std::string::npos;
             sawCoreStart = text.find("VOX_CORE_START") != std::string::npos;
-            sawCoreEntity = text.find("VOX_CORE_ENTITY_ID=1") != std::string::npos;
+            sawPersistenceStatus = text.find(
+                stateExistedBeforeLaunch ? "VOX_PERSISTENCE_STATUS=LOADED" : "VOX_PERSISTENCE_STATUS=NEW") != std::string::npos;
+            sawSystemEntity = text.find("VOX_PERSISTENCE_SYSTEM_ENTITY_ID=1") != std::string::npos;
+            sawEntityCount = text.find("VOX_PERSISTENCE_ENTITY_COUNT=1") != std::string::npos;
+            sawNextEntityId = text.find("VOX_PERSISTENCE_NEXT_ENTITY_ID=2") != std::string::npos;
+            sawRuntimeReady = text.find("VOX_CORE_RUNTIME_READY") != std::string::npos;
             sawCoreBridge = text.find("VOX_CORE_BRIDGE_READY") != std::string::npos;
+            sawQueueDispatch = text.find("VOX_GAME_THREAD_QUEUE_DISPATCHED=1") != std::string::npos;
             heartbeatCount = CountOccurrences(text, "VOX_SCRIPT_HEARTBEAT");
             coreTickCount = CountOccurrences(text, "VOX_CORE_TICK=");
 
-            if (sawEnter && sawResume && sawCoreStart && sawCoreEntity && sawCoreBridge &&
-                heartbeatCount >= 5 && coreTickCount >= 5) {
-                std::cout << "PASS: ScriptHookV lifecycle and isolated C++ core bridge handshake observed\n";
+            if (sawEnter && sawResume && sawCoreStart && sawPersistenceStatus && sawSystemEntity &&
+                sawEntityCount && sawNextEntityId && sawRuntimeReady && sawCoreBridge && sawQueueDispatch &&
+                heartbeatCount >= 5 && coreTickCount >= 5 && std::filesystem::is_regular_file(statePath)) {
+                const std::string stateText = ReadTextFile(statePath);
+                if (stateText.find("VOX_WORLD_STATE\n") == std::string::npos ||
+                    stateText.find("schema_version=1\n") == std::string::npos ||
+                    stateText.find("next_entity_id=2\n") == std::string::npos ||
+                    stateText.find("entity_count=1\n") == std::string::npos ||
+                    stateText.find("entity=1,255\n") == std::string::npos ||
+                    stateText.find("checksum=") == std::string::npos) {
+                    std::cerr << "FAIL_STAGE=PERSISTED_STATE_CONTENT\n" << stateText << '\n';
+                    return 1;
+                }
+
+                std::cout << (stateExistedBeforeLaunch
+                    ? "PASS: persisted world state restored in a fresh process\n"
+                    : "PASS: initial persisted world state created from ScriptHookV core bridge\n");
                 return 0;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds{20});
@@ -160,14 +187,24 @@ int main() {
             std::cerr << "FAIL_STAGE=SCRIPT_WAIT_NOT_RESUMED\n";
         } else if (!sawCoreStart) {
             std::cerr << "FAIL_STAGE=CORE_START_NOT_OBSERVED\n";
-        } else if (!sawCoreEntity) {
-            std::cerr << "FAIL_STAGE=CORE_ENTITY_ID_NOT_OBSERVED\n";
+        } else if (!sawPersistenceStatus) {
+            std::cerr << "FAIL_STAGE=PERSISTENCE_STATUS\n";
+        } else if (!sawSystemEntity) {
+            std::cerr << "FAIL_STAGE=PERSISTENT_SYSTEM_ENTITY\n";
+        } else if (!sawEntityCount || !sawNextEntityId) {
+            std::cerr << "FAIL_STAGE=PERSISTENT_REGISTRY_METADATA\n";
+        } else if (!sawRuntimeReady) {
+            std::cerr << "FAIL_STAGE=CORE_RUNTIME_NOT_READY\n";
         } else if (!sawCoreBridge) {
             std::cerr << "FAIL_STAGE=CORE_BRIDGE_NOT_READY\n";
+        } else if (!sawQueueDispatch) {
+            std::cerr << "FAIL_STAGE=GAME_THREAD_QUEUE_NOT_DISPATCHED\n";
         } else if (coreTickCount < 5) {
             std::cerr << "FAIL_STAGE=CORE_TICK_COUNT: observed=" << coreTickCount << " expected>=5\n";
-        } else {
+        } else if (heartbeatCount < 5) {
             std::cerr << "FAIL_STAGE=HEARTBEAT_COUNT: observed=" << heartbeatCount << " expected>=5\n";
+        } else {
+            std::cerr << "FAIL_STAGE=PERSISTED_STATE_FILE_MISSING\n";
         }
 
         if (std::filesystem::exists(logPath)) {
