@@ -1,0 +1,221 @@
+name: GTA5 Modern Overhaul
+
+on:
+  push:
+    branches:
+      - gta5-modern-world-overhaul
+    paths:
+      - "projects/gta5-modern-overhaul/**"
+      - ".github/workflows/gta5-modern-overhaul.yml"
+  pull_request:
+    paths:
+      - "projects/gta5-modern-overhaul/**"
+      - ".github/workflows/gta5-modern-overhaul.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core-build-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S projects/gta5-modern-overhaul -B projects/gta5-modern-overhaul/build -DVOX_BUILD_TESTS=ON -DVOX_BUILD_RUNTIME=ON -DVOX_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: cmake --build projects/gta5-modern-overhaul/build --config Release --parallel 2
+      - name: Test
+        run: ctest --test-dir projects/gta5-modern-overhaul/build -C Release --output-on-failure
+
+  core-sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Configure ASan + UBSan
+        run: >-
+          cmake -S projects/gta5-modern-overhaul
+          -B projects/gta5-modern-overhaul/build-sanitized
+          -DVOX_BUILD_TESTS=ON
+          -DVOX_BUILD_RUNTIME=OFF
+          -DVOX_WARNINGS_AS_ERRORS=ON
+          -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+      - name: Build ASan + UBSan
+        run: cmake --build projects/gta5-modern-overhaul/build-sanitized --parallel 2
+      - name: Test ASan + UBSan
+        run: ctest --test-dir projects/gta5-modern-overhaul/build-sanitized --output-on-failure
+
+  checkpoint-package:
+    runs-on: windows-latest
+    needs: [core-build-test, core-sanitizers]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pinned FiveFury
+        run: python -m pip install --disable-pip-version-check --no-input fivefury==0.4.21
+
+      - name: Validate all visual Python tools
+        shell: pwsh
+        run: |
+          $tools = @(
+            './projects/gta5-modern-overhaul/tools/assets/vox_visual_probe.py',
+            './projects/gta5-modern-overhaul/tools/assets/vox_archive_mirror_probe.py',
+            './projects/gta5-modern-overhaul/tools/assets/vox_compact_rpf_probe.py'
+          )
+          foreach ($tool in $tools) {
+            python -m py_compile $tool
+            if ($LASTEXITCODE -ne 0) { throw "Python syntax validation failed: $tool" }
+          }
+          python ./projects/gta5-modern-overhaul/tools/assets/vox_visual_probe.py self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Gen9 visual probe self-test failed.' }
+          python ./projects/gta5-modern-overhaul/tools/assets/vox_archive_mirror_probe.py self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Legacy full-directory archive mirror self-test failed.' }
+          python ./projects/gta5-modern-overhaul/tools/assets/vox_compact_rpf_probe.py self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Compact real-RPF self-test failed.' }
+
+      - name: Parse visual PowerShell wrappers
+        shell: pwsh
+        run: |
+          $scripts = @(
+            './projects/gta5-modern-overhaul/tools/assets/Setup-And-Install-VisualProbe.ps1',
+            './projects/gta5-modern-overhaul/tools/assets/Rollback-VisualProbe.ps1',
+            './projects/gta5-modern-overhaul/tools/assets/Isolate-VisualProbeCrash.ps1',
+            './projects/gta5-modern-overhaul/tools/assets/Install-FullArchiveIdentityProbe.ps1',
+            './projects/gta5-modern-overhaul/tools/assets/Enable-FullArchiveTransformedProbe.ps1',
+            './projects/gta5-modern-overhaul/tools/assets/Rollback-FullArchiveProbe.ps1',
+            './projects/gta5-modern-overhaul/tools/assets/Install-CompactRpfIdentityProbe.ps1',
+            './projects/gta5-modern-overhaul/tools/assets/Enable-CompactRpfTransformedProbe.ps1',
+            './projects/gta5-modern-overhaul/tools/assets/Rollback-CompactRpfProbe.ps1'
+          )
+          foreach ($script in $scripts) {
+            $content = Get-Content -LiteralPath $script -Raw
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseInput($content, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -ne 0) {
+              $messages = ($errors | ForEach-Object { $_.Message }) -join '; '
+              throw "PowerShell parser errors in $script : $messages"
+            }
+          }
+
+      - name: Execute packaged asset environment bootstrap
+        shell: pwsh
+        run: |
+          $venv = './projects/gta5-modern-overhaul/tools/.venv-assets'
+          if (Test-Path -LiteralPath $venv) { Remove-Item -LiteralPath $venv -Recurse -Force }
+          & ./projects/gta5-modern-overhaul/tools/assets/Setup-And-Install-VisualProbe.ps1 -EnvironmentOnly
+          if ($LASTEXITCODE -ne 0) { throw "Exact PowerShell asset bootstrap failed: $LASTEXITCODE" }
+          $python = Join-Path $venv 'Scripts/python.exe'
+          if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw 'Bootstrap did not create venv Python.' }
+          & $python ./projects/gta5-modern-overhaul/tools/assets/vox_compact_rpf_probe.py self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Installer-created venv failed compact RPF self-test.' }
+          Write-Host 'PASS: PowerShell -> fresh venv -> FiveFury -> compact RPF self-test.'
+
+      - name: Configure runtime x64
+        run: cmake -S projects/gta5-modern-overhaul -B projects/gta5-modern-overhaul/build-runtime -A x64 -DVOX_BUILD_TESTS=OFF -DVOX_BUILD_RUNTIME=ON -DVOX_WARNINGS_AS_ERRORS=ON
+
+      - name: Build runtime and synthetic host
+        run: cmake --build projects/gta5-modern-overhaul/build-runtime --config Release --target vox_modern_overhaul_asi vox_modern_core vox_fake_scripthookv vox_runtime_smoke_host --parallel 2
+
+      - name: Verify ASI dependency boundary
+        shell: pwsh
+        run: |
+          $asi = Resolve-Path ./projects/gta5-modern-overhaul/build-runtime/Release/VOXModernOverhaul.asi
+          $bytes = [System.IO.File]::ReadAllBytes($asi)
+          if ($bytes.Length -lt 512) { throw 'ASI is unexpectedly small/truncated.' }
+          if ($bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { throw 'ASI missing MZ signature.' }
+          $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+          if ($peOffset -lt 0 -or ($peOffset + 160) -ge $bytes.Length) { throw 'Invalid PE header offset.' }
+          $optional = $peOffset + 24
+          if ([BitConverter]::ToUInt16($bytes, $optional) -ne 0x20B) { throw 'ASI is not PE32+.' }
+          if ([BitConverter]::ToUInt32($bytes, $optional + 16) -eq 0) { throw 'ASI entrypoint is zero.' }
+          $dataDirectories = $optional + 112
+          $tlsRva = [BitConverter]::ToUInt32($bytes, $dataDirectories + (9 * 8))
+          $tlsSize = [BitConverter]::ToUInt32($bytes, $dataDirectories + (9 * 8) + 4)
+          if ($tlsRva -ne 0 -or $tlsSize -ne 0) { throw 'ASI unexpectedly contains TLS.' }
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vsInstall = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
+          $dumpbin = @(Get-ChildItem -LiteralPath (Join-Path $vsInstall 'VC\Tools\MSVC') -Filter dumpbin.exe -File -Recurse | Where-Object { $_.FullName -match 'Hostx64\\x64\\dumpbin\.exe$' } | Sort-Object FullName -Descending)[0].FullName
+          $imports = (& $dumpbin /nologo /imports $asi) -join "`n"
+          if ($LASTEXITCODE -ne 0) { throw 'dumpbin /imports failed.' }
+          if ($imports -match '(?i)VCRUNTIME|MSVCP|api-ms-win-crt|ucrtbase|ScriptHookV\.dll') { throw "ASI import boundary violation.`n$imports" }
+          Write-Host 'PASS: CRT-free ASI dependency boundary retained.'
+
+      - name: Run persistent runtime smoke twice
+        shell: pwsh
+        run: |
+          $runtime = Resolve-Path ./projects/gta5-modern-overhaul/build-runtime/Release
+          $stateRoot = Join-Path $runtime 'VOXModernOverhaul\state'
+          if (Test-Path -LiteralPath $stateRoot) { Remove-Item -LiteralPath $stateRoot -Recurse -Force }
+          & (Join-Path $runtime 'gta5_enhanced.exe')
+          if ($LASTEXITCODE -ne 0) { throw "First runtime smoke failed: $LASTEXITCODE" }
+          & (Join-Path $runtime 'gta5_enhanced.exe')
+          if ($LASTEXITCODE -ne 0) { throw "Second runtime restore smoke failed: $LASTEXITCODE" }
+
+      - name: Package dev15.4
+        shell: pwsh
+        run: >-
+          ./projects/gta5-modern-overhaul/tools/PackageCheckpoint.ps1
+          -BuildDirectory ./projects/gta5-modern-overhaul/build-runtime
+          -OutputDirectory ./projects/gta5-modern-overhaul/dist
+          -Version 0.0.1-dev.15.4
+          -Commit $env:GITHUB_SHA
+
+      - name: Verify dev15.4 package
+        shell: pwsh
+        run: |
+          $zip = @(Get-ChildItem ./projects/gta5-modern-overhaul/dist -Filter 'VOX-GTA5-Modern-Overhaul-0.0.1-dev.15.4.zip' -File)
+          if ($zip.Count -ne 1) { throw "Expected one dev15.4 ZIP, found $($zip.Count)." }
+          $extract = Join-Path $env:RUNNER_TEMP 'vox-dev154-package'
+          if (Test-Path -LiteralPath $extract) { Remove-Item -LiteralPath $extract -Recurse -Force }
+          Expand-Archive -LiteralPath $zip[0].FullName -DestinationPath $extract
+          $required = @(
+            'VOXModernOverhaul.asi',
+            'VOXModernCore.dll',
+            'VOXModernOverhaul/config/core.cfg',
+            'VOXModernOverhaul/tools/assets/vox_visual_probe.py',
+            'VOXModernOverhaul/tools/assets/vox_archive_mirror_probe.py',
+            'VOXModernOverhaul/tools/assets/vox_compact_rpf_probe.py',
+            'VOXModernOverhaul/tools/assets/Install-CompactRpfIdentityProbe.ps1',
+            'VOXModernOverhaul/tools/assets/Enable-CompactRpfTransformedProbe.ps1',
+            'VOXModernOverhaul/tools/assets/Rollback-CompactRpfProbe.ps1',
+            'VOXModernOverhaul/tools/assets/08_INSTALL_COMPACT_RPF_IDENTITY.cmd',
+            'VOXModernOverhaul/tools/assets/09_ENABLE_COMPACT_SCALED_PROBE.cmd',
+            'VOXModernOverhaul/tools/assets/10_ROLLBACK_COMPACT_RPF_PROBE.cmd',
+            'README_FIRST_TEST.txt',
+            'BUILD_INFO.txt'
+          )
+          foreach ($relative in $required) {
+            if (-not (Test-Path -LiteralPath (Join-Path $extract $relative) -PathType Leaf)) { throw "Package missing: $relative" }
+          }
+          $buildInfo = Get-Content -LiteralPath (Join-Path $extract 'BUILD_INFO.txt') -Raw
+          if ($buildInfo -notmatch 'version=0\.0\.1-dev\.15\.4') { throw 'BUILD_INFO version mismatch.' }
+          if ($buildInfo -notmatch 'compact_rpf_probe_sha256=[0-9a-f]{64}') { throw 'Compact RPF tool hash missing.' }
+          $readme = Get-Content -LiteralPath (Join-Path $extract 'README_FIRST_TEST.txt') -Raw
+          if ($readme -notmatch 'Version: 0\.0\.1-dev\.15\.4') { throw 'README version mismatch.' }
+          $forbidden = @(Get-ChildItem -LiteralPath $extract -File -Recurse | Where-Object { $_.Extension -in @('.ydr','.rpf') })
+          if ($forbidden.Count -ne 0) { throw 'Package must not redistribute Rockstar/derived YDR or RPF files.' }
+          if (Test-Path -LiteralPath (Join-Path $extract 'ScriptHookV.dll')) { throw 'Package must not redistribute ScriptHookV.dll.' }
+          if (Test-Path -LiteralPath (Join-Path $extract 'VOXModernOverhaul/state/world_state.v1')) { throw 'Package must not ship user state.' }
+          if (Test-Path -LiteralPath (Join-Path $extract 'VOXModernOverhaul/tools/.venv-assets')) { throw 'Package must not ship the local FiveFury venv.' }
+          if (Test-Path -LiteralPath (Join-Path $extract 'VOXModernOverhaul/visual_probe')) { throw 'Package must not ship visual probe user state.' }
+
+      - name: Upload GTA-ready dev15.4 ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: VOX-GTA5-Modern-Overhaul-0.0.1-dev.15.4
+          path: projects/gta5-modern-overhaul/dist/VOX-GTA5-Modern-Overhaul-0.0.1-dev.15.4.zip
+          if-no-files-found: error
+          retention-days: 30
