@@ -2,6 +2,39 @@
 
 All user-visible, architectural and tooling changes are recorded here.
 
+## [0.0.1-dev.15.5] — 2026-09-04
+
+### Real dev.15.4 result — compact installer blocked before GTA
+- The user ran `08_INSTALL_COMPACT_RPF_IDENTITY.cmd` from the real GTA V Enhanced installation and the tool aborted immediately because `VOXModernOverhaul/visual_probe/visual_probe_manifest.json` was missing.
+- No compact RPF was activated, so dev.15.4 produced no real-game stability/performance evidence for the compact-RPF route.
+- The previous package incorrectly treated temporary state from older diagnostic checkpoints as a required user prerequisite.
+
+### Standalone compact-RPF recovery
+- Added `vox_compact_rpf_recovery.py` and routed `08_INSTALL_COMPACT_RPF_IDENTITY.cmd` through it.
+- dev.15.5 no longer requires an old `visual_probe_manifest.json`.
+- The installer rescans the user's own Enhanced installation, relocates the known retail `prop_roadcone02a`, re-extracts its source YDR, regenerates the preserved 1.65x diagnostic YDR for the later transformed stage, and extracts the original nested `v_construction.rpf` as a real RPF byte stream.
+- The target YDR inside the original nested RPF must exactly match the freshly extracted source YDR SHA-256 before activation.
+- A new schema-2 manifest is generated from scratch with all fields required by the compact identity, transformed, and rollback stages.
+
+### Existing target-path recovery instead of destructive ownership guesses
+- If anything already exists at `newmods/platform/levels/gta5/props/roadside/v_construction.rpf`, dev.15.5 snapshots it and moves it intact into `VOXModernOverhaul/visual_probe/work/recovery_backups/` before activating the compact RPF.
+- Existing content is never silently deleted merely because old manifest state is missing.
+- Rollback verifies the active compact RPF hash, verifies the preserved file/directory snapshot, then restores the quarantined previous target-path content only if those checks still match.
+- If activation fails after the previous target was moved aside, the installer restores it transactionally.
+
+### Regression added for the exact missing-manifest failure
+- Added an executable `Install-CompactRpfIdentityProbe.ps1 -SelfTest` path.
+- Windows CI first creates the same isolated FiveFury venv used by the packaged installer, then executes the exact PowerShell wrapper.
+- The self-test deliberately starts with no `visual_probe_manifest.json` and an already-populated directory at the target `.rpf` path.
+- It must quarantine that directory, install a synthetic complete compact identity RPF, create fresh manifest state, execute rollback, and restore the original directory with exact file-set and SHA-256 verification.
+- Parser-only validation is not accepted as evidence for this path.
+
+### Current D4 gate
+- Run dev.15.5 `08_INSTALL_COMPACT_RPF_IDENTITY.cmd` in the real installation with no requirement to preserve earlier visual-probe state.
+- Story Mode must load with normal performance and no visual change while the exact original compact RPF is active.
+- Only after that pass, run `09_ENABLE_COMPACT_SCALED_PROBE.cmd` and require normal performance plus a visibly oversized `prop_roadcone02a`.
+- No visible graphics D4 pass is claimed until the modified compact archive reaches a stable frame at acceptable performance.
+
 ## [0.0.1-dev.15.4] — 2026-09-04
 
 ### Real dev.15.3 result — complete directory archive runs but is unusably slow
