@@ -2,6 +2,32 @@
 
 All user-visible, architectural and tooling changes are recorded here.
 
+## [0.0.1-dev.15.2] — 2026-09-04
+
+### Real dev.15.1 result — installer passes, Story Mode crashes
+- The corrected dev.15.1 installer completed on the user's real GTA V Enhanced installation.
+- FiveFury 0.4.21 installed successfully, the Gen9 self-test passed, and the retail archive scan selected `prop_roadcone02a` from `x64f.rpf/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr`.
+- The tool generated and installed the 1.65x loose YDR at `newmods/platform/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr`.
+- GTA then crashes immediately when entering Story Mode. Therefore dev.15.1 is **not** a visual D4 pass.
+
+### Log analysis
+- ASI loader completes plugin enumeration with VOX loaded.
+- ScriptHookV initializes Enhanced `1.0.1158.13` and registers VOX.
+- The VOX runtime reaches persistence save, Core ready, bridge ready, game-thread queue dispatch, five Core ticks and five ScriptHook heartbeats before the crash.
+- RageOpenV release logging only reports successful initialization and does not identify the asset/open operation at crash time.
+- Current evidence therefore points away from the already-proven VOX runtime lifecycle and toward the newly introduced visual override path, but does not yet distinguish mount/path behavior from retail YDR reconstruction.
+
+### Differential crash isolation
+- Added `04_ISOLATE_VISUAL_CRASH.cmd` and `Isolate-VisualProbeCrash.ps1`.
+- The isolation tool verifies the active transformed override hash, verifies the locally extracted original YDR hash, then atomically replaces the active loose override with a **byte-for-byte copy of the extracted original** at the exact same `newmods/platform` path.
+- It preserves the transformed hash for diagnosis and advances the manifest active hash so the existing rollback remains ownership/hash safe.
+- Interpretation is binary: if Story Mode still crashes with source-identical bytes, the mount/path layer is implicated; if Story Mode loads, the FiveFury-rebuilt retail YDR is implicated.
+
+### Regression protection
+- Windows CI parses and executes the new crash-isolation script against a synthetic manifest/work/override tree.
+- CI requires transformed-hash ownership before replacement, exact source-hash identity after replacement, `probe_mode=IDENTITY_OVERRIDE`, preservation of `transformed_sha256`, and a rollback-safe active hash.
+- No Rockstar asset is packaged.
+
 ## [0.0.1-dev.15.1] — 2026-09-04
 
 ### Real dev.15 setup failure isolated
