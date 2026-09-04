@@ -44,6 +44,7 @@ $RequiredAssetTools = @(
     "vox_visual_probe.py",
     "vox_archive_mirror_probe.py",
     "vox_compact_rpf_probe.py",
+    "vox_compact_rpf_recovery.py",
     "Setup-And-Install-VisualProbe.ps1",
     "Rollback-VisualProbe.ps1",
     "Isolate-VisualProbeCrash.ps1",
@@ -75,6 +76,7 @@ $CoreHash = (Get-FileHash -LiteralPath (Join-Path $PackageRoot "VOXModernCore.dl
 $VisualToolHash = (Get-FileHash -LiteralPath (Join-Path $AssetToolRoot "vox_visual_probe.py") -Algorithm SHA256).Hash.ToLowerInvariant()
 $ArchiveMirrorHash = (Get-FileHash -LiteralPath (Join-Path $AssetToolRoot "vox_archive_mirror_probe.py") -Algorithm SHA256).Hash.ToLowerInvariant()
 $CompactRpfHash = (Get-FileHash -LiteralPath (Join-Path $AssetToolRoot "vox_compact_rpf_probe.py") -Algorithm SHA256).Hash.ToLowerInvariant()
+$CompactRecoveryHash = (Get-FileHash -LiteralPath (Join-Path $AssetToolRoot "vox_compact_rpf_recovery.py") -Algorithm SHA256).Hash.ToLowerInvariant()
 $BuildInfo = @(
     "version=$Version",
     "commit=$Commit",
@@ -83,6 +85,7 @@ $BuildInfo = @(
     "visual_probe_sha256=$VisualToolHash",
     "archive_mirror_probe_sha256=$ArchiveMirrorHash",
     "compact_rpf_probe_sha256=$CompactRpfHash",
+    "compact_rpf_recovery_sha256=$CompactRecoveryHash",
     "visual_probe_fivefury=0.4.21"
 ) -join [Environment]::NewLine
 Set-Content -LiteralPath (Join-Path $PackageRoot "BUILD_INFO.txt") -Value $BuildInfo -Encoding utf8NoBOM
