@@ -43,19 +43,26 @@ if (-not (Test-Path -LiteralPath $AssetToolSource -PathType Container)) { throw 
 $RequiredAssetTools = @(
     "vox_visual_probe.py",
     "vox_archive_mirror_probe.py",
+    "vox_compact_rpf_probe.py",
     "Setup-And-Install-VisualProbe.ps1",
     "Rollback-VisualProbe.ps1",
     "Isolate-VisualProbeCrash.ps1",
     "Install-FullArchiveIdentityProbe.ps1",
     "Enable-FullArchiveTransformedProbe.ps1",
     "Rollback-FullArchiveProbe.ps1",
+    "Install-CompactRpfIdentityProbe.ps1",
+    "Enable-CompactRpfTransformedProbe.ps1",
+    "Rollback-CompactRpfProbe.ps1",
     "01_INSTALL_VISUAL_PROBE.cmd",
     "02_OPEN_VISUAL_PROBE_REPORT.cmd",
     "03_ROLLBACK_VISUAL_PROBE.cmd",
     "04_ISOLATE_VISUAL_CRASH.cmd",
     "05_INSTALL_FULL_ARCHIVE_IDENTITY.cmd",
     "06_ENABLE_SCALED_PROBE.cmd",
-    "07_ROLLBACK_FULL_ARCHIVE_PROBE.cmd"
+    "07_ROLLBACK_FULL_ARCHIVE_PROBE.cmd",
+    "08_INSTALL_COMPACT_RPF_IDENTITY.cmd",
+    "09_ENABLE_COMPACT_SCALED_PROBE.cmd",
+    "10_ROLLBACK_COMPACT_RPF_PROBE.cmd"
 )
 foreach ($Name in $RequiredAssetTools) {
     $Source = Join-Path $AssetToolSource $Name
@@ -67,6 +74,7 @@ $AsiHash = (Get-FileHash -LiteralPath (Join-Path $PackageRoot "VOXModernOverhaul
 $CoreHash = (Get-FileHash -LiteralPath (Join-Path $PackageRoot "VOXModernCore.dll") -Algorithm SHA256).Hash.ToLowerInvariant()
 $VisualToolHash = (Get-FileHash -LiteralPath (Join-Path $AssetToolRoot "vox_visual_probe.py") -Algorithm SHA256).Hash.ToLowerInvariant()
 $ArchiveMirrorHash = (Get-FileHash -LiteralPath (Join-Path $AssetToolRoot "vox_archive_mirror_probe.py") -Algorithm SHA256).Hash.ToLowerInvariant()
+$CompactRpfHash = (Get-FileHash -LiteralPath (Join-Path $AssetToolRoot "vox_compact_rpf_probe.py") -Algorithm SHA256).Hash.ToLowerInvariant()
 $BuildInfo = @(
     "version=$Version",
     "commit=$Commit",
@@ -74,6 +82,7 @@ $BuildInfo = @(
     "core_sha256=$CoreHash",
     "visual_probe_sha256=$VisualToolHash",
     "archive_mirror_probe_sha256=$ArchiveMirrorHash",
+    "compact_rpf_probe_sha256=$CompactRpfHash",
     "visual_probe_fivefury=0.4.21"
 ) -join [Environment]::NewLine
 Set-Content -LiteralPath (Join-Path $PackageRoot "BUILD_INFO.txt") -Value $BuildInfo -Encoding utf8NoBOM
