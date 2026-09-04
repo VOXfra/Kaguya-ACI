@@ -1,88 +1,105 @@
-VOX GTA V MODERN OVERHAUL — CHECKPOINT 0I.2 / VISUAL CRASH ISOLATION
-Version: 0.0.1-dev.15.2
+VOX GTA V MODERN OVERHAUL — CHECKPOINT 0I.3 / COMPLETE NESTED-RPF MIRROR
+Version: 0.0.1-dev.15.3
 
 PURPOSE
-Dev.14 remains the known-good runtime/persistence base. Dev.15.1 successfully fixed the Windows installer bootstrap and, on the user's real GTA V Enhanced installation, successfully:
-- created/reused the isolated Python environment;
-- installed FiveFury 0.4.21;
-- passed the Gen9 transformer self-test;
-- scanned the real Enhanced archives;
-- selected prop_roadcone02a;
-- extracted x64f.rpf/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr;
-- generated a 1.65x YDR;
-- installed it under newmods/platform/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr.
+Dev.15.2 established a decisive new fact in the user's real GTA V Enhanced installation:
+- the active loose prop_roadcone02a.ydr was replaced with a byte-for-byte copy of Rockstar's extracted original;
+- the path remained newmods/platform/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr;
+- Story Mode still crashed.
 
-However, the user's game then crashes immediately when entering Story Mode. The VOX runtime log reaches Core ready, game-thread queue dispatch and all five Core/ScriptHook ticks before the crash. ASI loader and ScriptHookV initialization also complete normally. Therefore dev.15.1 is NOT a successful visual D4 checkpoint.
+Therefore the FiveFury-modified YDR bytes are not required to trigger this crash. The previous one-file RageOpenV directory-archive layout is the primary suspect.
 
-WHAT DEV.15.2 CHANGES
-Dev.15.2 does not guess at the cause. It adds a differential crash-isolation tool:
+ROOT-CAUSE HYPOTHESIS BEING TESTED
+RageOpenV's custom-device hook treats a directory whose name ends in .rpf as the archive itself. The old probe created:
 
-VOXModernOverhaul\tools\assets\04_ISOLATE_VISUAL_CRASH.cmd
+newmods/platform/levels/gta5/props/roadside/v_construction.rpf/
+    prop_roadcone02a.ydr
 
-This tool requires the existing dev.15.1 visual_probe_manifest.json and extracted work/original YDR. It:
-- verifies the active generated override still matches its recorded SHA-256;
-- verifies the extracted original YDR still matches source_sha256;
-- preserves the transformed YDR hash in the manifest for diagnosis;
-- replaces ONLY the active loose override with a byte-for-byte copy of the extracted Rockstar original;
-- verifies the installed identity override SHA-256 equals the source SHA-256;
-- updates the manifest so normal hash-safe rollback remains valid;
-- does not modify any Rockstar RPF archive.
+That directory can therefore shadow the complete Rockstar v_construction.rpf instead of overlaying only one member. If GTA requests any other resource from v_construction.rpf, the one-file directory cannot provide it. This explains why even a byte-identical prop_roadcone02a.ydr can still crash Story Mode.
 
-WHY THIS TEST IS DECISIVE
-The active path stays exactly the same:
-newmods/platform/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr
+WHAT DEV.15.3 DOES
+Dev.15.3 keeps the same proven runtime and visual-tool environment but changes the RageOpenV archive strategy.
 
-Only its bytes change from our FiveFury-rebuilt YDR to the exact extracted original bytes.
+05_INSTALL_FULL_ARCHIVE_IDENTITY.cmd:
+- requires the existing dev.15.2 identity probe state;
+- rescans/reuses the user's local GTA V Enhanced index;
+- identifies the complete nested RPF containing the selected model;
+- extracts EVERY indexed member below that nested RPF from the user's own installation using standalone archive bytes;
+- builds the complete archive as a staging directory;
+- verifies the selected target still exactly matches source_sha256;
+- refuses to proceed if the current incomplete directory contains any unowned extra file;
+- swaps the one-file directory for the complete mirrored archive directory;
+- records every mirrored relative path and SHA-256 in the manifest;
+- leaves prop_roadcone02a.ydr byte-identical to Rockstar for the first real-game test.
 
-If Story Mode STILL crashes with the identity override:
-- the FiveFury geometry rewrite is exonerated for this crash;
-- RageOpenV/newmods path or mount behavior becomes the primary suspect.
+If that identity test loads Story Mode, dev.15.3 also contains:
 
-If Story Mode LOADS with the identity override:
-- RageOpenV/newmods can serve that exact source asset at that path;
-- the FiveFury-rebuilt retail YDR is the primary suspect even though FiveFury validation accepted it.
+06_ENABLE_SCALED_PROBE.cmd
 
-INSTALL DEV.15.2
+This keeps the complete mirrored archive in place and replaces ONLY prop_roadcone02a.ydr with the preserved 1.65x transformed YDR from dev.15.1. The manifest updates the target hash so the full archive remains safely removable.
+
+A dedicated rollback is included:
+
+07_ROLLBACK_FULL_ARCHIVE_PROBE.cmd
+
+Rollback compares the complete file set and SHA-256 of every mirrored member against the manifest before recursively deleting the VOX-owned mirrored archive. Any missing, added or changed file causes rollback to refuse deletion.
+
+INSTALL DEV.15.3
 1. Close GTA V Enhanced completely.
 2. Extract this ZIP into the GTA V Enhanced root containing GTA5_Enhanced.exe.
 3. Replace/merge the included files.
-4. Do NOT delete VOXModernOverhaul\visual_probe or its work directory from the dev.15.1 attempt.
-5. Do NOT rerun 01_INSTALL_VISUAL_PROBE.cmd before the isolation test.
-6. Keep world_state.v1 if present.
+4. KEEP VOXModernOverhaul\visual_probe and its work directory from dev.15.1/dev.15.2.
+5. KEEP VOXModernOverhaul\tools\.venv-assets.
+6. Do not rerun 01_INSTALL_VISUAL_PROBE.cmd.
+7. Do not rerun 04_ISOLATE_VISUAL_CRASH.cmd.
 
-RUN THE CRASH ISOLATION
+FIRST TEST — COMPLETE ARCHIVE, VANILLA TARGET
 Run:
-VOXModernOverhaul\tools\assets\04_ISOLATE_VISUAL_CRASH.cmd
+VOXModernOverhaul\tools\assets\05_INSTALL_FULL_ARCHIVE_IDENTITY.cmd
 
-Expected success output includes:
-VOX DEV.15.2 IDENTITY OVERRIDE INSTALLED
+Expected success markers:
+VOX_ARCHIVE_MIRROR_SELF_TEST_OK
+VOX_FULL_ARCHIVE_IDENTITY_INSTALLED
+VOX_FULL_ARCHIVE_FILES=<non-zero count>
 
-The report becomes:
-VOXModernOverhaul\visual_probe\visual_probe_report.txt
-status=IDENTITY_OVERRIDE_INSTALLED
-identity_bytes_equal_source=true
+The report should say:
+status=FULL_ARCHIVE_IDENTITY_INSTALLED
 
-REAL-GAME TEST
-1. Launch GTA V Enhanced normally.
-2. Enter Story Mode once.
-3. Do NOT look for an oversized cone; the identity override is intentionally visually identical to vanilla.
-4. Report only whether Story Mode loads or crashes.
-5. If it crashes, return the fresh loader/ScriptHook/RageOpenV/VOX logs again. A WER/minidump capture may then be used if the mount layer still cannot be isolated from logs.
+Then launch GTA V Enhanced and enter Story Mode.
 
-ROLLBACK AFTER THE TEST
-Run:
-VOXModernOverhaul\tools\assets\03_ROLLBACK_VISUAL_PROBE.cmd
+There should be NO visual difference yet.
 
-Because dev.15.2 updates generated_sha256 to the identity-copy hash, the existing rollback remains hash-safe and removes only the VOX-owned loose file.
+OUTCOME A — STORY MODE LOADS
+Close GTA cleanly. This strongly supports the incomplete-directory shadowing hypothesis.
 
-CI / REGRESSION EXPECTATIONS
-Before packaging dev.15.2, Windows CI must execute the isolation script against a synthetic manifest/work/override tree and prove:
-- transformed override hash is required before replacement;
-- extracted original hash is required;
-- installed identity file exactly equals source bytes;
-- probe_mode becomes IDENTITY_OVERRIDE;
-- transformed_sha256 is preserved;
-- generated_sha256 advances to the active source hash so rollback remains safe.
+Then run:
+VOXModernOverhaul\tools\assets\06_ENABLE_SCALED_PROBE.cmd
 
-NO D4 CLAIM
-Dev.15.2 is a diagnosis checkpoint. The visual pipeline remains D4 FAILED/PENDING until GTA loads a real override and a visible modification can be proven without crashing.
+Expected marker:
+VOX_FULL_ARCHIVE_TRANSFORMED_INSTALLED
+
+Launch Story Mode again. The chosen prop should now be visibly oversized while every other v_construction.rpf member remains available from the complete mirror.
+
+If that works, the RageOpenV mount strategy is validated and the project can finally retire the diagnostic scaling proof and move to meaningful graphics work.
+
+OUTCOME B — STORY MODE STILL CRASHES WITH COMPLETE IDENTITY ARCHIVE
+Do not run 06_ENABLE_SCALED_PROBE.cmd.
+At that point the problem is deeper than a missing-member archive shadow. The next step is WER/minidump capture around RageOpenV's custom directory-archive mount or abandoning this mount route for another non-destructive override strategy.
+
+ROLLBACK
+After either test, when requested, run:
+VOXModernOverhaul\tools\assets\07_ROLLBACK_FULL_ARCHIVE_PROBE.cmd
+
+The full mirrored archive is removed only after exact file-set and per-file hash verification.
+
+SAFETY / OWNERSHIP
+- No Rockstar RPF is modified in place.
+- No Rockstar YDR/RPF is bundled in this package.
+- All mirrored resource bytes come from the user's own installed game at test time.
+- The current archive destination must contain only the known dev.15.2 identity file before conversion; otherwise installation fails closed.
+- Complete mirror creation occurs in staging before the active directory is replaced.
+- Rollback refuses recursive deletion if any mirrored member was added, removed or changed.
+- The persistent VOX world_state.v1 is unrelated and should be preserved.
+
+NO D4 CLAIM YET
+Dev.15.3 is still an isolation checkpoint until the user's real GTA proves either the complete identity mirror or the transformed complete mirror loads successfully.
