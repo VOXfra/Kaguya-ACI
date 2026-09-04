@@ -2,6 +2,40 @@
 
 All user-visible, architectural and tooling changes are recorded here.
 
+## [0.0.1-dev.15.4] — 2026-09-04
+
+### Real dev.15.3 result — complete directory archive runs but is unusably slow
+- The user reached Story Mode with the complete `v_construction.rpf` directory mirror active, so mirroring all sibling resources removed the immediate one-file missing-member failure mode.
+- Real performance collapsed to roughly **5 FPS**. The directory-backed `.rpf` strategy is therefore rejected for production even though it was diagnostically useful.
+- Fresh returned logs from the later attempts still show the ASI loader finishing plugin loading, ScriptHookV initializing Enhanced `1.0.1158.13` and registering VOX, and the VOX Core completing persistence save, game-thread queue dispatch and five Core/ScriptHook ticks. RageOpenV release logging still exposes only initialization, so it provides no per-archive timing/open evidence.
+
+### Real compact-RPF replacement strategy
+- Added `vox_compact_rpf_probe.py` and one-click commands `08_INSTALL_COMPACT_RPF_IDENTITY.cmd`, `09_ENABLE_COMPACT_SCALED_PROBE.cmd` and `10_ROLLBACK_COMPACT_RPF_PROBE.cmd`.
+- RageOpenV's source only forces directory-archive mode when the `.rpf` path resolves to a directory. dev.15.4 therefore replaces the virtual filesystem archive with one actual `v_construction.rpf` file under `newmods/platform`.
+- The identity installer opens the user's original base `x64f.rpf`, extracts the nested `levels/gta5/props/roadside/v_construction.rpf` byte stream, reopens that nested RPF and verifies its `prop_roadcone02a.ydr` standalone SHA-256 equals the source hash already recorded by the real dev.15.1 extraction.
+- The original compact RPF is staged and hashed before the active path is changed. The previous VOX directory archive is moved aside only after ownership/set/hash verification and is restored if the final file swap fails.
+- No Rockstar RPF or YDR is bundled in the repository package or checkpoint ZIP.
+
+### Compact transformed archive integrity
+- The transformed stage starts from the preserved identity RPF rather than the slow directory mirror.
+- Only `prop_roadcone02a.ydr` is replaced with the preserved transformed Gen9 YDR.
+- The rebuilt RPF is reopened and must retain exactly the same member path set.
+- The selected target standalone SHA-256 must equal the preserved transformed YDR hash.
+- Every non-target standalone member SHA-256 must remain unchanged from the identity RPF.
+- The active compact RPF SHA-256 is recorded and rollback refuses deletion if the file was changed outside VOX.
+
+### CI / process cleanup
+- Retired the stale duplicate dev.15.3 and legacy core workflows and replaced them with one consolidated current workflow.
+- The current workflow keeps Windows/Linux warnings-as-errors builds, Linux ASan+UBSan, CRT-free ASI boundary checks and the two-process persistence smoke.
+- Windows packaging installs the real pinned FiveFury `0.4.21`, compiles all visual tools, executes the Gen9, legacy archive-mirror and compact-RPF self-tests, parses every PowerShell wrapper, creates a fresh installer venv through the exact user-facing bootstrap and reruns the compact-RPF self-test inside that venv.
+- Package verification rejects `.ydr`, `.rpf`, local FiveFury venv, user visual-probe state, ScriptHookV and persistent user state.
+
+### Current D4 gate
+- First run the compact **identity** RPF: Story Mode must load and performance must return to the normal range with no visual change.
+- Only after that real pass, enable the transformed compact RPF and require both normal performance and the visibly oversized `prop_roadcone02a`.
+- If even the real identity RPF crashes or remains unusably slow, the RageOpenV `platform:/` nested-RPF route is rejected rather than iterating another directory workaround.
+- No stable visible graphics D4 success is claimed yet.
+
 ## [0.0.1-dev.15.3] — 2026-09-04
 
 ### dev.15.2 real outcome — source-identical YDR still crashes
