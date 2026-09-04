@@ -17,8 +17,10 @@
 
 namespace {
 
-constexpr char kScriptRegisterExport[] = "?scriptRegister@@YAXPEAUHINSTANCE__@@P6AXXZ@Z@Z";
-constexpr char kScriptWaitExport[] = "?scriptWait@@YAXK@Z";
+constexpr char kHistoricalScriptRegisterExport[] = "?scriptRegister@@YAXPEAUHINSTANCE__@@P6AXXZ@Z@Z";
+constexpr char kHistoricalScriptWaitExport[] = "?scriptWait@@YAXK@Z";
+constexpr char kDriftedScriptRegisterExport[] = "?scriptRegister@@VOX_ABI_DRIFT_TEST";
+constexpr char kDriftedScriptWaitExport[] = "?scriptWait@@VOX_ABI_DRIFT_TEST";
 
 std::filesystem::path CurrentExecutableDirectory() {
     std::vector<wchar_t> buffer(32768, L'\0');
@@ -71,13 +73,18 @@ int main() {
             return 1;
         }
 
-        // Prove the fake exposes the exact ABI names that the runtime resolves.
-        if (GetProcAddress(scriptHook, kScriptRegisterExport) == nullptr) {
-            std::cerr << "FAIL_STAGE=ABI_EXPORT_SCRIPT_REGISTER: missing " << kScriptRegisterExport << '\n';
+        // Ensure the fake really forces the new fallback path.
+        if (GetProcAddress(scriptHook, kHistoricalScriptRegisterExport) != nullptr ||
+            GetProcAddress(scriptHook, kHistoricalScriptWaitExport) != nullptr) {
+            std::cerr << "FAIL_STAGE=FALLBACK_PRECONDITION: historical exact ABI unexpectedly exported\n";
             return 1;
         }
-        if (GetProcAddress(scriptHook, kScriptWaitExport) == nullptr) {
-            std::cerr << "FAIL_STAGE=ABI_EXPORT_SCRIPT_WAIT: missing " << kScriptWaitExport << '\n';
+        if (GetProcAddress(scriptHook, kDriftedScriptRegisterExport) == nullptr) {
+            std::cerr << "FAIL_STAGE=ABI_DRIFT_EXPORT_SCRIPT_REGISTER\n";
+            return 1;
+        }
+        if (GetProcAddress(scriptHook, kDriftedScriptWaitExport) == nullptr) {
+            std::cerr << "FAIL_STAGE=ABI_DRIFT_EXPORT_SCRIPT_WAIT\n";
             return 1;
         }
 
@@ -99,7 +106,7 @@ int main() {
         }
 
         if (wasRegistered() == FALSE) {
-            std::cerr << "FAIL_STAGE=SCRIPT_REGISTER_NOT_CALLED\n";
+            std::cerr << "FAIL_STAGE=SCRIPT_REGISTER_NOT_CALLED_AFTER_EXPORT_FALLBACK\n";
             return 1;
         }
 
@@ -126,7 +133,7 @@ int main() {
             sawResume = text.find("VOX_SCRIPT_MAIN_RESUMED_AFTER_WAIT") != std::string::npos;
             heartbeatCount = CountOccurrences(text, "VOX_SCRIPT_HEARTBEAT");
             if (sawEnter && sawResume && heartbeatCount >= 5) {
-                std::cout << "PASS: ABI exports, registration, ScriptMain entry, wait/resume and five heartbeats observed\n";
+                std::cout << "PASS: export-name drift fallback, registration, ScriptMain entry, wait/resume and five heartbeats observed\n";
                 return 0;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds{20});
