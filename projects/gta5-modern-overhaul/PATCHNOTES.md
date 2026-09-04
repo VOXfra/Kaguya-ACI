@@ -2,6 +2,33 @@
 
 All user-visible, architectural and tooling changes are recorded here.
 
+## [0.0.1-dev.15.1] — 2026-09-04
+
+### Real dev.15 setup failure isolated
+- The user's first packaged dev.15 visual-probe run created `VOXModernOverhaul\tools\.venv-assets` successfully, then failed before FiveFury installation/asset scanning.
+- Exact error: Python received malformed code equivalent to `print(f{...})` while the PowerShell wrapper attempted to query the venv version.
+- Root cause: `Setup-And-Install-VisualProbe.ps1` used a single-quoted PowerShell argument containing backslash-escaped double quotes (`f\"...\"`). PowerShell does not use backslash as its quote escape, so the command-line boundary altered the Python source.
+- No `newmods` override had been installed at that point; the failure occurred during environment bootstrap.
+
+### Fix
+- Removed the nested f-string/escaped-quote pattern entirely.
+- Version checks now execute quote-free Python expressions: numeric `major * 100 + minor` validation plus `sys.version.split()[0]` for the display string.
+- Existing venvs are validated as Python 3.11+ before use.
+- Python command output is explicitly wrapped as arrays before indexing so one-line process output cannot collapse to a scalar and accidentally become character indexing.
+- Venv creation now uses an explicit splatted argument array.
+- The broken dev.15-created venv may be reused by dev.15.1 if it is valid.
+
+### Regression protection upgraded from parse-only to execution
+- Added `-EnvironmentOnly` to the same packaged setup script. It follows the real environment path — Python launcher resolution, fresh venv creation, version queries, pinned FiveFury install and Gen9 self-test — then exits before a retail GTA archive scan.
+- Windows CI now deletes any prior test venv and **executes this exact packaged PowerShell bootstrap**, rather than merely parsing the script.
+- CI run `33893214202` proves the path on Windows Server 2025 / Python 3.11.9: fresh venv created, `Asset Python: 3.11.9`, FiveFury 0.4.21 installed, `VOX_VISUAL_PROBE_SELF_TEST_OK`, `VOX_VISUAL_ENVIRONMENT_SMOKE_OK`, and the explicit bootstrap PASS marker.
+- Project `AGENT.md` now permanently requires executable smoke coverage for user-facing installers whenever the critical setup path can run in CI; syntax/parser validation alone is not accepted as proof of installer execution.
+
+### Packaging
+- Corrected checkpoint version is `0.0.1-dev.15.1`.
+- Package verification requires both `BUILD_INFO.txt` and `README_FIRST_TEST.txt` to identify dev.15.1.
+- The underlying visual D4 gate is unchanged: a real GTA installation must still prove source scan/extraction, generated `newmods/platform` override visibility, stable launch and hash-safe rollback.
+
 ## [0.0.1-dev.15] — 2026-09-04
 
 ### dev.14 promoted to real D4 persistent-world foundation
