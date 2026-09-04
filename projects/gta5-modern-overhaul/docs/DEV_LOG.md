@@ -2,6 +2,24 @@
 
 This is the precise engineering trace for the project. Patch notes summarize changes; this log records what was done, why, validation performed and what is still unproven.
 
+## 2026-09-04 — Phase 0 execution checklist + config CI promotion
+
+### Traceability
+- Added `TODO_PHASE0.md` to track implementation and validation below the broad feature TODO.
+- The checklist distinguishes completed D3 foundations from partially implemented systems such as the full config stack.
+- This prevents a primitive/parser from being confused with a finished production subsystem.
+
+### CI evidence
+- Exact config commit: `58cec3c98e44da4b7d284cf1ff0743833140b0ed`.
+- GitHub Actions run: `33864582553`.
+- Result: SUCCESS.
+- The run covers Windows/Linux build+test and the Linux sanitizer job configured by the project workflow.
+- Versioned config parser is therefore promoted from local D3 to D3 cross-platform.
+
+### Runtime boundary
+- No GTA V Enhanced runtime adapter exists yet.
+- No in-game behavior has been claimed or marked complete.
+
 ## 2026-09-04 — Versioned configuration parser
 
 ### Implemented
@@ -29,11 +47,6 @@ This is the precise engineering trace for the project. Patch notes summarize cha
 - ASan: PASS
 - UBSan: PASS
 - CTest: 1/1 PASS
-
-### Existing CI evidence
-- Workflow run `33864368881` for commit `610bd41699854a6cc0f3f2ef824005bb85b38a39`: SUCCESS.
-- That run validated Windows/Linux build/test plus sanitizer job for the preceding core state.
-- Config changes require a new exact-commit run before cross-platform promotion.
 
 ## 2026-09-04 — CI hardening / concurrent EventBus validation
 

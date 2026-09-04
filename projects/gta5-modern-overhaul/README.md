@@ -51,7 +51,11 @@ See:
 
 - `docs/ARCHITECTURE.md`
 - `docs/TODO.md`
+- `docs/TODO_PHASE0.md`
 - `docs/TODO_TRANSVERSAL.md`
+- `docs/STATUS.md`
+- `docs/QUALITY_GATES.md`
+- `docs/DEV_LOG.md`
 - `docs/ROADMAP.md`
 - `docs/STORY_COMPATIBILITY.md`
 - `docs/DATA_MODEL.md`

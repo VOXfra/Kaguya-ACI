@@ -7,8 +7,8 @@ Validation levels are defined in `QUALITY_GATES.md`.
 | Capability | Status | Evidence / boundary |
 |---|---|---|
 | Project architecture | D1 | Architecture/TODO/roadmap/story contract/data model written and reviewed |
-| C++20 standalone core scaffold | D3 cross-platform | GitHub CI run 33864368881 succeeded on Windows/Linux plus sanitizer job |
-| Core warnings policy | D3 cross-platform | warnings-as-errors CI succeeded |
+| C++20 standalone core scaffold | D3 cross-platform | Windows/Linux CI and sanitizer jobs pass |
+| Core warnings policy | D3 cross-platform | warnings-as-errors CI passes |
 | Runtime file logger | D3 cross-platform | unit-tested in core CI; crash capture still separate |
 | Crash diagnostics | D0 | not implemented |
 | `EntityId` primitive | D3 cross-platform | validity/order tests pass |
@@ -17,7 +17,7 @@ Validation levels are defined in `QUALITY_GATES.md`.
 | EventBus | D3 cross-platform | normal, re-entrant, unsubscribe and concurrent publish tests pass |
 | Simulation tier primitive | D3 cross-platform | ordering invariant tested |
 | Spatial Simulation Manager | D0 | not implemented |
-| Versioned config parser | D3 Linux / CI pending latest commit | strict schema/duplicate/type failure tests pass locally with sanitizers |
+| Versioned config parser | D3 cross-platform | exact commit `58cec3c...`; CI run `33864582553` success |
 | Config migrations / typed runtime schema | D0 | not implemented |
 | GTA V Enhanced install/build detector | D0 | not implemented |
 | Native ScriptHookV runtime adapter | D0 | not implemented |
@@ -25,19 +25,19 @@ Validation levels are defined in `QUALITY_GATES.md`.
 | Story Compatibility runtime | D0 | contract only |
 | Asset locator / override pipeline | D0 | tool research only |
 | Automated package/install/rollback | D0 | not implemented |
-| GitHub Windows/Linux CI | D3 | run 33864368881 conclusion: success |
-| ASan + UBSan CI | D3 | run 33864368881 conclusion: success |
+| GitHub Windows/Linux CI | D3 | latest config run `33864582553` conclusion: success |
+| ASan + UBSan CI | D3 | latest config run `33864582553` conclusion: success |
 
-## Current local validation facts
+## Current validation facts
 
-- GNU C++ 14.2.0
+- GNU C++ 14.2.0 local validation
 - C++20
 - warnings treated as errors
 - AddressSanitizer
 - UndefinedBehaviorSanitizer
 - 4 concurrent publisher threads × 1000 EventBus publications
-- strict versioned-config negative tests
-- CTest: 1/1 passing
+- strict versioned-config positive/negative tests
+- Windows/MSVC + Linux CI green for exact config commit
 
 ## Rule
 
