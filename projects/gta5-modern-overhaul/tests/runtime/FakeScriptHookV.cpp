@@ -15,21 +15,19 @@ std::atomic<ScriptMain> g_registeredScript{nullptr};
 } // namespace
 
 /*
- * Do not rely on the compiler's current C++ name mangling for this test DLL.
- * The production runtime resolves the ScriptHookV x64 SDK ABI names below, so the
- * fake must expose those exact names even if a future MSVC changes how the source
- * declarations themselves would be decorated.
+ * Intentionally DO NOT expose the historical exact mangled names here.
+ * This fake simulates harmless C++ decoration drift while preserving the semantic
+ * function identifiers. The production runtime must discover these exports through
+ * its PE export-name fallback instead of succeeding via the hard-coded fast path.
  */
-#pragma comment(linker, "/EXPORT:?scriptRegister@@YAXPEAUHINSTANCE__@@P6AXXZ@Z@Z=VoxFakeScriptRegister")
-#pragma comment(linker, "/EXPORT:?scriptWait@@YAXK@Z=VoxFakeScriptWait")
+#pragma comment(linker, "/EXPORT:?scriptRegister@@VOX_ABI_DRIFT_TEST=VoxFakeScriptRegister")
+#pragma comment(linker, "/EXPORT:?scriptWait@@VOX_ABI_DRIFT_TEST=VoxFakeScriptWait")
 
 extern "C" void VoxFakeScriptRegister(HMODULE, ScriptMain script) {
     g_registeredScript.store(script, std::memory_order_release);
 }
 
 extern "C" void VoxFakeScriptWait(DWORD time) {
-    // The real ScriptHookV yields a script fiber. For the synthetic harness we only
-    // need deterministic resumability; clamp waits so CI remains fast.
     if (time == 0) {
         Sleep(1);
         return;
