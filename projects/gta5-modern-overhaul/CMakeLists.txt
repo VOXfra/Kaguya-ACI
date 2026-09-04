@@ -128,14 +128,19 @@ if(VOX_BUILD_TESTS)
     add_executable(vox_core_tests
         tests/core_tests.cpp
     )
-
     target_link_libraries(vox_core_tests PRIVATE vox_core)
     if(WIN32)
         target_link_libraries(vox_core_tests PRIVATE vox_windows_platform)
     endif()
-
     target_compile_features(vox_core_tests PRIVATE cxx_std_20)
     vox_apply_warnings(vox_core_tests)
-
     add_test(NAME vox_core_tests COMMAND vox_core_tests)
+
+    add_executable(vox_persistence_tests
+        tests/persistence_tests.cpp
+    )
+    target_link_libraries(vox_persistence_tests PRIVATE vox_core)
+    target_compile_features(vox_persistence_tests PRIVATE cxx_std_20)
+    vox_apply_warnings(vox_persistence_tests)
+    add_test(NAME vox_persistence_tests COMMAND vox_persistence_tests)
 endif()
