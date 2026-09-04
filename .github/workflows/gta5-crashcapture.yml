@@ -1,0 +1,105 @@
+name: GTA5 Crash Capture Tooling CI
+
+on:
+  push:
+    branches:
+      - gta5-modern-world-overhaul
+    paths:
+      - "projects/gta5-modern-overhaul/tools/crashcapture/**"
+      - "projects/gta5-modern-overhaul/tools/PackageCrashCapture.ps1"
+      - ".github/workflows/gta5-crashcapture.yml"
+  pull_request:
+    paths:
+      - "projects/gta5-modern-overhaul/tools/crashcapture/**"
+      - "projects/gta5-modern-overhaul/tools/PackageCrashCapture.ps1"
+      - ".github/workflows/gta5-crashcapture.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate-crash-capture:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Parse PowerShell scripts
+        shell: pwsh
+        run: |
+          $scripts = @(
+            './projects/gta5-modern-overhaul/tools/crashcapture/Enable-CrashCapture.ps1',
+            './projects/gta5-modern-overhaul/tools/crashcapture/Disable-CrashCapture.ps1',
+            './projects/gta5-modern-overhaul/tools/crashcapture/Collect-CrashEvidence.ps1',
+            './projects/gta5-modern-overhaul/tools/PackageCrashCapture.ps1'
+          )
+          foreach ($script in $scripts) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script), [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -ne 0) {
+              $errors | Format-List | Out-String | Write-Host
+              throw "PowerShell parse failed: $script"
+            }
+          }
+
+      - name: Smoke-test evidence collector in fake GTA root
+        shell: pwsh
+        run: |
+          $fakeRoot = Join-Path $env:RUNNER_TEMP 'FakeGTAVEnhanced'
+          $toolDir = Join-Path $fakeRoot 'VOXCrashCapture'
+          New-Item -ItemType Directory -Path $toolDir -Force | Out-Null
+          Copy-Item './projects/gta5-modern-overhaul/tools/crashcapture/*' $toolDir -Recurse -Force
+          Set-Content -LiteralPath (Join-Path $fakeRoot 'GTA5_Enhanced.exe') -Value 'fake executable for collector smoke test'
+          Set-Content -LiteralPath (Join-Path $fakeRoot 'asiloader.log') -Value 'fake asiloader log'
+          & (Join-Path $toolDir 'Collect-CrashEvidence.ps1') -LookbackMinutes 1
+          $zips = @(Get-ChildItem -LiteralPath $toolDir -Filter 'VOX-Crash-Evidence-*.zip' -File)
+          if ($zips.Count -ne 1) { throw "Expected exactly one evidence ZIP, found $($zips.Count)." }
+          $extract = Join-Path $env:RUNNER_TEMP 'EvidenceExtract'
+          Expand-Archive -LiteralPath $zips[0].FullName -DestinationPath $extract -Force
+          foreach ($required in @('environment.txt','windows-application-events.txt','asiloader.log')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $extract $required) -PathType Leaf)) {
+              throw "Evidence ZIP missing $required"
+            }
+          }
+
+      - name: Build crash-capture package
+        shell: pwsh
+        run: >-
+          ./projects/gta5-modern-overhaul/tools/PackageCrashCapture.ps1
+          -OutputDirectory ./projects/gta5-modern-overhaul/dist-crashcapture
+          -Version 0.0.1
+
+      - name: Verify package
+        shell: pwsh
+        run: |
+          $zip = @(Get-ChildItem './projects/gta5-modern-overhaul/dist-crashcapture' -Filter 'VOX-GTA5-Crash-Capture-*.zip' -File)
+          if ($zip.Count -ne 1) { throw "Expected one crash-capture ZIP, found $($zip.Count)." }
+          $extract = Join-Path $env:RUNNER_TEMP 'CrashCapturePackage'
+          Expand-Archive -LiteralPath $zip[0].FullName -DestinationPath $extract -Force
+          $root = Join-Path $extract 'VOXCrashCapture'
+          foreach ($required in @(
+            '01_ENABLE_CRASH_CAPTURE.cmd',
+            '02A_DISABLE_VOX_ASI.cmd',
+            '02B_RESTORE_VOX_ASI.cmd',
+            '03_COLLECT_EVIDENCE.cmd',
+            '04_DISABLE_CRASH_CAPTURE.cmd',
+            'Enable-CrashCapture.ps1',
+            'Disable-CrashCapture.ps1',
+            'Collect-CrashEvidence.ps1',
+            'README_CRASH_CAPTURE.txt',
+            'VERSION.txt'
+          )) {
+            if (-not (Test-Path -LiteralPath (Join-Path $root $required) -PathType Leaf)) {
+              throw "Package missing $required"
+            }
+          }
+
+      - name: Upload crash-capture ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: VOX-GTA5-Crash-Capture-0.0.1
+          path: projects/gta5-modern-overhaul/dist-crashcapture/VOX-GTA5-Crash-Capture-0.0.1.zip
+          if-no-files-found: error
+          retention-days: 30
