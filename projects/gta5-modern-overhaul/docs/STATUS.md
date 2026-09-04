@@ -19,14 +19,16 @@ Validation levels are defined in `QUALITY_GATES.md`.
 | Spatial Simulation Manager | D0 | not implemented |
 | Versioned config parser | D3 cross-platform | exact commit `58cec3c...`; CI run `33864582553` success |
 | Config migrations / typed runtime schema | D0 | not implemented |
-| GTA V Enhanced install/build detector | D0 | not implemented |
+| Enhanced explicit-root install probe | D3 local / CI pending | PE signature + AMD64 validation passes local ASan/UBSan/Werror tests |
+| Windows executable version reader | D1 / CI pending | implementation complete; MSVC + native API test required |
+| Epic/Steam/Rockstar auto-discovery | D0 | not implemented |
 | Native ScriptHookV runtime adapter | D0 | not implemented |
 | Mission/story detector | D0 | not implemented |
 | Story Compatibility runtime | D0 | contract only |
 | Asset locator / override pipeline | D0 | tool research only |
 | Automated package/install/rollback | D0 | not implemented |
-| GitHub Windows/Linux CI | D3 | latest config run `33864582553` conclusion: success |
-| ASan + UBSan CI | D3 | latest config run `33864582553` conclusion: success |
+| GitHub Windows/Linux CI | D3 | config run `33864582553` conclusion: success |
+| ASan + UBSan CI | D3 | config run `33864582553` conclusion: success |
 
 ## Current validation facts
 
@@ -37,7 +39,8 @@ Validation levels are defined in `QUALITY_GATES.md`.
 - UndefinedBehaviorSanitizer
 - 4 concurrent publisher threads × 1000 EventBus publications
 - strict versioned-config positive/negative tests
-- Windows/MSVC + Linux CI green for exact config commit
+- Enhanced install probe negative/positive PE fixtures
+- Windows/MSVC + Linux CI green through exact config commit
 
 ## Rule
 

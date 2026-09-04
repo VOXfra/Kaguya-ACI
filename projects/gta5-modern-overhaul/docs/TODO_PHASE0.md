@@ -78,11 +78,18 @@ Legend:
 
 ## GTA V Enhanced environment
 
-- [ ] Enhanced install detector
-- [ ] `gta5_enhanced.exe` validation
-- [ ] game build/version reader
-- [ ] Epic/Steam/Rockstar install discovery
-- [ ] explicit user path override
+- [ ] Enhanced install/build detector — IN PROGRESS
+  - [x] explicit-root directory probe — D3 local
+  - [x] exact `gta5_enhanced.exe` requirement — D3 local
+  - [x] `MZ` + `PE` signature validation — D3 local
+  - [x] AMD64 machine validation — D3 local
+  - [ ] exact detector commit Windows/Linux/sanitizer CI
+  - [ ] Windows file-version reader CI validation
+  - [ ] supported-build policy mapping
+- [ ] Epic install discovery
+- [ ] Steam install discovery
+- [ ] Rockstar Launcher install discovery
+- [ ] explicit user-path config wiring
 - [ ] tool discovery: CodeWalker
 - [ ] tool discovery: OpenRPF
 - [ ] tool discovery: Blender/Sollumz
@@ -121,8 +128,8 @@ Legend:
 
 ## Current next checkpoint
 
-1. Build and validate the GTA V Enhanced install/build detector.
-2. Add typed runtime config + migration skeleton.
-3. Add Entity Registry.
-4. Add diagnostics startup report/crash capture groundwork.
+1. Receive successful CI for the Enhanced detector/version-reader commit.
+2. Add storefront discovery (Epic first, then Steam/Rockstar) with explicit-path fallback.
+3. Add typed runtime config + migration skeleton.
+4. Add Entity Registry.
 5. Only then create the minimal ScriptHookV/ASI runtime adapter.

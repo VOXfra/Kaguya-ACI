@@ -21,6 +21,7 @@ endfunction()
 
 add_library(vox_core STATIC
     src/core/src/Config.cpp
+    src/core/src/GameInstall.cpp
     src/core/src/Logger.cpp
 )
 
@@ -32,6 +33,21 @@ target_include_directories(vox_core
 target_compile_features(vox_core PUBLIC cxx_std_20)
 vox_apply_warnings(vox_core)
 
+if(WIN32)
+    add_library(vox_windows_platform STATIC
+        src/platform/windows/WindowsFileVersion.cpp
+    )
+
+    target_include_directories(vox_windows_platform
+        PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/include
+    )
+
+    target_compile_features(vox_windows_platform PUBLIC cxx_std_20)
+    target_link_libraries(vox_windows_platform PRIVATE Version)
+    vox_apply_warnings(vox_windows_platform)
+endif()
+
 if(VOX_BUILD_TESTS)
     enable_testing()
 
@@ -40,6 +56,10 @@ if(VOX_BUILD_TESTS)
     )
 
     target_link_libraries(vox_core_tests PRIVATE vox_core)
+    if(WIN32)
+        target_link_libraries(vox_core_tests PRIVATE vox_windows_platform)
+    endif()
+
     target_compile_features(vox_core_tests PRIVATE cxx_std_20)
     vox_apply_warnings(vox_core_tests)
 

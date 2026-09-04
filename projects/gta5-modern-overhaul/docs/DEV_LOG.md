@@ -2,6 +2,46 @@
 
 This is the precise engineering trace for the project. Patch notes summarize changes; this log records what was done, why, validation performed and what is still unproven.
 
+## 2026-09-04 — GTA V Enhanced install/build probe foundation
+
+### Implemented
+- Added explicit-root GTA V Enhanced installation probe.
+- Requires `gta5_enhanced.exe` at the supplied root.
+- Validates that the root exists and is a directory.
+- Validates that the executable exists and is a regular file.
+- Parses the DOS `MZ` signature and PE signature.
+- Reads the PE COFF machine field and requires AMD64 (`0x8664`).
+- Added clear status values for missing path/directory/executable, wrong file type, malformed PE, wrong architecture and filesystem errors.
+
+### Windows build/version reader
+- Added a Windows-only adapter around `GetFileVersionInfoSizeW`, `GetFileVersionInfoW` and `VerQueryValueW`.
+- Reads the native `VS_FIXEDFILEINFO` file version into four explicit numeric components.
+- Validates the fixed-info signature before accepting the version block.
+- CMake links the Windows adapter against `Version.lib` only on Windows.
+- Windows tests will read a real version from `kernel32.dll` and verify a missing-file failure path.
+
+### Correctness review
+- `ProbeEnhancedInstall` is intentionally not `noexcept`: filesystem-path copies/construction and stream creation can allocate and may throw. Marking it `noexcept` would create an unnecessary `std::terminate` path on allocation failure.
+- Filesystem queries use `std::error_code` for ordinary path/access failures.
+- The PE parser is deliberately minimal and bounded: fixed 64-byte DOS header, explicit `e_lfanew`, 6-byte PE signature/machine read. It does not claim to fully validate arbitrary PE integrity.
+
+### Local validation
+- GNU C++ 14.2.0 / C++20.
+- warnings-as-errors: PASS.
+- AddressSanitizer: PASS.
+- UndefinedBehaviorSanitizer: PASS.
+- Tested missing directory: PASS.
+- Tested missing executable: PASS.
+- Tested malformed/non-PE file: PASS.
+- Tested x86 PE fixture rejection: PASS.
+- Tested AMD64 PE fixture acceptance: PASS.
+
+### Pending
+- Exact commit Windows/MSVC build and Windows native-version API test.
+- Storefront auto-discovery (Epic/Steam/Rockstar).
+- Mapping file version to the project's supported-build policy.
+- Actual GTA V Enhanced runtime load remains unimplemented.
+
 ## 2026-09-04 — Phase 0 execution checklist + config CI promotion
 
 ### Traceability
