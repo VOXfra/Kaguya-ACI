@@ -2,6 +2,87 @@
 
 This is the precise engineering trace for the project. Patch notes summarize changes; this log records what was done, why, validation performed and what is still unproven.
 
+## 2026-09-04 — dev.15.4 real missing-manifest failure → dev.15.5 standalone compact recovery
+
+### Real dev.15.4 user result
+The user ran the packaged `08_INSTALL_COMPACT_RPF_IDENTITY.cmd` and received:
+
+`VOX_COMPACT_RPF_ERROR=CompactRpfError: visual_probe_manifest.json is missing.`
+
+The PowerShell wrapper then propagated exit code 1. The failure happened before the compact nested RPF was activated and before GTA was launched, so dev.15.4 has **no D4 compact-RPF runtime evidence**.
+
+This exposes a checkpoint design mistake: dev.15.4 depended on temporary `VOXModernOverhaul/visual_probe` state produced by earlier experimental builds. That state is not a valid prerequisite for a new GTA-ready checkpoint.
+
+### Required design change
+The next installer must be able to reconstruct all diagnostic material from the user's own GTA V Enhanced installation when the old manifest is absent.
+
+A destructive fallback was rejected. The active target path may still contain a previous VOX directory mirror or an unrelated user/mod file, and the absence of a manifest means ownership cannot be proven. Therefore dev.15.5 quarantines existing target-path content intact instead of deleting it.
+
+### dev.15.5 implementation
+Added `vox_compact_rpf_recovery.py` and routed the packaged compact identity wrapper through it.
+
+Normal `08_INSTALL_COMPACT_RPF_IDENTITY.cmd` now:
+1. verifies `GTA5_Enhanced.exe` and `RageOpenV.asi`;
+2. creates/reuses the isolated VOX Python/FiveFury environment;
+3. does **not** require `visual_probe_manifest.json`;
+4. rescans the user's Enhanced installation through FiveFury 0.4.21;
+5. requires the known retail source path `x64f.rpf/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr`;
+6. re-extracts the source YDR locally;
+7. regenerates the 1.65x transformed Gen9 YDR needed by the later `09` test;
+8. opens the user's `x64f.rpf`, extracts the original nested `v_construction.rpf` byte stream, reopens it, and requires its target standalone SHA-256 to equal the freshly extracted source YDR hash;
+9. stages the exact nested RPF as a real file;
+10. snapshots any existing destination file/directory and moves it into `VOXModernOverhaul/visual_probe/work/recovery_backups/`;
+11. atomically installs the compact identity RPF;
+12. restores the pre-existing target automatically if final activation fails;
+13. writes a new schema-2 manifest containing source/transformed hashes, compact RPF hashes/member count, and any recovery-backup metadata.
+
+The existing compact transformed stage remains compatible because dev.15.5 recreates the fields and local `work/original`, `work/generated`, and `work/compact_rpf/original` files it expects.
+
+### Rollback recovery boundary
+`10_ROLLBACK_COMPACT_RPF_PROBE.cmd` now routes through the recovery tool.
+
+Rollback:
+1. accepts only `COMPACT_RPF_IDENTITY` or `COMPACT_RPF_TRANSFORMED` state;
+2. verifies the active compact RPF SHA-256 before touching it;
+3. if a pre-existing target had been quarantined, verifies its preserved file hash or exact directory file-set + per-file SHA-256 snapshot;
+4. moves the active compact RPF out transactionally;
+5. restores the quarantined prior target only after verification;
+6. restores the compact RPF if the rollback transaction itself fails;
+7. records `COMPACT_RPF_ROLLED_BACK`.
+
+This avoids using “missing manifest” as justification to guess ownership or delete an existing mod path.
+
+### Regression for the exact real failure
+A new `Install-CompactRpfIdentityProbe.ps1 -SelfTest` mode executes the same packaged PowerShell wrapper boundary.
+
+The Python self-test intentionally starts with:
+- **no** `visual_probe_manifest.json`;
+- a populated directory already occupying the `.rpf` destination;
+- a synthetic Gen9 source YDR;
+- a separate transformed YDR;
+- a complete synthetic nested RPF containing the source target plus an unrelated sibling.
+
+The required sequence is:
+1. install compact identity from those materials without a manifest;
+2. create fresh manifest state;
+3. prove the old directory was moved intact to recovery storage;
+4. prove the active destination is now a real compact RPF file with the expected hash;
+5. execute recovery rollback;
+6. prove the original directory reappears with the exact same file set and hashes.
+
+The consolidated Windows workflow executes this wrapper only after creating the same isolated FiveFury venv used by the user package. Parser-only validation is therefore insufficient for this path.
+
+### Evidence boundary
+The no-manifest recovery path is D3 executed once the final documented CI run is green. It does not prove RageOpenV can load the compact real RPF in the user's retail game.
+
+The D4 sequence remains:
+1. run dev.15.5 `08_INSTALL_COMPACT_RPF_IDENTITY.cmd`;
+2. Story Mode must load at normal FPS with no visual change;
+3. only then run `09_ENABLE_COMPACT_SCALED_PROBE.cmd`;
+4. Story Mode must remain at normal FPS and show the visibly oversized cone.
+
+If the identity real RPF itself crashes or remains unusably slow, the `newmods/platform` nested-RPF route is rejected instead of adding another virtual-directory workaround.
+
 ## 2026-09-04 — dev.15.4 compact-RPF CI defect caught before delivery
 
 The first consolidated dev.15.4 package run correctly stopped before packaging. Core Windows/Linux and sanitizer jobs were green, but the new compact-RPF self-test failed with:
