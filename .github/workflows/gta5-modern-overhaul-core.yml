@@ -70,15 +70,39 @@ jobs:
       - name: Configure runtime x64
         run: cmake -S projects/gta5-modern-overhaul -B projects/gta5-modern-overhaul/build-runtime -A x64 -DVOX_BUILD_TESTS=OFF -DVOX_BUILD_RUNTIME=ON -DVOX_WARNINGS_AS_ERRORS=ON
 
-      - name: Build inert runtime ASI and smoke host
+      - name: Build no-CRT runtime ASI and smoke host
         run: cmake --build projects/gta5-modern-overhaul/build-runtime --config Release --target vox_modern_overhaul_asi vox_runtime_smoke_host --parallel 2
 
-      - name: Run inert Windows ASI smoke checkpoint
+      - name: Verify ASI has zero PE imports
+        shell: pwsh
+        run: |
+          $asi = Resolve-Path ./projects/gta5-modern-overhaul/build-runtime/Release/VOXModernOverhaul.asi
+          $bytes = [System.IO.File]::ReadAllBytes($asi)
+          if ($bytes.Length -lt 512) { throw "ASI is unexpectedly small/truncated." }
+          if ($bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { throw "ASI missing MZ signature." }
+          $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+          if ($peOffset -lt 0 -or ($peOffset + 160) -ge $bytes.Length) { throw "Invalid PE header offset." }
+          if ($bytes[$peOffset] -ne 0x50 -or $bytes[$peOffset+1] -ne 0x45 -or $bytes[$peOffset+2] -ne 0 -or $bytes[$peOffset+3] -ne 0) { throw "ASI missing PE signature." }
+          $optional = $peOffset + 24
+          $magic = [BitConverter]::ToUInt16($bytes, $optional)
+          if ($magic -ne 0x20B) { throw "ASI is not PE32+ x64 optional-header format." }
+          $entryRva = [BitConverter]::ToUInt32($bytes, $optional + 16)
+          if ($entryRva -eq 0) { throw "ASI custom entrypoint RVA is zero." }
+          $dataDirectories = $optional + 112
+          $importRva = [BitConverter]::ToUInt32($bytes, $dataDirectories + 8)
+          $importSize = [BitConverter]::ToUInt32($bytes, $dataDirectories + 12)
+          if ($importRva -ne 0 -or $importSize -ne 0) { throw "ASI unexpectedly contains an import directory: RVA=$importRva size=$importSize" }
+          $tlsRva = [BitConverter]::ToUInt32($bytes, $dataDirectories + (9 * 8))
+          $tlsSize = [BitConverter]::ToUInt32($bytes, $dataDirectories + (9 * 8) + 4)
+          if ($tlsRva -ne 0 -or $tlsSize -ne 0) { throw "ASI unexpectedly contains a TLS directory." }
+          Write-Host "PASS: PE32+ ASI has a custom entrypoint, zero import directory and zero TLS directory."
+
+      - name: Run no-CRT Windows ASI smoke checkpoint
         shell: pwsh
         run: |
           $runtime = Resolve-Path ./projects/gta5-modern-overhaul/build-runtime/Release
           & (Join-Path $runtime "gta5_enhanced.exe")
-          if ($LASTEXITCODE -ne 0) { throw "Inert runtime smoke checkpoint failed with exit code $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { throw "No-CRT runtime smoke checkpoint failed with exit code $LASTEXITCODE" }
 
       - name: Package checkpoint
         shell: pwsh
@@ -86,7 +110,7 @@ jobs:
           ./projects/gta5-modern-overhaul/tools/PackageCheckpoint.ps1
           -BuildDirectory ./projects/gta5-modern-overhaul/build-runtime
           -OutputDirectory ./projects/gta5-modern-overhaul/dist
-          -Version 0.0.1-dev.9
+          -Version 0.0.1-dev.10
           -Commit $env:GITHUB_SHA
 
       - name: Verify package contents
@@ -113,7 +137,7 @@ jobs:
       - name: Upload GTA-ready checkpoint ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: VOX-GTA5-Modern-Overhaul-0.0.1-dev.9
-          path: projects/gta5-modern-overhaul/dist/VOX-GTA5-Modern-Overhaul-0.0.1-dev.9.zip
+          name: VOX-GTA5-Modern-Overhaul-0.0.1-dev.10
+          path: projects/gta5-modern-overhaul/dist/VOX-GTA5-Modern-Overhaul-0.0.1-dev.10.zip
           if-no-files-found: error
           retention-days: 30
