@@ -7,6 +7,7 @@ $ProbeRoot = Join-Path $GtaRoot 'VOXModernOverhaul\visual_probe'
 $ManifestPath = Join-Path $ProbeRoot 'visual_probe_manifest.json'
 $ReportPath = Join-Path $ProbeRoot 'visual_probe_report.txt'
 $PlatformRoot = [System.IO.Path]::GetFullPath((Join-Path $GtaRoot 'newmods\platform'))
+$DirectorySeparator = [System.IO.Path]::DirectorySeparatorChar.ToString()
 
 if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) {
     Write-Host 'No VOX visual-probe manifest exists. Nothing to remove.'
@@ -17,15 +18,15 @@ $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
 $relative = [string]$manifest.override_relative_path
 $expectedHash = ([string]$manifest.generated_sha256).ToLowerInvariant()
 
-if ([string]::IsNullOrWhiteSpace($relative) -or -not $relative.Replace('\\','/').StartsWith('newmods/platform/', [System.StringComparison]::OrdinalIgnoreCase)) {
+if ([string]::IsNullOrWhiteSpace($relative) -or -not $relative.Replace('\','/').StartsWith('newmods/platform/', [System.StringComparison]::OrdinalIgnoreCase)) {
     throw "Manifest contains an unsafe override path: '$relative'. Refusing deletion."
 }
 if ($relative -match '(^|[\\/])\.\.([\\/]|$)') {
     throw "Manifest contains traversal: '$relative'. Refusing deletion."
 }
 
-$target = [System.IO.Path]::GetFullPath((Join-Path $GtaRoot ($relative.Replace('/', '\\'))))
-$platformPrefix = $PlatformRoot.TrimEnd('\\') + '\\'
+$target = [System.IO.Path]::GetFullPath((Join-Path $GtaRoot ($relative.Replace('/', $DirectorySeparator))))
+$platformPrefix = $PlatformRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar) + $DirectorySeparator
 if (-not $target.StartsWith($platformPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
     throw "Resolved override is outside newmods/platform: '$target'. Refusing deletion."
 }
