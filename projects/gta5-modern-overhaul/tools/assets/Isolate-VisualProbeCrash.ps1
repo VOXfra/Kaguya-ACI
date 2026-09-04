@@ -16,6 +16,7 @@ $ProbeRoot = Join-Path $GtaRoot 'VOXModernOverhaul\visual_probe'
 $ManifestPath = Join-Path $ProbeRoot 'visual_probe_manifest.json'
 $ReportPath = Join-Path $ProbeRoot 'visual_probe_report.txt'
 $PlatformRoot = [System.IO.Path]::GetFullPath((Join-Path $GtaRoot 'newmods\platform'))
+$DirectorySeparator = [System.IO.Path]::DirectorySeparatorChar.ToString()
 
 if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) {
     throw "No visual_probe_manifest.json exists. Run the visual probe first."
@@ -29,7 +30,7 @@ $generatedHash = ([string]$manifest.generated_sha256).ToLowerInvariant()
 $probeModeProperty = $manifest.PSObject.Properties['probe_mode']
 $probeMode = if ($null -eq $probeModeProperty) { '' } else { [string]$probeModeProperty.Value }
 
-if ([string]::IsNullOrWhiteSpace($relative) -or -not $relative.Replace('\\','/').StartsWith('newmods/platform/', [System.StringComparison]::OrdinalIgnoreCase)) {
+if ([string]::IsNullOrWhiteSpace($relative) -or -not $relative.Replace('\','/').StartsWith('newmods/platform/', [System.StringComparison]::OrdinalIgnoreCase)) {
     throw "Manifest contains an unsafe override path: '$relative'."
 }
 if ($relative -match '(^|[\\/])\.\.([\\/]|$)') {
@@ -42,8 +43,8 @@ if ($sourceHash -notmatch '^[0-9a-f]{64}$' -or $generatedHash -notmatch '^[0-9a-
     throw 'Manifest contains an invalid SHA-256 value.'
 }
 
-$target = [System.IO.Path]::GetFullPath((Join-Path $GtaRoot ($relative.Replace('/', '\\'))))
-$platformPrefix = $PlatformRoot.TrimEnd('\\') + '\\'
+$target = [System.IO.Path]::GetFullPath((Join-Path $GtaRoot ($relative.Replace('/', $DirectorySeparator))))
+$platformPrefix = $PlatformRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar) + $DirectorySeparator
 if (-not $target.StartsWith($platformPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
     throw "Resolved override is outside newmods/platform: '$target'."
 }
