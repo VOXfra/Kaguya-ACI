@@ -133,7 +133,7 @@ jobs:
           }
           Write-Host "PASS: real PowerShell -> venv -> version query -> FiveFury -> Gen9 self-test bootstrap executed."
 
-      - name: Validate byte-identical crash-isolation replacement
+      - name: Validate byte-identical crash-isolation and rollback
         shell: pwsh
         run: |
           $root = Join-Path $env:RUNNER_TEMP 'vox-identity-probe'
@@ -157,6 +157,7 @@ jobs:
           }
           New-Item -ItemType Directory -Path $probe -Force | Out-Null
           $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $probe 'visual_probe_manifest.json') -Encoding UTF8
+
           & ./projects/gta5-modern-overhaul/tools/assets/Isolate-VisualProbeCrash.ps1 -GtaRootOverride $root
           if ($LASTEXITCODE -ne 0) { throw "Identity crash-isolation script failed with exit code $LASTEXITCODE." }
           $activeHash = (Get-FileHash $override -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -166,6 +167,14 @@ jobs:
           if (([string]$updated.generated_sha256).ToLowerInvariant() -ne $sourceHash) { throw "Rollback-active hash was not advanced to source hash." }
           if (([string]$updated.transformed_sha256).ToLowerInvariant() -ne $generatedHash) { throw "Original transformed hash was not preserved for diagnosis." }
           Write-Host "PASS: transformed override -> hash-verified byte-identical original replacement."
+
+          & ./projects/gta5-modern-overhaul/tools/assets/Rollback-VisualProbe.ps1 -GtaRootOverride $root
+          if ($LASTEXITCODE -ne 0) { throw "Identity override rollback failed with exit code $LASTEXITCODE." }
+          if (Test-Path -LiteralPath $override -PathType Leaf) { throw "Rollback left the identity override behind." }
+          if (Test-Path -LiteralPath (Join-Path $probe 'visual_probe_manifest.json') -PathType Leaf) { throw "Rollback left the manifest behind." }
+          $report = Get-Content -LiteralPath (Join-Path $probe 'visual_probe_report.txt') -Raw
+          if ($report -notmatch 'status=ROLLED_BACK') { throw "Rollback report did not record ROLLED_BACK." }
+          Write-Host "PASS: identity override -> hash-safe rollback."
 
       - name: Configure runtime x64
         run: cmake -S projects/gta5-modern-overhaul -B projects/gta5-modern-overhaul/build-runtime -A x64 -DVOX_BUILD_TESTS=OFF -DVOX_BUILD_RUNTIME=ON -DVOX_WARNINGS_AS_ERRORS=ON
