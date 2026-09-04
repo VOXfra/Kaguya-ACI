@@ -2,6 +2,143 @@
 
 This is the precise engineering trace for the project. Patch notes summarize changes; this log records what was done, why, validation performed and what is still unproven.
 
+## 2026-09-04 — dev.14 real D4 persistence + dev.15 first visible Enhanced asset pipeline
+
+### Real dev.14 evidence received
+The user returned two successive real-game runtime logs from GTA V Enhanced.
+
+First clean dev.14 launch:
+- `VOX_SCRIPT_MAIN_ENTER` and `VOX_SCRIPT_MAIN_RESUMED_AFTER_WAIT` remain healthy.
+- `VOX_CORE_START` / runtime ready / bridge ready are observed.
+- `VOX_PERSISTENCE_STATUS=NEW`.
+- system EntityId is exactly `1`.
+- entity count is exactly `1`.
+- next EntityId/high-water is exactly `2`.
+- `VOX_PERSISTENCE_SAVE_OK` proves the real startup save path committed successfully.
+- `VOX_GAME_THREAD_QUEUE_DISPATCHED=1` proves the bounded queue reaches the live ScriptHookV game-thread/Core path.
+- five Core ticks and five ScriptHook heartbeats remain healthy.
+
+Second launch, without deleting VOX state:
+- `VOX_PERSISTENCE_STATUS=LOADED`.
+- system EntityId remains `1`.
+- entity count remains `1`.
+- next EntityId remains `2`.
+- the game-thread queue marker remains healthy.
+- five Core ticks and five ScriptHook heartbeats remain healthy.
+- user reports GTA stable.
+
+Conclusion: dev.14 is promoted to **D4 real GTA persistence**. The project now has a real persistent identity substrate, a real create→reload high-water path and a validated game-thread dispatch bridge. No claim is made yet that GTA runtime handles are bound to persistent IDs; that is a later adapter.
+
+### Visual-track decision after dev.14
+The user explicitly wants the project to leave long stretches of invisible plumbing and reach visible improvements quickly. With ScriptHookV lifecycle, C++ Core, persistence and the game-thread queue now D4, the next major parallel track is therefore the Enhanced asset pipeline rather than completing the entire society/world simulation first.
+
+The first visual checkpoint is intentionally a pipeline proof, not final art. A common static world prop is made obviously oversized (`1.65x`) so a screenshot can unambiguously prove that GTA is serving our generated Enhanced asset. After the proof, the scale override is rolled back and the exact same extraction/rebuild/override chain is retained for meaningful materials/foliage/road work.
+
+### Tool research / selected architecture
+Three current Enhanced-capable paths were reviewed:
+- CodeWalker remains useful for interactive Gen9 inspection and source-resource identification, but its normal program entry is UI-oriented and is not the most convenient first headless automation layer.
+- Sollumz remains valuable for Blender-based production art later, but first-pipeline automation should not force the user into manual Blender work.
+- FiveFury provides a Python API for GTA V asset cache/indexing, RPF reads, YDR read/edit/write/validation and explicit `GameTarget.GTA5_ENHANCED` handling.
+
+FiveFury `0.4.21` was selected for the automated first proof:
+- Python >=3.11;
+- license The Unlicense/public domain;
+- installed from PyPI into a VOX-local virtual environment at user test time;
+- never bundled into the GTA-ready ZIP.
+
+RageOpenV is the non-destructive runtime mount. Its implementation exposes `newmods/platform/` as `platform:/` and treats `.rpf`-named directories as virtual archive paths. Therefore a base logical asset such as:
+
+`x64i.rpf/levels/gta5/.../nested.rpf/model.ydr`
+
+can be mirrored as:
+
+`newmods/platform/levels/gta5/.../nested.rpf/model.ydr`
+
+without writing into Rockstar's original archive. dev.15 deliberately accepts only base `x64*.rpf` sources for the first proof; update/DLC mount semantics are deferred until the base pipeline is D4.
+
+### dev.15 visual-probe implementation
+Added `tools/assets/vox_visual_probe.py` plus one-click install/report/rollback wrappers.
+
+The install path:
+1. verifies `GTA5_Enhanced.exe` and existing `RageOpenV.asi`;
+2. creates/uses an isolated VOX Python venv;
+3. installs exactly FiveFury `0.4.21`;
+4. runs a deterministic synthetic Gen9 self-test;
+5. scans the user's own Enhanced installation;
+6. searches a priority list of common static props (traffic lights, street lights, bin/cone, then vegetation fallbacks);
+7. accepts only exact `.ydr` matches whose logical path starts at a base `x64*.rpf`;
+8. refuses a candidate if its loose destination already exists;
+9. extracts the user's source YDR to VOX working storage;
+10. scales every render vertex by `1.65`;
+11. recomputes drawable render bounds and extends positive LOD distances;
+12. writes the asset back, reopens it, requires the original YDR version to be preserved and FiveFury validation to contain no errors;
+13. verifies the transformed vertex numerically after the binary round trip;
+14. requires generated SHA-256 to differ from source;
+15. copies through a temporary file, verifies SHA-256, then atomically places the generated override under `newmods/platform`;
+16. writes a manifest/report with source path, archive path, source/generated hashes, selected model, exact destination and transform stats.
+
+Collision is intentionally not scaled. This avoids pretending the diagnostic proof is production-ready gameplay geometry. It is a visible streaming/asset-authoring proof only.
+
+### Safety / conflict policy
+- No Rockstar YDR is included in the repository package or user ZIP.
+- Source extraction happens locally from the user's installed game.
+- Update/DLC sources are rejected for this first proof.
+- `..`, drive/URI-style and non-YDR paths fail closed.
+- An occupied loose destination is skipped rather than overwritten.
+- Final install is only performed after rebuild validation and SHA-256 verification.
+- Rollback reads the manifest and will delete only a path that resolves under `newmods/platform` and still matches the recorded generated SHA-256.
+- If another tool/user edits the generated override, rollback refuses deletion instead of guessing ownership.
+
+### Defect caught before shipment — unverified FiveFury metadata API
+The first `vox_visual_probe.py` revision attempted:
+`from fivefury import __version__`
+without first proving that the top-level package exported that name.
+
+This assumption was caught during source review before user delivery. Per blocker policy, the first file was removed and replaced instead of adding a fallback around an unproven API. Runtime version verification now uses Python's standard `importlib.metadata.version("fivefury")`, while the setup and CI both pin exactly `0.4.21`.
+
+Regression protection: the dev.15 Windows CI installs the real pinned wheel, compiles the actual Python script and executes its self-test before packaging.
+
+### dev.15 CI evidence — run 33890491053
+At implementation commit `17c89e7ee0ef0dcca28d6a4b8203d7254daad532`, all jobs/steps passed:
+- core Windows build/tests;
+- core Linux build/tests;
+- ASan + UBSan;
+- Python 3.11 setup;
+- `fivefury==0.4.21` installation;
+- Python syntax compilation;
+- synthetic Gen9 YDR v159 create → transform → save → reopen;
+- preservation of v159 edition/version;
+- post-write vertex-scale verification;
+- FiveFury validation;
+- deterministic RageOpenV base-RPF → `newmods/platform` mapping;
+- unsafe path rejection self-test;
+- PowerShell installer/rollback parser validation;
+- existing ASI PE/CRT boundary;
+- existing two-process persistent Core smoke;
+- dev.15 packaging;
+- package boundary checks;
+- artifact upload.
+
+The package verifier additionally rejects:
+- any `.ydr` file in the distributed ZIP;
+- `ScriptHookV.dll`;
+- CI-generated persistent user state;
+- a bundled `.venv-assets`/FiveFury environment;
+- generated/extracted visual-probe user state.
+
+This is **D3 synthetic/tooling evidence only** for the new asset pipeline. The crucial real-game mount/visual result remains D4 pending.
+
+### Current D4 visual gate
+A final documented dev.15 artifact must still be rebuilt from the documentation-aligned branch head. The user will then:
+1. install dev.15 over dev.14 without deleting `world_state.v1`;
+2. run `VOXModernOverhaul/tools/assets/01_INSTALL_VISUAL_PROBE.cmd`;
+3. return `visual_probe_report.txt` if setup differs from expected;
+4. launch Story Mode and find the selected common prop;
+5. provide a screenshot showing the ~1.65x streamed model;
+6. run `03_ROLLBACK_VISUAL_PROBE.cmd` and confirm vanilla visual returns.
+
+Only after those real observations is the visual locator/extract/rebuild/RageOpenV chain promoted to D4. After PASS, the exaggerated diagnostic asset is retired immediately and the next visual checkpoint becomes a meaningful art upgrade rather than another infrastructure proof.
+
 ## 2026-09-04 — dev.12 real D4 pass + dev.13 isolated C++ core bridge
 
 ### Real dev.12 evidence received
