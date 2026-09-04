@@ -16,12 +16,27 @@ All user-visible, architectural and tooling changes are recorded here.
 - The harness loads the generated ASI, keeps it resident for two seconds and unloads it cleanly.
 - Packaging remains reproducible and root-mergeable.
 
+### Verified
+- Exact implementation commit: `818376c8c3a3a8afaa2499ee44225ab68850b266`.
+- GitHub Actions run `33872399873`: SUCCESS.
+- Windows/MSVC core build + tests: PASS.
+- Linux core build + tests: PASS.
+- Linux ASan + UBSan: PASS.
+- Windows x64 inert ASI build: PASS.
+- Synthetic inert ASI load/residency/unload: PASS.
+- GTA-ready ZIP construction: PASS.
+- ZIP required-file verification: PASS.
+- Artifact upload: PASS.
+
+### Package identity
+- `VOXModernOverhaul.asi` SHA-256: `c8d3db56304565da90c6d69dc83c48c09cc771a8fc174f99902e473414a2cde7`.
+- GTA-ready ZIP SHA-256: `e50a393791f94d8cd60ba5a6ea84f15449569ba0ff39f5aa5c6c207191d73b44`.
+
 ### Test interpretation
 - If `dev.9` remains stable in real GTA V Enhanced, the previous `CreateThread`/bootstrap path is rejected and the next runtime will use a proper ScriptHookV/game-thread lifecycle.
 - If `dev.9` still crashes, the investigation moves below bootstrap logic to ASI binary/load interaction or loader/toolchain compatibility rather than retrying the same architecture.
 
 ### Pending
-- Windows/Linux/sanitizer CI and Windows inert-ASI smoke/package validation for this exact commit.
 - Real GTA V Enhanced stability result for `dev.9`.
 
 ## [0.0.1-dev.8] — 2026-09-04
@@ -39,8 +54,8 @@ All user-visible, architectural and tooling changes are recorded here.
 
 ### Automated Windows runtime validation
 - Added a purpose-built x64 smoke host compiled as `gta5_enhanced.exe`.
-- CI now loads the real generated `.asi` with `LoadLibraryW`, exercises `DllMain` + bootstrap thread + path/config/version logic and requires the exact `CHECKPOINT_OK` marker before packaging.
-- This is a D3 Windows runtime-smoke result, not a D4 real-GTA claim.
+- CI loads the real generated `.asi` with `LoadLibraryW`, exercises `DllMain` + bootstrap thread + path/config/version logic and requires the exact `CHECKPOINT_OK` marker before packaging.
+- This passed synthetic D3 validation but failed later real-game D4 stability.
 
 ### Packaging
 - Added reproducible `PackageCheckpoint.ps1` packaging.
@@ -54,7 +69,7 @@ All user-visible, architectural and tooling changes are recorded here.
 - Fixed globally by defining `NOMINMAX` for every MSVC target in the project rather than patching individual call sites.
 - This is now a permanent build-level regression guard for all future Win32 code.
 
-### Verified
+### Verified before real-game test
 - Exact checkpoint commit tested by GitHub Actions run `33865763371`.
 - Windows/MSVC core build + tests: PASS.
 - Linux core build + tests: PASS.
@@ -67,7 +82,7 @@ All user-visible, architectural and tooling changes are recorded here.
 
 ### Real GTA result
 - User log confirms the ASI loaded in real GTA V Enhanced `1.0.1158.13` and reached `CHECKPOINT_OK`.
-- The game subsequently crashed, so real-game D4 stability **failed** and the bootstrap architecture is under isolation in `dev.9`.
+- The game subsequently crashed, so real-game D4 stability **failed** and the bootstrap architecture is quarantined while `dev.9` isolates simple ASI loading.
 
 ## [0.0.1-dev.7] — 2026-09-04
 - Added explicit-root Enhanced install/PE/architecture probing and the Windows file-version reader.

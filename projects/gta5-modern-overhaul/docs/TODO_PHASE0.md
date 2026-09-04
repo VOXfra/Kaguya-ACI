@@ -20,7 +20,7 @@ Legend:
 - [x] precise development log — active
 - [x] evidence-based engineering status table — active
 - [ ] add formatting/static-analysis gate (clang-format/clang-tidy or equivalent)
-- [x] add first reproducible user-testable artifact build — D3 Windows
+- [x] reproducible user-testable artifact build — D3 Windows
 
 ## Diagnostics
 
@@ -29,13 +29,14 @@ Legend:
 - [ ] structured subsystem/event fields
 - [ ] crash/exception capture
 - [ ] minidump or equivalent Windows crash artifact
-- [x] startup environment/build report foundation — D3 Windows smoke
+- [x] startup environment/build report foundation — dev.8 real execution observed
   - [x] process path
   - [x] Enhanced install validation status
   - [x] Windows GTA executable file version
   - [x] ASI loader (`dinput8.dll`) presence
   - [x] ScriptHookV presence
   - [ ] full runtime dependency/build compatibility report
+- [ ] capture Windows crash code/module/stack for future D4 failures instead of relying only on adjacent logs
 
 ## Persistent identity
 
@@ -79,8 +80,8 @@ Legend:
   - [x] typed bool/unsigned readers — D3 cross-platform
   - [x] ASan/UBSan + warnings-as-errors validation
   - [x] Windows/Linux/sanitizer CI validation
-  - [x] checkpoint config packaged and parsed by Windows ASI smoke host
-  - [x] malformed/missing runtime config fails closed in bootstrap
+  - [x] dev.8 runtime config packaged and parsed in synthetic + real GTA bootstrap
+  - [x] malformed/missing dev.8 runtime config fails closed in bootstrap
   - [ ] typed project runtime schema
   - [ ] schema migration framework
   - [ ] atomic file write / rollback
@@ -93,8 +94,9 @@ Legend:
   - [x] exact `gta5_enhanced.exe` requirement — D3 cross-platform
   - [x] `MZ` + `PE` signature validation — D3 cross-platform
   - [x] AMD64 machine validation — D3 cross-platform
-  - [x] detector Windows/Linux/sanitizer CI — run `33865763371`
+  - [x] detector Windows/Linux/sanitizer CI
   - [x] Windows file-version reader CI validation — D3 Windows
+  - [x] real dev.8 execution confirmed Enhanced probe + version `1.0.1158.13`
   - [ ] supported-build policy mapping
 - [ ] Epic install discovery
 - [ ] Steam install discovery
@@ -107,20 +109,28 @@ Legend:
 
 ## Native runtime adapter
 
-- [ ] complete native runtime adapter — IN PROGRESS
-  - [x] minimal Windows x64 ASI target — D3 compile/runtime-smoke
-  - [x] ASI host-process validation (`gta5_enhanced.exe`)
-  - [x] fail-closed exception boundary
-  - [x] synthetic x64 Enhanced-named host loads real generated ASI — D3
-  - [x] bootstrap thread reaches exact `CHECKPOINT_OK` in smoke harness
-  - [x] no gameplay/native/memory/save modifications in checkpoint 0
-  - [ ] actual GTA V Enhanced ASI load — D4 pending user test
+- [ ] complete native runtime adapter — IN PROGRESS / crash isolation active
+  - [x] minimal Windows x64 ASI binary target — D3
+  - [x] dev.8 host-process validation (`gta5_enhanced.exe`)
+  - [x] dev.8 fail-closed exception boundary
+  - [x] dev.8 synthetic x64 Enhanced-named host loads generated ASI — D3
+  - [x] dev.8 synthetic bootstrap reaches exact `CHECKPOINT_OK`
+  - [x] dev.8 real GTA process loads ASI and reaches exact `CHECKPOINT_OK`
+  - [ ] dev.8 real GTA runtime stability — **FAILED; game crashed after checkpoint**
+  - [x] isolate previous runtime by removing `CreateThread`, logging, filesystem/config, probing and project-core dependencies — dev.9
+  - [x] dev.9 inert ASI synthetic load/residency/unload — D3, run `33872399873`
+  - [ ] dev.9 inert ASI real GTA stability — **CURRENT USER CHECKPOINT**
+  - [ ] determine whether dev.8 asynchronous `DllMain` bootstrap is the actual crash root cause
   - [ ] ScriptHookV SDK acquisition/documented dependency for native calls
   - [ ] ScriptHookV/game-thread registration adapter
   - [ ] one safe in-game tick
   - [ ] supported-build policy + graceful disable
   - [ ] plugin unload/shutdown lifecycle for later stateful systems
-- [ ] first GTA V Enhanced D4 validation — **CURRENT USER CHECKPOINT**
+- [ ] first stable GTA V Enhanced D4 runtime validation
+
+### Quarantined path
+
+The dev.8 `CreateThread`-from-`DllMain` bootstrap is **quarantined**. Do not build new runtime systems on top of it. It may only return if later evidence proves it unrelated to the crash; otherwise replace it permanently with the ScriptHookV/game-thread lifecycle.
 
 ## Packaging / rollback
 
@@ -131,7 +141,8 @@ Legend:
 - [x] generated ZIP extracted and required files verified in CI
 - [x] first-test instructions packaged
 - [x] explicit removal/rollback instructions packaged
-- [x] GitHub Actions artifact upload — run `33865763371`
+- [x] dev.8 GitHub Actions artifact upload
+- [x] dev.9 GitHub Actions artifact upload — run `33872399873`
 - [ ] installer/automatic root detection for later public builds
 
 ## Story compatibility foundation
@@ -143,7 +154,7 @@ Legend:
 - [ ] ambient-system pause/resume interface
 - [ ] first harmless mission regression test
 
-Checkpoint 0 does not mutate GTA world/story state, so no mission override is required for this diagnostic load test.
+Checkpoints dev.8/dev.9 do not intentionally mutate GTA world/story state. Story compatibility work resumes only after a stable D4 runtime exists.
 
 ## Asset pipeline
 
@@ -158,21 +169,28 @@ Checkpoint 0 does not mutate GTA world/story state, so no mission override is re
 
 ## Current checkpoint
 
-**Checkpoint 0 — real GTA V Enhanced ASI load**
+**Checkpoint 0B — real GTA V Enhanced inert ASI stability (`0.0.1-dev.9`)**
 
-Engineering/synthetic validation is complete. The next action requires the real game:
+Automated validation is complete:
 
-1. Copy the generated `0.0.1-dev.8` ZIP contents into the GTA V Enhanced root.
-2. Launch Story Mode.
-3. Quit normally after the bootstrap has had time to execute.
-4. Return `VOXModernOverhaul/logs/bootstrap.log`.
-5. Promote the diagnostic ASI to D4 only if the real log contains the exact `CHECKPOINT_OK` marker and the game remains stable.
+1. Windows/MSVC core build + tests — PASS.
+2. Linux core build + tests — PASS.
+3. ASan + UBSan — PASS.
+4. Windows inert x64 ASI build — PASS.
+5. synthetic inert ASI load/residency/unload — PASS.
+6. package generation + extraction/verification — PASS.
+7. artifact upload — PASS.
+8. exact GitHub Actions run: `33872399873`.
 
-After D4 validation, continue Phase 0 with:
+User test:
 
-1. supported-build policy + ScriptHookV/game-thread adapter;
-2. one harmless in-game tick/probe;
-3. Entity Registry + persisted high-water mark;
-4. typed runtime config/migration skeleton;
-5. mission/story detection foundation;
-6. first non-destructive asset pipeline proof for the visual vertical slice.
+1. Replace the previous `VOXModernOverhaul.asi` with `dev.9`.
+2. Launch GTA V Enhanced normally.
+3. Enter Story Mode if possible and remain loaded for at least 2–5 minutes / past the dev.8 failure point.
+4. Report whether the game remains stable or crashes, plus approximate timing/context.
+5. No new VOX `bootstrap.log` is expected; dev.9 intentionally performs no logging.
+
+Decision after result:
+
+- **Stable:** reject the old asynchronous bootstrap and implement proper ScriptHookV/game-thread registration.
+- **Still crashes:** move one layer lower and isolate ASI binary/load/toolchain/loader interaction; do not retry bootstrap logic.

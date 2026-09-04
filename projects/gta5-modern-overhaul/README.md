@@ -21,19 +21,23 @@ The user is not expected to author code/assets. Normal user involvement should b
 
 ## Current checkpoint
 
-**0.0.1-dev.8 — Diagnostic ASI bootstrap**
+**0.0.1-dev.9 — Inert ASI crash isolation**
 
-Engineering validation is complete through D3:
+The previous `dev.8` package reached `CHECKPOINT_OK` inside the user's real GTA V Enhanced `1.0.1158.13`, proving that the ASI loader, executable probing and diagnostic bootstrap all executed. The game then crashed, so the runtime was **not** promoted to D4 stability.
 
-- Windows/MSVC core build and tests;
-- Linux core build and tests;
-- ASan + UBSan;
-- Windows x64 `.asi` compilation;
-- synthetic `gta5_enhanced.exe` host loading the generated `.asi`;
-- exact `CHECKPOINT_OK` bootstrap marker;
-- reproducible GTA-root ZIP creation and content verification.
+`dev.9` deliberately removes the entire asynchronous bootstrap path. Its `DllMain` immediately returns `TRUE` and performs no logging, filesystem access, config parsing, ScriptHookV calls, GTA native calls, hooks, memory writes or save/world changes.
 
-The next gate is D4: actual GTA V Enhanced loading on the user's installation. No gameplay hook or world mutation is active in this checkpoint.
+Automated validation for `dev.9` is complete through D3:
+
+- Windows/MSVC core build and tests: PASS;
+- Linux core build and tests: PASS;
+- ASan + UBSan: PASS;
+- Windows x64 inert `.asi` compilation: PASS;
+- synthetic load/residency/unload of the generated inert `.asi`: PASS;
+- reproducible GTA-root ZIP creation and content verification: PASS;
+- GitHub Actions run `33872399873`: SUCCESS.
+
+The next gate is a real GTA V Enhanced stability test of `dev.9`. If stable, the old `CreateThread`/`DllMain` bootstrap is rejected and runtime initialization moves to a proper ScriptHookV/game-thread lifecycle. If it still crashes, investigation moves below bootstrap logic rather than retrying that architecture.
 
 ## Primary pillars
 

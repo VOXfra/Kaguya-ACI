@@ -2,6 +2,61 @@
 
 This is the precise engineering trace for the project. Patch notes summarize changes; this log records what was done, why, validation performed and what is still unproven.
 
+## 2026-09-04 — Real GTA dev.8 crash + dev.9 inert isolation
+
+### User evidence received
+- `bootstrap.log` shows the dev.8 ASI executed inside the user's real GTA V Enhanced process at `2026-09-04 14:02:29`.
+- Process path resolved as `E:\\Jeux Epic\\GTAVEnhanced\\GTA5_Enhanced.exe`.
+- Enhanced probe returned `valid`.
+- Windows file version returned `1.0.1158.13`.
+- ASI loader and ScriptHookV were detected as present.
+- Packaged config parsed with `diagnostic_bootstrap_enabled=true`.
+- Exact final marker was written: `CHECKPOINT_OK: ASI loaded in GTA V Enhanced; no gameplay hooks or memory patches are active.`
+- `asiloader.log` independently confirms load order including `RageOpenV.asi`, `ScriptHookVDotNet.asi`, `TrainerV.asi`, then `VOXModernOverhaul.asi`.
+- `ScriptHookV.log` reports successful initialization for `VER_EN_1_0_1158_13`.
+- `RageOpenV.log` reports successful initialization.
+- User reports the game then crashed.
+
+### Classification
+- dev.8 proved real-game ASI loading and successful bootstrap execution, but **failed D4 stability**.
+- The available logs contain no exception code, crash module or stack trace. They therefore do not prove which module/instruction caused the crash.
+- The previous asynchronous bootstrap remains the leading architecture-level suspect because it creates a Win32 thread from `DllMain` and immediately performs C++/filesystem/logging work outside the normal ScriptHookV game-thread lifecycle.
+- This remains a hypothesis, not a declared root cause.
+
+### Blocker protocol applied
+- Stopped building additional systems on top of dev.8.
+- Quarantined the `CreateThread`-from-`DllMain` runtime path.
+- Reduced the failing surface to the smallest possible ASI: dev.9 `DllMain` immediately returns `TRUE` and does nothing else.
+- Removed project-core linkage, logger, filesystem access, config access, Enhanced probing, version reading, ScriptHookV calls, native calls, hooks, memory writes and save/world changes from the dev.9 ASI.
+- Kept the old bootstrap source in the repository for forensic comparison but removed it from the built target.
+
+### dev.9 automated isolation harness
+- Added `InertSmokeHost.cpp`.
+- Synthetic host loads the exact generated ASI, holds it resident for two seconds, verifies module residency and unloads it with `FreeLibrary`.
+- Exact implementation commit: `818376c8c3a3a8afaa2499ee44225ab68850b266`.
+- GitHub Actions run: `33872399873`.
+- Windows/MSVC core build + tests: PASS.
+- Linux core build + tests: PASS.
+- ASan + UBSan: PASS.
+- Windows x64 inert ASI build: PASS.
+- inert ASI load/residency/unload smoke: PASS.
+- package creation: PASS.
+- package extraction/required-file verification: PASS.
+- artifact upload: PASS.
+
+### dev.9 package identity
+- Version: `0.0.1-dev.9`.
+- Implementation commit embedded in package: `818376c8c3a3a8afaa2499ee44225ab68850b266`.
+- ASI SHA-256: `c8d3db56304565da90c6d69dc83c48c09cc771a8fc174f99902e473414a2cde7`.
+- Inner GTA-ready ZIP SHA-256: `e50a393791f94d8cd60ba5a6ea84f15449569ba0ff39f5aa5c6c207191d73b44`.
+- GitHub Actions outer artifact digest: `sha256:23e3152fbdf50f5e2f5ebe29bfa29398441938bd2a919b4e735289f1d2062ec1`.
+
+### Next evidence required
+- User replaces dev.8 ASI with dev.9 and runs the real game beyond the dev.8 failure point.
+- No new VOX bootstrap log is expected because dev.9 intentionally performs no logging.
+- If stable, reject the old asynchronous bootstrap and implement proper ScriptHookV/game-thread lifecycle.
+- If still unstable, investigate ASI binary/load/toolchain/loader interaction one layer lower rather than retrying the dev.8 approach.
+
 ## 2026-09-04 — Checkpoint 0: GTA-ready diagnostic ASI + reproducible package
 
 ### Development contract
@@ -54,9 +109,8 @@ This is the precise engineering trace for the project. Patch notes summarize cha
 - Runtime package substeps all succeeded: x64 configure, ASI + smoke-host build, Windows ASI smoke checkpoint, package creation, package extraction/required-file verification and artifact upload.
 
 ### Current boundary / next required evidence
-- A real GTA V Enhanced process has not yet loaded this exact package.
-- D4 requires the user to copy the generated ZIP into the GTA V Enhanced root, launch Story Mode, quit normally, and return `VOXModernOverhaul/logs/bootstrap.log`.
-- No gameplay feature will be added on top of an unproven loader path before that real-game checkpoint is resolved.
+- A real GTA V Enhanced process had not yet loaded this exact package at the time of this entry.
+- That later test is recorded above: dev.8 reached `CHECKPOINT_OK` but the game then crashed, so D4 stability failed.
 
 ## 2026-09-04 — GTA V Enhanced install/build probe foundation
 
