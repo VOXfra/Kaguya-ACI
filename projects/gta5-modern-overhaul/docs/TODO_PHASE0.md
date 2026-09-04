@@ -10,148 +10,107 @@ Legend:
 ## Core quality / traceability
 
 - [x] C++20 standalone core scaffold — D3 cross-platform
-- [x] CMake warnings policy — D3 cross-platform
-- [x] warnings-as-errors validation mode — D3 cross-platform
-- [x] global MSVC `NOMINMAX` protection — D3 Windows
-- [x] GitHub Windows/Linux build+test CI — D3
-- [x] Linux ASan + UBSan CI — D3
-- [x] project-local `AGENT.md` development contract — active
-- [x] project patch notes — active
-- [x] precise development log — active
-- [x] evidence-based engineering status table — active
-- [x] reproducible user-testable artifact build — D3 Windows
-- [ ] add formatting/static-analysis gate
+- [x] warnings-as-errors policy — D3 Windows/Linux
+- [x] global MSVC `NOMINMAX` protection
+- [x] Windows/Linux build+test CI
+- [x] Linux ASan + UBSan CI
+- [x] project-local `AGENT.md` development contract
+- [x] PATCHNOTES / DEV_LOG / STATUS evidence tracking
+- [x] reproducible GTA-root-ready checkpoint packaging
+- [ ] formatting/static-analysis gate
 
-## Diagnostics
+## Persistent identity / state
 
-- [x] thread-safe file logger foundation — D3 cross-platform
-- [x] runtime host-callback diagnostics observed through real dev.13 core bridge
-- [x] external Windows crash capture tooling — D3 tooling
-- [ ] log rotation / bounded size
-- [ ] structured subsystem/event fields
-- [ ] production crash/exception capture only if needed after stable runtime
-- [ ] full runtime dependency/build compatibility report
-
-## Persistent identity
-
-- [x] stable `EntityId` primitive — D3 cross-platform
-- [x] resumable `EntityIdGenerator` — D3 cross-platform
-- [x] zero reserved as invalid ID
-- [x] fail-closed 64-bit exhaustion in generator
-- [x] dev.13 first EntityId through isolated live Core — **D4 real GTA PASS**
-- [x] `EntityRegistry` create/find/remove/snapshot — D3 cross-platform
-- [x] entity kind validation — D3
-- [x] restored ID must be valid and strictly below persisted next-ID — D3
-- [x] duplicate restored ID rejection — D3
-- [x] persisted high-water mark integration — D3 synthetic/runtime
-- [x] duplicate/corrupt ID state recovery tests — D3
-- [ ] dev.14 real GTA persistent-registry two-launch validation — **CURRENT USER CHECKPOINT**
-- [ ] GTA runtime handle ↔ stable EntityId adapter — next identity step
-- [ ] entity lifecycle binding rules for streamed-out/streamed-in GTA objects
-
-## World persistence
-
-- [x] world-state schema v1
-- [x] strict magic/schema/count/entity parser
-- [x] deterministic entity serialization order
-- [x] final FNV-1a 64 checksum
-- [x] tamper/truncation/unknown-line rejection
-- [x] maximum state-file size guard
-- [x] temporary-file write
-- [x] disk flush before commit
-- [x] atomic primary replacement
-- [x] previous committed state retained as `.bak`
-- [x] corrupt-primary / valid-backup recovery test
-- [x] first separate-process synthetic create → second-process restore proof
-- [x] CI package rejects generated user state
-- [ ] schema migration framework before schema v2 exists
-- [ ] larger-scale persistence stress test
-- [ ] explicit shutdown/save integration beyond startup checkpoint semantics
+- [x] stable `EntityId` primitive — D3
+- [x] resumable fail-closed `EntityIdGenerator` — D3
+- [x] `EntityRegistry` create/find/remove/snapshot — D3
+- [x] duplicate/invalid/restored high-water validation — D3
+- [x] world-state schema v1 / checksum / strict parser — D3
+- [x] temp write + disk flush + atomic replacement — D3
+- [x] previous-state `.bak` recovery — D3
+- [x] separate-process synthetic create→restore proof — D3
+- [x] dev.14 first real launch creates system EntityId 1 + next ID 2 — **D4 PASS**
+- [x] dev.14 second real launch restores same EntityId/count/high-water — **D4 PASS**
+- [x] dev.14 real `world_state.v1` path remains stable — **D4 PASS**
+- [ ] GTA runtime handle ↔ stable EntityId adapter
+- [ ] streamed-out / streamed-in entity lifecycle binding
+- [ ] schema migration framework before schema v2
+- [ ] larger persistence stress test
+- [ ] explicit shutdown/save lifecycle beyond startup checkpoint
 
 ## Event / game-thread architecture
 
-- [x] typed EventBus — D3 cross-platform
-- [x] subscription tokens / unsubscribe
-- [x] re-entrant publication
-- [x] concurrent publication test
-- [x] subscription-ID fail-closed exhaustion
-- [x] bounded `GameThreadQueue` — D3 cross-platform
-- [x] concurrent producers — D3
-- [x] bounded drain — D3
-- [x] tasks enqueued while draining deferred to next tick — D3
-- [x] handler exception isolation — D3
-- [x] dev.14 synthetic runtime dispatch marker — D3 Windows
-- [ ] dev.14 real GTA queue marker — **CURRENT USER CHECKPOINT**
+- [x] typed EventBus — D3
+- [x] subscription / unsubscribe / re-entry / concurrency / token exhaustion tests
+- [x] bounded `GameThreadQueue` — D3
+- [x] concurrent producers / bounded drain / deferred re-entry / exception isolation
+- [x] dev.14 synthetic queue marker — D3
+- [x] dev.14 real `VOX_GAME_THREAD_QUEUE_DISPATCHED=1` — **D4 PASS**
 - [ ] explicit event taxonomy / namespaces
 - [ ] EventBus → GameThreadQueue adapter API
 - [ ] event tracing hooks
 
-## Simulation fidelity
+## Native runtime
 
-- [x] simulation-tier primitive — D3 cross-platform
-- [ ] Spatial Simulation Manager
-- [ ] distance/relevance promotion rules
-- [ ] deterministic dematerialize/rematerialize contract
-- [ ] simulation-budget governor
-- [ ] stress test with large abstract population
-
-## Configuration
-
-- [ ] complete versioned config system — IN PROGRESS
-  - [x] strict `key=value` parser — D3
-  - [x] mandatory numeric `schema_version`
-  - [x] duplicate-key rejection
-  - [x] typed bool/unsigned readers
-  - [x] Windows/Linux/sanitizer validation
-  - [ ] typed project runtime schema
-  - [ ] config schema migration framework
-  - [ ] production malformed-config recovery/default policy
-
-## GTA V Enhanced environment / native runtime
-
-- [x] explicit-root Enhanced probe — D3 regression / real execution observed
-- [x] `gta5_enhanced.exe` MZ/PE/AMD64 validation
-- [x] Windows file-version reader
+- [x] Enhanced executable/PE/AMD64 probe
 - [x] real Enhanced `1.0.1158.13` identified
-- [x] dev.8 unsafe free-thread bootstrap rejected after real crash
+- [x] dev.8 unsafe free-thread bootstrap rejected and quarantined
 - [x] dev.9 hidden CRT startup isolated
-- [x] dev.10 no-CRT stable ASI load baseline — D4
-- [x] dev.11 real ScriptHook registration failure isolated
+- [x] dev.10 no-CRT stable load baseline — D4
+- [x] dev.11 exact-export registration failure isolated
 - [x] dev.12 tolerant ScriptHook export resolution
-- [x] dev.12 real ScriptHook registration / ScriptMain / wait-resume / heartbeats — **D4 PASS**
-- [x] dev.13 split minimal ASI from normal `VOXModernCore.dll`
-- [x] dev.13 plain-C versioned ASI↔Core boundary
-- [x] dev.13 Core loaded only after ScriptMain resume
-- [x] dev.13 real Core start/bridge/ticks — **D4 PASS**
-- [x] dev.14 persistence and queue wired into Core — D3 full synthetic
-- [ ] dev.14 real persistence/queue validation — **CURRENT**
+- [x] dev.12 real registration / ScriptMain / wait-resume / heartbeats — **D4 PASS**
+- [x] dev.13 minimal ASI → normal C++ `VOXModernCore.dll` bridge — **D4 PASS**
+- [x] dev.14 persistent Registry + queue in real Core — **D4 PASS**
 - [ ] first safe GTA native read-only call
 - [ ] supported-build policy + graceful disable
 - [ ] robust plugin/core unload/shutdown lifecycle
 
-### Quarantined paths
+### Permanently quarantined
 
-- dev.8 `CreateThread` from `DllMain`: permanently forbidden.
-- dev.9 default CRT-startup ASI pattern: not accepted as minimal host.
-- World-mutating GTA behavior remains gated behind story compatibility and its own regression tests.
+- dev.8 `CreateThread` from `DllMain`.
+- dev.9 default CRT-startup ASI pattern as a minimal host.
+- World-mutating runtime behavior before its story-compatibility gate.
+
+## Diagnostics
+
+- [x] file logger foundation
+- [x] live host-callback markers
+- [x] reversible external WER crash-capture pack
+- [ ] log rotation / bounded size
+- [ ] structured subsystem fields
+- [ ] production crash capture only if needed
+
+## Simulation fidelity
+
+- [x] simulation tier primitive
+- [ ] Spatial Simulation Manager
+- [ ] relevance/distance promotion rules
+- [ ] deterministic dematerialize/rematerialize
+- [ ] simulation budget governor
+- [ ] large abstract-population stress test
+
+## Configuration
+
+- [x] strict versioned `key=value` parser — D3
+- [x] typed bool/unsigned reads + malformed input rejection
+- [ ] typed production runtime schema
+- [ ] config migration framework
+- [ ] production default/recovery policy
 
 ## Packaging / rollback
 
-- [x] reproducible runtime checkpoint packager
-- [x] project binaries only; no third-party redistribution
-- [x] ASI/Core SHA-256 + commit/version in `BUILD_INFO.txt`
-- [x] generated ZIP extraction/content validation
-- [x] package excludes fake `ScriptHookV.dll`
-- [x] package excludes CI-generated `VOXModernOverhaul/state/world_state.v1`
-- [x] packaged install/test/rollback instructions
-- [x] dev.13 final package delivered and real-tested
-- [x] dev.14 synthetic package path green in run `33885665383`
-- [ ] dev.14 final documented artifact rebuild — IN PROGRESS
-- [ ] installer/automatic GTA-root detection for later public builds
+- [x] ASI/Core hashes + commit/version in `BUILD_INFO.txt`
+- [x] package excludes fake ScriptHookV and generated persistent state
+- [x] dev.13 delivered + D4 tested
+- [x] dev.14 delivered + two-launch D4 tested
+- [x] dev.15 package now includes source-only visual tool scripts
+- [x] dev.15 package rejects bundled `.ydr`, FiveFury environment and visual-probe user state
+- [ ] general installer/root discovery for later public builds
 
 ## Story compatibility foundation
 
-- [ ] read-only mission/story detector research — next parallel track
+- [ ] read-only mission/story detector research — parallel track
 - [ ] reliable mission-active state
 - [ ] Story Compatibility Manager skeleton
 - [ ] canonical world overlay interface
@@ -160,50 +119,63 @@ Legend:
 
 ## Asset pipeline — visual priority
 
-- [ ] identify visible in-game asset → exact Enhanced source resource proof — **NEXT MAJOR PARALLEL TRACK**
-- [ ] asset dependency locator
-- [ ] export working copy
-- [ ] Enhanced/Gen9 conversion validation
-- [ ] non-destructive OpenRPF override package
-- [ ] rollback/disable path
-- [ ] automated before/after package
-- [ ] **first visible in-game asset replacement D4**
+- [x] choose non-destructive Enhanced override path using existing RageOpenV `newmods/platform` mount — implementation boundary
+- [x] pin local authoring dependency FiveFury 0.4.21 (Unlicense; not bundled)
+- [x] Python 3.11+ isolated-venv installer
+- [x] base-game `x64*.rpf` asset-path acceptance / update-DLC rejection
+- [x] traversal / drive-style path rejection
+- [x] visible-prop candidate selection without overwriting an existing loose override
+- [x] local asset extraction from user's own installation
+- [x] editable Gen9 YDR render-geometry transformation
+- [x] recompute render bounding box / sphere / LOD distances
+- [x] preserve source YDR version across rewrite
+- [x] reopen + FiveFury validation before install
+- [x] generated SHA-256 verification before atomic loose-file install
+- [x] deterministic `x64*.rpf/...` → `newmods/platform/...` mapping
+- [x] manifest records source/generated hashes + exact override path
+- [x] hash-safe rollback implementation
+- [x] synthetic Gen9 v159 transform self-test — **D3 Windows PASS**
+- [x] PowerShell wrapper parser checks — **D3 Windows PASS**
+- [x] package contains no Rockstar YDR and no locally installed FiveFury runtime
+- [ ] real user's Enhanced scan selects a compatible source asset — **CURRENT D4 TEST**
+- [ ] real RageOpenV mount serves generated YDR — **CURRENT D4 TEST**
+- [ ] **first visible in-game asset replacement — CURRENT D4 TEST**
+- [ ] real rollback proof restores vanilla visual
+- [ ] replace exaggerated proof with first meaningful visual upgrade
 - [ ] first graphical vertical slice
 
 ## Current checkpoint
 
-**Checkpoint 0H — persistent Entity Registry / two-launch state validation (`0.0.1-dev.14`)**
+**Checkpoint 0I — first visible GTA V Enhanced asset override (`0.0.1-dev.15`)**
 
 Already proven before user delivery:
 
-1. dev.13 real GTA isolated Core bridge — PASS.
-2. Windows core build/tests — PASS.
-3. Linux core build/tests — PASS.
-4. ASan + UBSan — PASS.
-5. Registry invariants — PASS.
-6. strict checksummed world-state round-trip/tamper rejection — PASS.
-7. atomic save + backup recovery — PASS.
-8. high-water restore — PASS.
-9. bounded/concurrent/failure-isolated game-thread queue — PASS.
-10. first synthetic process creates system EntityId 1 / next ID 2 — PASS.
-11. second separate process restores same state — PASS.
-12. ASI PE/CRT safety boundary retained — PASS.
-13. package excludes fake ScriptHook and generated state — PASS.
+1. dev.14 persistent-world two-launch real test — PASS.
+2. current C++ runtime Windows/Linux/ASan+UBSan regressions — PASS.
+3. FiveFury 0.4.21 installs in Windows CI — PASS.
+4. dev.15 visual Python compiles — PASS.
+5. synthetic Enhanced/Gen9 YDR version 159 creation/rewrite/reopen — PASS.
+6. expected vertex scale survives binary round trip — PASS.
+7. YDR validation after rewrite — PASS.
+8. base-RPF → RageOpenV platform mirror mapping — PASS.
+9. update/DLC/traversal/drive path refusal — PASS.
+10. visual PowerShell wrapper parser validation — PASS.
+11. runtime ASI/Core synthetic persistence regressions remain PASS.
+12. package boundary excludes YDR assets, user state, fake ScriptHookV and FiveFury venv — PASS.
 
-Required real dev.14 proof:
+Required real dev.15 proof:
 
-- first clean launch: `VOX_PERSISTENCE_STATUS=NEW`
-- `VOX_PERSISTENCE_SYSTEM_ENTITY_ID=1`
-- `VOX_PERSISTENCE_ENTITY_COUNT=1`
-- `VOX_PERSISTENCE_NEXT_ENTITY_ID=2`
-- `VOX_PERSISTENCE_SAVE_OK`
-- `VOX_GAME_THREAD_QUEUE_DISPATCHED=1`
-- second launch without deleting state: `VOX_PERSISTENCE_STATUS=LOADED`
-- same EntityId/count/next-ID values
-- existing Core ticks and ScriptHook heartbeats remain healthy
-- GTA stable on both launches
+- run `VOXModernOverhaul/tools/assets/01_INSTALL_VISUAL_PROBE.cmd`;
+- report becomes `status=INSTALLED`;
+- report identifies the selected common model and exact base `x64*.rpf` source;
+- generated override exists only in the reported `newmods/platform` path;
+- GTA remains stable;
+- selected model is visibly ~1.65× normal size in Story Mode;
+- screenshot + `visual_probe_report.txt` provide D4 evidence;
+- then run rollback and confirm vanilla appearance returns before moving to real art.
 
 Decision after PASS:
-- bind persistent IDs to read-only GTA runtime handles;
-- start read-only mission detection;
-- **start Enhanced asset locator/override tooling immediately in parallel, targeting the first visible graphics replacement.**
+- remove the deliberately exaggerated proof;
+- keep the validated locator/extract/rebuild/override/rollback pipeline;
+- immediately build the first meaningful materials/foliage/road visual improvement;
+- continue toward the graphical vertical slice while read-only mission/story work proceeds in parallel.
