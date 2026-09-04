@@ -2,6 +2,46 @@
 
 All user-visible, architectural and tooling changes are recorded here.
 
+## [0.0.1-dev.13] — 2026-09-04
+
+### dev.12 promoted to real D4 active runtime
+- Real GTA V Enhanced evidence now confirms `VOXModernOverhaul.asi` is registered by ScriptHookV on Enhanced `1.0.1158.13`.
+- `runtime_game_thread.log` contains `VOX_SCRIPT_MAIN_ENTER`, `VOX_SCRIPT_MAIN_RESUMED_AFTER_WAIT` and five fresh `VOX_SCRIPT_HEARTBEAT` markers.
+- GTA remains stable in the validated launch.
+- The ScriptHookV lifecycle gate is therefore promoted from synthetic D3 to **real D4 active runtime**.
+
+### Isolated C++ core bridge
+- Added `VOXModernCore.dll` as the normal C++20 project runtime behind a small plain-C versioned ABI.
+- The validated CRT-free ASI remains the minimal ScriptHookV host.
+- `VOXModernCore.dll` is loaded only after `ScriptMain` has entered and resumed through `scriptWait(0)`; it is never loaded from the ASI loader callback.
+- Added `VoxCoreStart`, `VoxCoreTick` and `VoxCoreStop` exports plus a versioned `VoxHostApi` callback contract.
+- The core allocates the first test EntityId through the existing `EntityIdGenerator` and logs `VOX_CORE_ENTITY_ID=1`.
+- The host/core handshake logs `VOX_CORE_START`, `VOX_CORE_BRIDGE_READY` and five `VOX_CORE_TICK=n` markers.
+- No GTA natives, hooks, memory patches, save writes or world mutations are active yet.
+
+### Validation and packaging
+- Windows core build/tests: PASS.
+- Linux core build/tests: PASS.
+- ASan + UBSan: PASS.
+- CRT-free ASI PE boundary: PASS.
+- ScriptHookV export-drift fallback: PASS.
+- ScriptHook registration + wait/resume smoke: PASS.
+- C++ core DLL load/export/start/tick handshake: PASS.
+- First EntityId allocation marker: PASS.
+- Package contains both `VOXModernOverhaul.asi` and `VOXModernCore.dll`: PASS.
+- Package excludes fake test `ScriptHookV.dll`: PASS.
+- CI run `33881321657`: fully green.
+
+### Traceability fix before delivery
+- The first dev.13 artifact inherited the old dev.12 `README_FIRST_TEST.txt` because packaging instructions had not yet been advanced with the new core-bridge checkpoint.
+- That artifact is not delivered as final.
+- Packaged test instructions were updated to dev.13 and a new documented build is required before user delivery.
+
+### Next gate
+- Real GTA validation of the isolated C++ core bridge.
+- After that: Persistent Entity Registry, queued game-thread EventBus adapter and first atomic versioned persistent state.
+- Enhanced asset locator/override tooling begins in parallel toward the first visible graphics checkpoint.
+
 ## [0.0.1-dev.12] — 2026-09-04
 
 ### Real dev.11 result
@@ -13,12 +53,12 @@ All user-visible, architectural and tooling changes are recorded here.
 
 ### Root-cause boundary
 - dev.11 used exact historical/current MSVC-decorated export strings for `scriptRegister` and `scriptWait` and silently disabled itself if either `GetProcAddress` failed.
-- The real evidence is consistent with that resolution path failing before `scriptRegister` is called. The exact export-table spelling in the user's ScriptHookV binary is not yet directly captured, so decoration mismatch is treated as the leading compatibility issue rather than claimed as proven fact.
+- The real evidence is consistent with that resolution path failing before `scriptRegister` is called. The exact export-table spelling in the user's ScriptHookV binary was not captured at that stage, so decoration mismatch was treated as the leading compatibility issue rather than claimed as proven fact.
 
 ### dev.12 compatibility fix
 - Keeps the dev.11 no-CRT custom-entrypoint architecture and the same restricted Kernel32 import boundary.
 - Still never loads ScriptHookV from the loader callback and never directly imports it.
-- Export resolution now uses three stages: historical exact name, undecorated alias, then PE export-name scan for the unique semantic `?scriptRegister@@` / `?scriptWait@@` function identifiers.
+- Export resolution uses three stages: historical exact name, undecorated alias, then PE export-name scan for the unique semantic `?scriptRegister@@` / `?scriptWait@@` function identifiers.
 - Ambiguous matches fail closed.
 - No GTA native calls, gameplay hooks, memory patches, save writes or world mutations are added.
 
@@ -27,9 +67,13 @@ All user-visible, architectural and tooling changes are recorded here.
 - It exports deliberately drifted names containing the same semantic identifiers, forcing the production runtime to exercise the new PE export-scan fallback.
 - The smoke host verifies that the historical exact names are absent before loading the ASI, then still requires registration, ScriptMain entry, wait/resume and five heartbeats.
 
-### Pending
-- CI/package validation of dev.12.
-- Real GTA D4 retest after CI passes.
+### Real-game outcome
+- PASS: ScriptHookV registers `VOXModernOverhaul.asi`.
+- PASS: `VOX_SCRIPT_MAIN_ENTER` observed.
+- PASS: `VOX_SCRIPT_MAIN_RESUMED_AFTER_WAIT` observed.
+- PASS: five `VOX_SCRIPT_HEARTBEAT` markers observed.
+- PASS: GTA remains stable in the reported test.
+- dev.12 is the first **real D4 active runtime** foundation.
 
 ## [0.0.1-dev.11] — 2026-09-04
 
