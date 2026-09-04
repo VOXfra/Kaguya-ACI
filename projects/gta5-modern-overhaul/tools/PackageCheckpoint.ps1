@@ -56,9 +56,11 @@ $RequiredAssetTools = @(
     "vox_visual_probe.py",
     "Setup-And-Install-VisualProbe.ps1",
     "Rollback-VisualProbe.ps1",
+    "Isolate-VisualProbeCrash.ps1",
     "01_INSTALL_VISUAL_PROBE.cmd",
     "02_OPEN_VISUAL_PROBE_REPORT.cmd",
-    "03_ROLLBACK_VISUAL_PROBE.cmd"
+    "03_ROLLBACK_VISUAL_PROBE.cmd",
+    "04_ISOLATE_VISUAL_CRASH.cmd"
 )
 foreach ($Name in $RequiredAssetTools) {
     $Source = Join-Path $AssetToolSource $Name
