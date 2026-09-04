@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <mutex>
 #include <typeindex>
 #include <unordered_map>
@@ -35,7 +36,11 @@ public:
             return {};
         }
 
-        const auto id = nextId_.fetch_add(1, std::memory_order_relaxed);
+        const auto id = AllocateTokenId();
+        if (id == 0) {
+            return {};
+        }
+
         const auto type = std::type_index{typeid(Event)};
 
         HandlerRecord record;
@@ -69,11 +74,12 @@ public:
             return record.id == token.id;
         });
 
+        const bool removed = records.size() != oldSize;
         if (records.empty()) {
             handlers_.erase(found);
         }
 
-        return records.size() != oldSize;
+        return removed;
     }
 
     template <typename Event>
@@ -103,6 +109,19 @@ private:
         std::uint64_t id{0};
         std::function<void(const void*)> callback;
     };
+
+    [[nodiscard]] std::uint64_t AllocateTokenId() noexcept {
+        std::uint64_t current = nextId_.load(std::memory_order_relaxed);
+        while (current != 0) {
+            const std::uint64_t desired =
+                current == std::numeric_limits<std::uint64_t>::max() ? 0 : current + 1;
+            if (nextId_.compare_exchange_weak(
+                    current, desired, std::memory_order_relaxed, std::memory_order_relaxed)) {
+                return current;
+            }
+        }
+        return 0;
+    }
 
     mutable std::mutex mutex_;
     mutable std::unordered_map<std::type_index, std::vector<HandlerRecord>> handlers_;

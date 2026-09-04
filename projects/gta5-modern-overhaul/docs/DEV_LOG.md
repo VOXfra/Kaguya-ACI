@@ -2,6 +2,45 @@
 
 This is the precise engineering trace for the project. Patch notes summarize changes; this log records what was done, why, validation performed and what is still unproven.
 
+## 2026-09-04 — Precommit defect catch / ID generator hardening
+
+### Defects caught before in-game integration
+- During review of the first EventBus implementation, detected a use-after-invalidation risk: `Unsubscribe` could erase the map entry and then read the referenced vector's size. Fixed by computing the removal result before erasing the owning map entry.
+- Detected that the first automated edit intended to add `EntityIdGenerator` tests had only inserted the include/using declarations, not the actual assertions. The test source was inspected directly, corrected, then rebuilt.
+- Identified theoretical EventBus subscription-ID wraparound risk. Replaced naïve atomic increment behavior with fail-closed exhaustion semantics so token IDs can never silently wrap and collide.
+
+### ID allocation
+- Added `EntityIdGenerator`.
+- Zero remains permanently reserved for invalid IDs.
+- Generator can resume from a persisted next-ID/high-water value.
+- The maximum 64-bit ID is issued at most once; subsequent allocation returns failure rather than wrapping.
+
+### Validation performed
+- Clean CMake rebuild.
+- GNU C++ 14.2.0 / C++20.
+- AddressSanitizer enabled.
+- UndefinedBehaviorSanitizer enabled.
+- Core test executable built and linked successfully.
+- `ctest`: 1/1 PASS, 0 failed.
+
+Validated assertions now include:
+- `EntityId` validity and ordering
+- generator resume/high-water behavior
+- zero-ID reservation
+- maximum-ID single issuance
+- fail-closed exhausted generator
+- simulation-tier ordering
+- EventBus valid tokens
+- multi-subscriber dispatch
+- re-entrant publication
+- unsubscribe behavior
+- logger creation/write
+
+### Validation boundary
+- Standalone logic only.
+- No GTA runtime calls exist yet.
+- No Windows/MSVC result is claimed until GitHub CI reports it.
+
 ## 2026-09-04 — Core compile/test checkpoint
 
 ### Event system
@@ -52,7 +91,7 @@ Tested invariants:
 2. Add versioned configuration with strict parsing and safe defaults.
 3. Add persistent ID allocation/registry rather than only the `EntityId` primitive.
 4. Add Windows GTA V Enhanced install/build detection.
-5. Audit and integrate the minimal native ScriptHookV adapter.
+5. Add the minimal GTA adapter and a single diagnostic in-game tick/log proof.
 
 ## 2026-09-04 — Project initialization / Phase 0 start
 
@@ -97,10 +136,3 @@ Tested invariants:
 - No GTA V Enhanced runtime hook has been compiled or launched yet.
 - No asset has been replaced in-game yet.
 - No claim is made that ScriptHookV SDK integration code works until it is built against the actual SDK and tested in Enhanced.
-
-### Next engineering checkpoint
-1. Compile the standalone core and tests.
-2. Fix every compiler/test failure before proceeding.
-3. Add deterministic EventBus and config schema.
-4. Add Windows Enhanced install/build detector.
-5. Add the minimal GTA adapter and a single diagnostic in-game tick/log proof.

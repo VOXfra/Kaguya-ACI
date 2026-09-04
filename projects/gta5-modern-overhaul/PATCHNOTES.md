@@ -2,6 +2,26 @@
 
 All user-visible, architectural and tooling changes are recorded here.
 
+## [0.0.1-dev.3] — 2026-09-04
+
+### Added
+- Added `EntityIdGenerator` with resumable high-water mark, reserved zero ID and fail-closed exhaustion behavior.
+- Added explicit tests for ID generation sequence, zero sanitization and maximum-ID exhaustion.
+
+### Fixed before runtime release
+- Fixed `EventBus::Unsubscribe` so it never reads a handler-vector reference after erasing its owning map entry.
+- Changed EventBus token allocation to fail closed at 64-bit exhaustion instead of wrapping to zero and eventually risking duplicate subscription IDs.
+- Corrected the test suite after detecting that the first generator-test injection had not actually inserted its assertions.
+
+### Verified
+- Clean rebuild with GNU C++ 14.2.0 and C++20.
+- AddressSanitizer + UndefinedBehaviorSanitizer enabled for the validation build.
+- `ctest`: 1/1 tests passed, 0 failures.
+- Generator assertions are now confirmed present in the executable test source.
+
+### Validation boundary
+- These are standalone-core results only. GTA V Enhanced integration is still not claimed working until an actual runtime adapter is built and tested in-game.
+
 ## [0.0.1-dev.2] — 2026-09-04
 
 ### Added
