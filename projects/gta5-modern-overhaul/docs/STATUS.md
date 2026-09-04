@@ -11,9 +11,9 @@ Validation levels are defined in `QUALITY_GATES.md`.
 | C++20 standalone core scaffold | D3 cross-platform | Windows/Linux CI and sanitizer jobs pass |
 | Core warnings policy | D3 cross-platform | warnings-as-errors CI passes |
 | Win32 macro-isolation policy | D3 Windows | `NOMINMAX` globally applied after MSVC regression |
-| Runtime file logger | D3 cross-platform | unit-tested in core CI; runtime use remains blocked by loader isolation |
+| Runtime file logger | D3 cross-platform | unit-tested in core CI; production runtime use deferred until stable loader path |
 | External crash capture tooling | D3 Windows tooling | WER setup/restore, collector smoke test, reproducible ZIP, run `33875088958` |
-| Real GTA crash module/exception capture | D4 pending | current checkpoint; no real minidump/event diagnosis received yet |
+| Real GTA crash module/exception capture | D4 standby | not yet captured; keep tooling available if intermittent crash returns |
 | `EntityId` primitive | D3 cross-platform | validity/order tests pass |
 | `EntityIdGenerator` | D3 cross-platform | resume, zero reservation, max-ID and exhaustion tests pass |
 | Persistent Entity Registry | D0 | not implemented |
@@ -26,16 +26,16 @@ Validation levels are defined in `QUALITY_GATES.md`.
 | Windows executable version reader | D4 execution evidence / D3 regression coverage | real dev.8 log reports `1.0.1158.13`; MSVC tests pass |
 | Epic/Steam/Rockstar auto-discovery | D0 | not implemented |
 | dev.8 diagnostic ASI bootstrap | D4 initialization observed / **D4 stability failed** | real game reached `CHECKPOINT_OK`, then crashed |
-| dev.9 inert project-code ASI | D4 load observed / **D4 stability failed** | real game still crashed; MSVC CRT imports later found |
-| dev.10 no-CRT zero-import ASI | D4 load observed / **D4 stability failed** | real game still crashes despite zero import/IAT/TLS and no project/game logic |
-| Controlled baseline without VOX ASI | D4 pending | exact other plugin set must remain unchanged |
-| ScriptHookV native/game-thread adapter | D0 blocked | do not implement until loader/crash layer is identified |
+| dev.9 inert project-code ASI | D4 load observed / **D4 stability failed** | real game crashed; MSVC CRT imports later found |
+| dev.10 no-CRT zero-import ASI | **D4 provisional** | earlier attempts crashed, but remove/restore cycle produced a successful real-game load; repeatability not yet proven |
+| Controlled baseline without VOX ASI | D4 partial/manual | user removed VOX and then restored it; exact baseline duration/result not sufficiently documented to call it a completed controlled comparison |
+| ScriptHookV native/game-thread adapter | D0 gated | begin only after repeatable dev.10 stability; free-thread bootstrap remains rejected |
 | Mission/story detector | D0 | not implemented |
 | Story Compatibility runtime | D0 | contract only |
 | Asset locator / override pipeline | D0 | tool research only |
 | Runtime checkpoint packaging/verification | D3 Windows | dev.10 package built, extracted, verified and uploaded |
 | Crash-capture packaging/verification | D3 Windows | final run `33875088958` fully green |
-| First stable GTA V Enhanced runtime | D4 blocked | baseline + crash evidence required first |
+| First stable GTA V Enhanced runtime | **D4 provisional** | one successful dev.10 real-game load observed; multiple launches/sustained runtime required |
 | GitHub Windows/Linux CI | D3 | current core jobs continue to pass |
 | ASan + UBSan CI | D3 | current sanitizer jobs continue to pass |
 
@@ -52,14 +52,19 @@ Validation levels are defined in `QUALITY_GATES.md`.
 - User reports the game still crashed.
 - Exact binary inspection showed remaining MSVC CRT/VCRUNTIME startup imports, so dev.9 did not isolate compiler-runtime startup.
 
-### dev.10
+### dev.10 — failed attempts
 - Built with custom no-CRT entrypoint and `/NODEFAULTLIB`.
 - Independent inspection: Import Directory = 0, IAT = 0, TLS = 0, Load Configuration = 0; `.text` only contains the tiny success-return path.
-- User reports the game still crashes.
-- `asiloader(2).log` confirms `VOXModernOverhaul.asi` was mapped successfully after the same other ASIs.
-- `ScriptHookV(2).log` reports successful initialization for `VER_EN_1_0_1158_13`.
-- `RageOpenV(2).log` reports successful initialization.
-- These logs still do not identify the faulting module or exception.
+- Initial real-game attempts crashed after successful ASI mapping.
+- `asiloader(2).log`, `ScriptHookV(2).log` and `RageOpenV(2).log` showed successful loader/framework initialization but no faulting module.
+
+### dev.10 — later successful load
+- User manually removed the VOX plugin and then restored/re-added it.
+- On the subsequent launch the user reports GTA V Enhanced appears to have loaded successfully.
+- `asiloader(3).log` shows `VOXModernOverhaul.asi` mapped successfully and loader enumeration completed.
+- `ScriptHookV(3).log` again reports successful `VER_EN_1_0_1158_13` initialization.
+- `RageOpenV(3).log` again reports successful initialization.
+- This is real D4 execution evidence, but one successful run after previous intermittent failures is not enough to declare the loader path stable.
 
 ## Crash-capture tooling evidence
 
@@ -73,29 +78,31 @@ GitHub Actions run: `33875088958`.
 - Artifact upload: PASS.
 - User ZIP SHA-256: `30414e69d05283d8f326b289b38c87d372faf1e0d9588ad1604cabd4911ed27a`.
 
-Two tooling defects were caught before delivery:
-
-1. `Compress-Archive -LiteralPath` was incorrectly used with a wildcard; fixed to wildcard-capable `-Path`.
-2. `Copy-Item -LiteralPath` was incorrectly used with a wildcard in the packager; fixed to `-Path`.
-
-Both fixes are now exercised by CI smoke tests.
-
 ## Current hypothesis boundary
 
-No root cause is declared yet.
+No root cause is declared.
 
-- dev.8 eliminated gameplay/native/memory mutation as a prerequisite.
-- dev.9 eliminated explicit project application logic, but not CRT startup.
-- dev.10 eliminated CRT/default-library imports as well and still crashes.
+The latest successful load means dev.10 itself is capable of coexisting with the user's current loader/plugin stack in real GTA V Enhanced. That materially weakens any hypothesis that the dev.10 PE image is deterministically incompatible.
 
-Therefore the next discriminator is **not another runtime build**. It is:
+Remaining plausible categories include:
 
-1. run an otherwise identical modded GTA V Enhanced baseline with only `VOXModernOverhaul.asi` renamed/disabled;
-2. capture WER event/minidump evidence on failure;
-3. if baseline is stable, restore exact dev.10 and capture its crash;
-4. identify faulting module/exception/offset before changing architecture again.
+- transient loader/plugin coexistence timing/state;
+- stale or partially replaced plugin file during earlier runs;
+- unrelated host/mod instability correlated with testing;
+- another environmental condition not visible in adjacent text logs.
 
-Potential layers still open include ASI image/loader behavior, plugin coexistence, unrelated mod/environment instability, or host-side interaction that adjacent text logs cannot reveal.
+The next discriminator is repeatability, not another architecture rewrite.
+
+## Promotion rule for stable D4
+
+Promote the ASI load path from provisional to stable only after:
+
+1. the exact dev.10 file loads successfully across repeated cold launches without other plugin changes;
+2. Story Mode/free roam remains alive for a meaningful sustained interval;
+3. at least one clean normal exit/relaunch cycle succeeds;
+4. if any crash recurs, WER/minidump evidence is collected before changing code.
+
+Only then proceed to ScriptHookV/game-thread integration and one safe in-game tick.
 
 ## Rule
 
