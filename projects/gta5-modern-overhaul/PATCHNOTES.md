@@ -2,6 +2,64 @@
 
 All user-visible, architectural and tooling changes are recorded here.
 
+## [0.0.1-dev.15] — 2026-09-04
+
+### dev.14 promoted to real D4 persistent-world foundation
+- The first real GTA launch created `world_state.v1` and reported `VOX_PERSISTENCE_STATUS=NEW`, system EntityId `1`, entity count `1`, next EntityId `2`, `VOX_PERSISTENCE_SAVE_OK`, the game-thread queue marker and five healthy core/ScriptHook ticks.
+- A second real GTA process, without deleting VOX state, reported `VOX_PERSISTENCE_STATUS=LOADED` with the exact same EntityId/count/high-water values and the same queue/tick health.
+- GTA remained stable on both launches.
+- Persistent Entity Registry, real create→reload high-water restoration and the live bounded game-thread queue path are therefore promoted to **D4 real GTA PASS**.
+
+### First visible Enhanced asset pipeline checkpoint
+- Added `tools/assets/vox_visual_probe.py` and one-click Windows wrappers for a real GTA V Enhanced asset round-trip proof.
+- The tool indexes the user's own Enhanced installation through FiveFury, selects one common static base-game YDR, extracts it locally, rewrites render geometry at `1.65x` scale, recalculates render bounds/LOD distances, saves it back as Gen9, reopens it and requires validation before install.
+- Only base `x64*.rpf/.../*.ydr` candidates are accepted for this first proof. Update/DLC paths, traversal and drive/URI-style paths fail closed.
+- Candidate selection skips an already occupied loose destination instead of overwriting another mod.
+- The generated loose override is mirrored into RageOpenV's `newmods/platform` mount; Rockstar archives are never modified in place.
+- No Rockstar YDR is shipped. Extraction happens locally from the user's own installation.
+
+### Reversible visual proof
+- Added `visual_probe_manifest.json` containing source logical/archive path, source hash, generated hash, exact loose destination, selected model and geometry statistics.
+- Added `visual_probe_report.txt` for user-visible diagnostics and D4 evidence.
+- Added manifest/hash-scoped rollback: only the exact generated file below `newmods/platform` can be removed; rollback refuses deletion if its SHA-256 no longer matches, preventing accidental deletion of another mod/user edit.
+- Render collision is intentionally not scaled in the proof. The exaggerated model scale is diagnostic, not final art direction.
+
+### Tooling provenance / dependency boundary
+- Pinned FiveFury `0.4.21`, Python `>=3.11`, license The Unlicense/public domain.
+- FiveFury is installed into a VOX-local virtual environment at user test time and is **not bundled** in the GTA-ready ZIP.
+- User's existing `RageOpenV.asi` is required and is not redistributed.
+- Current package verification rejects any shipped `.ydr`, local FiveFury venv, visual-probe user state, fake ScriptHookV or persistent user world state.
+
+### Defect caught before delivery
+- The first visual-probe implementation attempted to import a package-level FiveFury `__version__` symbol without first proving that API was exported.
+- This was caught during source review before user delivery.
+- The initial probe file was deleted/replaced; production code now uses `importlib.metadata.version("fivefury")`, while CI still pins exactly `0.4.21`.
+- This prevents a local setup failure caused purely by an unverified package metadata assumption.
+
+### Automated validation
+- Core Windows build/tests: PASS.
+- Core Linux build/tests: PASS.
+- ASan + UBSan: PASS.
+- FiveFury 0.4.21 install on Windows CI: PASS.
+- Python syntax compilation: PASS.
+- Synthetic Gen9 YDR version 159 create → scale → save → reopen: PASS.
+- Source YDR version preservation: PASS.
+- Vertex scale verification after binary round trip: PASS.
+- FiveFury YDR validation after rewrite: PASS.
+- RageOpenV `x64*.rpf` → `newmods/platform` path mapping regression: PASS.
+- Unsafe update/DLC/traversal/drive-path rejection: PASS.
+- Visual PowerShell parser checks: PASS.
+- Existing ASI/Core PE boundary and two-process persistence smoke: PASS.
+- Package no-YDR/no-venv/no-user-state boundary: PASS.
+- Initial dev.15 implementation CI run `33890491053`: fully green before final documentation rebuild.
+
+### Current D4 gate
+- Run the one-click visual probe in the real user's Enhanced installation.
+- Require `status=INSTALLED`, an exact base `x64*.rpf` source and a generated `newmods/platform` destination.
+- GTA must remain stable and a real streamed instance of the chosen model must be visibly oversized.
+- Then run hash-safe rollback and confirm vanilla appearance returns.
+- After that proof, remove the exaggerated diagnostic change and move directly to a meaningful foliage/material/road visual upgrade and the graphical vertical slice.
+
 ## [0.0.1-dev.14] — 2026-09-04
 
 ### dev.13 promoted to real D4 core bridge
