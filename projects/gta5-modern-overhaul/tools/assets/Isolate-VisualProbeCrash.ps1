@@ -26,6 +26,8 @@ $relative = [string]$manifest.override_relative_path
 $model = [string]$manifest.model_name
 $sourceHash = ([string]$manifest.source_sha256).ToLowerInvariant()
 $generatedHash = ([string]$manifest.generated_sha256).ToLowerInvariant()
+$probeModeProperty = $manifest.PSObject.Properties['probe_mode']
+$probeMode = if ($null -eq $probeModeProperty) { '' } else { [string]$probeModeProperty.Value }
 
 if ([string]::IsNullOrWhiteSpace($relative) -or -not $relative.Replace('\\','/').StartsWith('newmods/platform/', [System.StringComparison]::OrdinalIgnoreCase)) {
     throw "Manifest contains an unsafe override path: '$relative'."
@@ -59,7 +61,7 @@ if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
     throw "The active generated override is missing: '$target'."
 }
 $activeHash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($activeHash -eq $sourceHash -and ([string]$manifest.probe_mode) -eq 'IDENTITY_OVERRIDE') {
+if ($activeHash -eq $sourceHash -and $probeMode -eq 'IDENTITY_OVERRIDE') {
     Write-Host 'Identity override is already active and hash-identical to the extracted Rockstar source.'
     exit 0
 }
