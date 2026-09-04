@@ -3,7 +3,7 @@
 #include <windows.h>
 
 /*
- * Checkpoint 0E runtime.
+ * Checkpoint 0F runtime.
  *
  * Design constraints:
  * - custom PE entrypoint, no CRT/default libraries;
@@ -11,6 +11,7 @@
  * - never LoadLibrary from the loader callback;
  * - ScriptHookV must already be loaded by the user's existing loader;
  * - resolve only scriptRegister/scriptWait and fail closed if ABI resolution fails;
+ * - tolerate harmless C++ export-name decoration drift across ScriptHookV builds;
  * - all repeated work runs from ScriptHookV's registered script context.
  */
 
@@ -23,6 +24,142 @@ static VoxScriptWaitFn g_scriptWait = NULL;
 static const char kScriptRegisterExport[] =
     "?scriptRegister@@YAXPEAUHINSTANCE__@@P6AXXZ@Z@Z";
 static const char kScriptWaitExport[] = "?scriptWait@@YAXK@Z";
+static const char kScriptRegisterStem[] = "scriptRegister";
+static const char kScriptWaitStem[] = "scriptWait";
+
+static BOOL VoxAsciiEquals(const char* left, const char* right)
+{
+    if (left == NULL || right == NULL) {
+        return FALSE;
+    }
+
+    while (*left != '\0' && *right != '\0') {
+        if (*left != *right) {
+            return FALSE;
+        }
+        ++left;
+        ++right;
+    }
+
+    return *left == '\0' && *right == '\0';
+}
+
+static BOOL VoxMatchesCppExportStem(const char* exportName, const char* stem)
+{
+    const char* name;
+    const char* wanted;
+
+    if (exportName == NULL || stem == NULL) {
+        return FALSE;
+    }
+
+    /* Some DLLs may expose an undecorated alias. */
+    if (VoxAsciiEquals(exportName, stem)) {
+        return TRUE;
+    }
+
+    /* Normal MSVC C++ exports begin with '?' and put '@@' immediately after the
+     * function identifier. Requiring that delimiter prevents scriptRegister from
+     * accidentally matching scriptRegisterAdditionalThread.
+     */
+    if (*exportName != '?') {
+        return FALSE;
+    }
+
+    name = exportName + 1;
+    wanted = stem;
+    while (*wanted != '\0') {
+        if (*name != *wanted) {
+            return FALSE;
+        }
+        ++name;
+        ++wanted;
+    }
+
+    return name[0] == '@' && name[1] == '@';
+}
+
+static FARPROC VoxResolveExportByStem(HMODULE module, const char* exactName, const char* stem)
+{
+    FARPROC exact;
+    BYTE* base;
+    IMAGE_DOS_HEADER* dos;
+    IMAGE_NT_HEADERS64* nt;
+    IMAGE_DATA_DIRECTORY exportData;
+    IMAGE_EXPORT_DIRECTORY* exports;
+    DWORD* nameRvas;
+    DWORD index;
+    const char* candidate = NULL;
+
+    if (module == NULL || exactName == NULL || stem == NULL) {
+        return NULL;
+    }
+
+    /* Fast path for the ABI name used by the historical/current SDK. */
+    exact = GetProcAddress(module, exactName);
+    if (exact != NULL) {
+        return exact;
+    }
+
+    /* Also accept an explicit undecorated alias if a future build exposes one. */
+    exact = GetProcAddress(module, stem);
+    if (exact != NULL) {
+        return exact;
+    }
+
+    /* Last-resort compatibility path: inspect the already-loaded module's export
+     * names and locate the unique C++ export by semantic function identifier.
+     * We still use GetProcAddress for the final address so forwarded exports remain
+     * Windows' responsibility.
+     */
+    base = (BYTE*)(void*)module;
+    dos = (IMAGE_DOS_HEADER*)(void*)base;
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew <= 0) {
+        return NULL;
+    }
+
+    nt = (IMAGE_NT_HEADERS64*)(void*)(base + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE ||
+        nt->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC) {
+        return NULL;
+    }
+
+    exportData = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+    if (exportData.VirtualAddress == 0 || exportData.Size < sizeof(IMAGE_EXPORT_DIRECTORY)) {
+        return NULL;
+    }
+
+    exports = (IMAGE_EXPORT_DIRECTORY*)(void*)(base + exportData.VirtualAddress);
+    if (exports->AddressOfNames == 0 || exports->NumberOfNames == 0) {
+        return NULL;
+    }
+
+    nameRvas = (DWORD*)(void*)(base + exports->AddressOfNames);
+    for (index = 0; index < exports->NumberOfNames; ++index) {
+        const char* exportName;
+
+        if (nameRvas[index] == 0) {
+            continue;
+        }
+
+        exportName = (const char*)(const void*)(base + nameRvas[index]);
+        if (!VoxMatchesCppExportStem(exportName, stem)) {
+            continue;
+        }
+
+        /* Ambiguity is more dangerous than disabling ourselves. */
+        if (candidate != NULL) {
+            return NULL;
+        }
+        candidate = exportName;
+    }
+
+    if (candidate == NULL) {
+        return NULL;
+    }
+
+    return GetProcAddress(module, candidate);
+}
 
 static DWORD VoxAsciiLength(const char* text)
 {
@@ -91,9 +228,6 @@ static BOOL VoxBuildCheckpointPath(wchar_t* path, DWORD capacity)
         return FALSE;
     }
 
-    /* The directory normally exists because the package contains config/core.cfg.
-     * CreateDirectoryW is idempotent for our use: ERROR_ALREADY_EXISTS is acceptable.
-     */
     if (!CreateDirectoryW(path, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) {
         return FALSE;
     }
@@ -149,15 +283,9 @@ static void VoxScriptMain(void)
 
     VoxWriteCheckpointLine("VOX_SCRIPT_MAIN_ENTER");
 
-    /* A successful return from scriptWait(0) proves ScriptHookV resumed our script
-     * after yielding through its own script/fiber scheduler.
-     */
     g_scriptWait(0);
     VoxWriteCheckpointLine("VOX_SCRIPT_MAIN_RESUMED_AFTER_WAIT");
 
-    /* Five low-frequency heartbeats prove repeated scheduling without creating an
-     * unbounded diagnostic log. Afterwards the script remains resident and inert.
-     */
     while (heartbeatCount < 5) {
         g_scriptWait(1000);
         VoxWriteCheckpointLine("VOX_SCRIPT_HEARTBEAT");
@@ -181,16 +309,19 @@ BOOL WINAPI VoxDllEntry(HINSTANCE module, DWORD reason, LPVOID reserved)
         return TRUE;
     }
 
-    /* Do not LoadLibrary from the loader callback. ScriptHookV is expected to have
-     * already been loaded by the user's existing GTA V Enhanced ASI setup.
-     */
     scriptHook = GetModuleHandleW(L"ScriptHookV.dll");
     if (scriptHook == NULL) {
         return TRUE;
     }
 
-    scriptRegister = (VoxScriptRegisterFn)(void*)GetProcAddress(scriptHook, kScriptRegisterExport);
-    scriptWait = (VoxScriptWaitFn)(void*)GetProcAddress(scriptHook, kScriptWaitExport);
+    scriptRegister = (VoxScriptRegisterFn)(void*)VoxResolveExportByStem(
+        scriptHook,
+        kScriptRegisterExport,
+        kScriptRegisterStem);
+    scriptWait = (VoxScriptWaitFn)(void*)VoxResolveExportByStem(
+        scriptHook,
+        kScriptWaitExport,
+        kScriptWaitStem);
     if (scriptRegister == NULL || scriptWait == NULL) {
         return TRUE;
     }
