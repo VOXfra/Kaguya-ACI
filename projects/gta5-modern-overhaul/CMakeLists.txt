@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(VOXGTA5ModernOverhaul VERSION 0.0.1 LANGUAGES CXX)
+project(VOXGTA5ModernOverhaul VERSION 0.0.1 LANGUAGES C CXX)
 
 option(VOX_BUILD_TESTS "Build standalone core tests" ON)
 option(VOX_BUILD_RUNTIME "Build the Windows GTA V Enhanced ASI runtime checkpoint" ON)
@@ -52,13 +52,17 @@ if(WIN32)
     vox_apply_warnings(vox_windows_platform)
 
     if(VOX_BUILD_RUNTIME)
-        # dev.9 isolation checkpoint: deliberately no dependency on vox_core,
-        # filesystem/config/logger, ScriptHookV, or any GTA-facing adapter.
+        # dev.10 isolation checkpoint: a deliberately bare PE DLL with no CRT,
+        # no Win32 imports and no project/runtime dependencies. The custom
+        # entrypoint is linked directly with /NODEFAULTLIB.
         add_library(vox_modern_overhaul_asi SHARED
-            src/runtime/windows/InertEntry.cpp
+            src/runtime/windows/NoCrtEntry.c
         )
-        target_compile_features(vox_modern_overhaul_asi PRIVATE cxx_std_20)
-        vox_apply_warnings(vox_modern_overhaul_asi)
+
+        if(MSVC)
+            target_compile_options(vox_modern_overhaul_asi PRIVATE /W4 /WX /GS- /Zl)
+            target_link_options(vox_modern_overhaul_asi PRIVATE /NODEFAULTLIB /ENTRY:VoxDllEntry)
+        endif()
 
         set_target_properties(vox_modern_overhaul_asi PROPERTIES
             OUTPUT_NAME "VOXModernOverhaul"
