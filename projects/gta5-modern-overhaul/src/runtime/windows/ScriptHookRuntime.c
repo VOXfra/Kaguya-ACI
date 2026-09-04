@@ -2,17 +2,16 @@
 #define NOMINMAX
 #include <windows.h>
 
+#include "vox/runtime/CoreApi.h"
+
 /*
- * Checkpoint 0F runtime.
+ * Checkpoint 0G runtime host.
  *
- * Design constraints:
- * - custom PE entrypoint, no CRT/default libraries;
- * - no GTA natives, hooks, memory patches or save/world writes;
- * - never LoadLibrary from the loader callback;
- * - ScriptHookV must already be loaded by the user's existing loader;
- * - resolve only scriptRegister/scriptWait and fail closed if ABI resolution fails;
- * - tolerate harmless C++ export-name decoration drift across ScriptHookV builds;
- * - all repeated work runs from ScriptHookV's registered script context.
+ * The ASI remains a deliberately tiny CRT-free host. It registers through
+ * ScriptHookV during DLL attach, then waits until ScriptMain is actually resumed
+ * by ScriptHookV before loading the normal C++ core DLL. This keeps CRT/static
+ * initialization out of GTA's ASI loader callback and gives the long-lived project
+ * a stable plain-C ABI boundary.
  */
 
 typedef void(__cdecl *VoxScriptMainFn)(void);
@@ -20,6 +19,8 @@ typedef void(__cdecl *VoxScriptRegisterFn)(HMODULE, VoxScriptMainFn);
 typedef void(__cdecl *VoxScriptWaitFn)(DWORD);
 
 static VoxScriptWaitFn g_scriptWait = NULL;
+static HMODULE g_coreModule = NULL;
+static VoxCoreTickFn g_coreTick = NULL;
 
 static const char kScriptRegisterExport[] =
     "?scriptRegister@@YAXPEAUHINSTANCE__@@P6AXXZ@Z@Z";
@@ -53,15 +54,10 @@ static BOOL VoxMatchesCppExportStem(const char* exportName, const char* stem)
         return FALSE;
     }
 
-    /* Some DLLs may expose an undecorated alias. */
     if (VoxAsciiEquals(exportName, stem)) {
         return TRUE;
     }
 
-    /* Normal MSVC C++ exports begin with '?' and put '@@' immediately after the
-     * function identifier. Requiring that delimiter prevents scriptRegister from
-     * accidentally matching scriptRegisterAdditionalThread.
-     */
     if (*exportName != '?') {
         return FALSE;
     }
@@ -95,23 +91,16 @@ static FARPROC VoxResolveExportByStem(HMODULE module, const char* exactName, con
         return NULL;
     }
 
-    /* Fast path for the ABI name used by the historical/current SDK. */
     exact = GetProcAddress(module, exactName);
     if (exact != NULL) {
         return exact;
     }
 
-    /* Also accept an explicit undecorated alias if a future build exposes one. */
     exact = GetProcAddress(module, stem);
     if (exact != NULL) {
         return exact;
     }
 
-    /* Last-resort compatibility path: inspect the already-loaded module's export
-     * names and locate the unique C++ export by semantic function identifier.
-     * We still use GetProcAddress for the final address so forwarded exports remain
-     * Windows' responsibility.
-     */
     base = (BYTE*)(void*)module;
     dos = (IMAGE_DOS_HEADER*)(void*)base;
     if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew <= 0) {
@@ -147,7 +136,6 @@ static FARPROC VoxResolveExportByStem(HMODULE module, const char* exactName, con
             continue;
         }
 
-        /* Ambiguity is more dangerous than disabling ourselves. */
         if (candidate != NULL) {
             return NULL;
         }
@@ -199,12 +187,12 @@ static BOOL VoxAppendWideLiteral(
     return TRUE;
 }
 
-static BOOL VoxBuildCheckpointPath(wchar_t* path, DWORD capacity)
+static BOOL VoxBuildRootPath(wchar_t* path, DWORD capacity, DWORD* rootLength)
 {
     DWORD length;
     DWORD separator;
 
-    if (path == NULL || capacity < 64) {
+    if (path == NULL || rootLength == NULL || capacity < 64) {
         return FALSE;
     }
 
@@ -222,7 +210,17 @@ static BOOL VoxBuildCheckpointPath(wchar_t* path, DWORD capacity)
     }
 
     path[separator] = L'\0';
-    length = separator;
+    *rootLength = separator;
+    return TRUE;
+}
+
+static BOOL VoxBuildCheckpointPath(wchar_t* path, DWORD capacity)
+{
+    DWORD length;
+
+    if (!VoxBuildRootPath(path, capacity, &length)) {
+        return FALSE;
+    }
 
     if (!VoxAppendWideLiteral(path, capacity, &length, L"VOXModernOverhaul")) {
         return FALSE;
@@ -239,7 +237,18 @@ static BOOL VoxBuildCheckpointPath(wchar_t* path, DWORD capacity)
     return TRUE;
 }
 
-static void VoxWriteCheckpointLine(const char* line)
+static BOOL VoxBuildCorePath(wchar_t* path, DWORD capacity)
+{
+    DWORD length;
+
+    if (!VoxBuildRootPath(path, capacity, &length)) {
+        return FALSE;
+    }
+
+    return VoxAppendWideLiteral(path, capacity, &length, L"VOXModernCore.dll");
+}
+
+static void VOX_CDECL VoxWriteCheckpointLine(const char* line)
 {
     wchar_t path[1024];
     HANDLE file;
@@ -273,9 +282,63 @@ static void VoxWriteCheckpointLine(const char* line)
     (void)CloseHandle(file);
 }
 
+static BOOL VoxStartCore(void)
+{
+    wchar_t path[1024];
+    VoxCoreStartFn coreStart;
+    VoxCoreTickFn coreTick;
+    VoxCoreStopFn coreStop;
+    VoxHostApi hostApi;
+    HMODULE coreModule;
+
+    if (g_coreModule != NULL || g_coreTick != NULL) {
+        return FALSE;
+    }
+
+    if (!VoxBuildCorePath(path, (DWORD)(sizeof(path) / sizeof(path[0])))) {
+        VoxWriteCheckpointLine("VOX_CORE_PATH_FAILED");
+        return FALSE;
+    }
+
+    /* This LoadLibrary happens from ScriptMain, after ScriptHookV has yielded and
+     * resumed us. It never runs under the ASI loader callback that caused the early
+     * bootstrap concerns in dev.8/dev.9.
+     */
+    coreModule = LoadLibraryW(path);
+    if (coreModule == NULL) {
+        VoxWriteCheckpointLine("VOX_CORE_LOAD_FAILED");
+        return FALSE;
+    }
+
+    coreStart = (VoxCoreStartFn)(void*)GetProcAddress(coreModule, "VoxCoreStart");
+    coreTick = (VoxCoreTickFn)(void*)GetProcAddress(coreModule, "VoxCoreTick");
+    coreStop = (VoxCoreStopFn)(void*)GetProcAddress(coreModule, "VoxCoreStop");
+    if (coreStart == NULL || coreTick == NULL || coreStop == NULL) {
+        VoxWriteCheckpointLine("VOX_CORE_EXPORTS_FAILED");
+        (void)FreeLibrary(coreModule);
+        return FALSE;
+    }
+
+    hostApi.struct_size = (uint32_t)sizeof(hostApi);
+    hostApi.api_version = VOX_CORE_API_VERSION;
+    hostApi.log_line = VoxWriteCheckpointLine;
+
+    if (coreStart(&hostApi) == 0u) {
+        VoxWriteCheckpointLine("VOX_CORE_START_FAILED");
+        (void)FreeLibrary(coreModule);
+        return FALSE;
+    }
+
+    g_coreModule = coreModule;
+    g_coreTick = coreTick;
+    VoxWriteCheckpointLine("VOX_CORE_BRIDGE_READY");
+    return TRUE;
+}
+
 static void VoxScriptMain(void)
 {
     DWORD heartbeatCount = 0;
+    BOOL coreReady;
 
     if (g_scriptWait == NULL) {
         return;
@@ -286,14 +349,22 @@ static void VoxScriptMain(void)
     g_scriptWait(0);
     VoxWriteCheckpointLine("VOX_SCRIPT_MAIN_RESUMED_AFTER_WAIT");
 
+    coreReady = VoxStartCore();
+
     while (heartbeatCount < 5) {
         g_scriptWait(1000);
+        if (coreReady && g_coreTick != NULL) {
+            g_coreTick();
+        }
         VoxWriteCheckpointLine("VOX_SCRIPT_HEARTBEAT");
         ++heartbeatCount;
     }
 
     for (;;) {
         g_scriptWait(1000);
+        if (coreReady && g_coreTick != NULL) {
+            g_coreTick();
+        }
     }
 }
 
