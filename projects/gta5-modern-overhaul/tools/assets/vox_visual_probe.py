@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
-TOOL_VERSION = "0.0.1-dev.15"
+TOOL_VERSION = "0.0.1-dev.15.1"
 FIVEFURY_VERSION = "0.4.21"
 DEFAULT_SCALE = 1.65
 
