@@ -1,8 +1,16 @@
+param(
+    [string]$GtaRootOverride = ""
+)
+
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $ToolDir = $PSScriptRoot
-$GtaRoot = (Resolve-Path -LiteralPath (Join-Path $ToolDir '..\..\..')).Path
+if ([string]::IsNullOrWhiteSpace($GtaRootOverride)) {
+    $GtaRoot = (Resolve-Path -LiteralPath (Join-Path $ToolDir '..\..\..')).Path
+} else {
+    $GtaRoot = [System.IO.Path]::GetFullPath($GtaRootOverride)
+}
 $ProbeRoot = Join-Path $GtaRoot 'VOXModernOverhaul\visual_probe'
 $ManifestPath = Join-Path $ProbeRoot 'visual_probe_manifest.json'
 $ReportPath = Join-Path $ProbeRoot 'visual_probe_report.txt'
