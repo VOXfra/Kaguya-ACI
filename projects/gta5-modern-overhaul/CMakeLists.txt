@@ -52,17 +52,18 @@ if(WIN32)
     vox_apply_warnings(vox_windows_platform)
 
     if(VOX_BUILD_RUNTIME)
-        # dev.10 isolation checkpoint: a deliberately bare PE DLL with no CRT,
-        # no Win32 imports and no project/runtime dependencies. The custom
-        # entrypoint is linked directly with /NODEFAULTLIB.
+        # dev.11 checkpoint: keep the ASI itself CRT-free and use only Kernel32.
+        # ScriptHookV is resolved from the already-loaded module at DLL attach;
+        # no LoadLibrary is performed from the loader callback.
         add_library(vox_modern_overhaul_asi SHARED
-            src/runtime/windows/NoCrtEntry.c
+            src/runtime/windows/ScriptHookRuntime.c
         )
 
         if(MSVC)
             target_compile_options(vox_modern_overhaul_asi PRIVATE /W4 /WX /GS- /Zl)
             target_link_options(vox_modern_overhaul_asi PRIVATE /NODEFAULTLIB /ENTRY:VoxDllEntry)
         endif()
+        target_link_libraries(vox_modern_overhaul_asi PRIVATE Kernel32)
 
         set_target_properties(vox_modern_overhaul_asi PROPERTIES
             OUTPUT_NAME "VOXModernOverhaul"
@@ -70,11 +71,24 @@ if(WIN32)
             SUFFIX ".asi"
         )
 
+        # Synthetic ScriptHookV with the same C++-decorated scriptRegister/scriptWait
+        # exports used by the current x64 SDK ABI. It is test-only and never packaged.
+        add_library(vox_fake_scripthookv SHARED
+            tests/runtime/FakeScriptHookV.cpp
+        )
+        target_compile_features(vox_fake_scripthookv PRIVATE cxx_std_20)
+        vox_apply_warnings(vox_fake_scripthookv)
+        set_target_properties(vox_fake_scripthookv PROPERTIES
+            OUTPUT_NAME "ScriptHookV"
+            PREFIX ""
+        )
+
         add_executable(vox_runtime_smoke_host
-            tests/runtime/InertSmokeHost.cpp
+            tests/runtime/GameThreadSmokeHost.cpp
         )
         target_compile_features(vox_runtime_smoke_host PRIVATE cxx_std_20)
         vox_apply_warnings(vox_runtime_smoke_host)
+        add_dependencies(vox_runtime_smoke_host vox_fake_scripthookv vox_modern_overhaul_asi)
         set_target_properties(vox_runtime_smoke_host PROPERTIES
             OUTPUT_NAME "gta5_enhanced"
         )
