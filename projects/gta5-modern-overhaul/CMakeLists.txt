@@ -66,6 +66,15 @@ if(WIN32)
             PREFIX ""
             SUFFIX ".asi"
         )
+
+        add_executable(vox_runtime_smoke_host
+            tests/runtime/BootstrapSmokeHost.cpp
+        )
+        target_compile_features(vox_runtime_smoke_host PRIVATE cxx_std_20)
+        vox_apply_warnings(vox_runtime_smoke_host)
+        set_target_properties(vox_runtime_smoke_host PROPERTIES
+            OUTPUT_NAME "gta5_enhanced"
+        )
     endif()
 endif()
 

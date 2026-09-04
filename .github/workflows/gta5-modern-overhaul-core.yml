@@ -67,11 +67,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure runtime
-        run: cmake -S projects/gta5-modern-overhaul -B projects/gta5-modern-overhaul/build-runtime -DVOX_BUILD_TESTS=OFF -DVOX_BUILD_RUNTIME=ON -DVOX_WARNINGS_AS_ERRORS=ON
+      - name: Configure runtime x64
+        run: cmake -S projects/gta5-modern-overhaul -B projects/gta5-modern-overhaul/build-runtime -A x64 -DVOX_BUILD_TESTS=OFF -DVOX_BUILD_RUNTIME=ON -DVOX_WARNINGS_AS_ERRORS=ON
 
-      - name: Build runtime ASI
-        run: cmake --build projects/gta5-modern-overhaul/build-runtime --config Release --target vox_modern_overhaul_asi --parallel 2
+      - name: Build runtime ASI and smoke host
+        run: cmake --build projects/gta5-modern-overhaul/build-runtime --config Release --target vox_modern_overhaul_asi vox_runtime_smoke_host --parallel 2
+
+      - name: Run Windows ASI smoke checkpoint
+        shell: pwsh
+        run: |
+          $runtime = Resolve-Path ./projects/gta5-modern-overhaul/build-runtime/Release
+          $configDir = Join-Path $runtime "VOXModernOverhaul/config"
+          New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+          Copy-Item ./projects/gta5-modern-overhaul/packaging/config/core.cfg (Join-Path $configDir "core.cfg") -Force
+          & (Join-Path $runtime "gta5_enhanced.exe")
+          if ($LASTEXITCODE -ne 0) { throw "Runtime smoke checkpoint failed with exit code $LASTEXITCODE" }
 
       - name: Package checkpoint
         shell: pwsh
@@ -85,10 +95,11 @@ jobs:
       - name: Verify package contents
         shell: pwsh
         run: |
-          $zip = Get-ChildItem ./projects/gta5-modern-overhaul/dist -Filter "VOX-GTA5-Modern-Overhaul-*.zip" -File
+          $zip = @(Get-ChildItem ./projects/gta5-modern-overhaul/dist -Filter "VOX-GTA5-Modern-Overhaul-*.zip" -File)
           if ($zip.Count -ne 1) { throw "Expected exactly one checkpoint ZIP, found $($zip.Count)." }
           $extract = Join-Path $env:RUNNER_TEMP "vox-package-verify"
-          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $extract
+          if (Test-Path $extract) { Remove-Item $extract -Recurse -Force }
+          Expand-Archive -LiteralPath $zip[0].FullName -DestinationPath $extract
           $required = @(
             "VOXModernOverhaul.asi",
             "VOXModernOverhaul/config/core.cfg",
