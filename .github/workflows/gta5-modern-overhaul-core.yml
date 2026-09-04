@@ -70,10 +70,10 @@ jobs:
       - name: Configure runtime x64
         run: cmake -S projects/gta5-modern-overhaul -B projects/gta5-modern-overhaul/build-runtime -A x64 -DVOX_BUILD_TESTS=OFF -DVOX_BUILD_RUNTIME=ON -DVOX_WARNINGS_AS_ERRORS=ON
 
-      - name: Build no-CRT runtime ASI and smoke host
-        run: cmake --build projects/gta5-modern-overhaul/build-runtime --config Release --target vox_modern_overhaul_asi vox_runtime_smoke_host --parallel 2
+      - name: Build runtime ASI, fake ScriptHookV and smoke host
+        run: cmake --build projects/gta5-modern-overhaul/build-runtime --config Release --target vox_modern_overhaul_asi vox_fake_scripthookv vox_runtime_smoke_host --parallel 2
 
-      - name: Verify ASI has zero PE imports
+      - name: Verify runtime PE dependency boundary
         shell: pwsh
         run: |
           $asi = Resolve-Path ./projects/gta5-modern-overhaul/build-runtime/Release/VOXModernOverhaul.asi
@@ -91,18 +91,28 @@ jobs:
           $dataDirectories = $optional + 112
           $importRva = [BitConverter]::ToUInt32($bytes, $dataDirectories + 8)
           $importSize = [BitConverter]::ToUInt32($bytes, $dataDirectories + 12)
-          if ($importRva -ne 0 -or $importSize -ne 0) { throw "ASI unexpectedly contains an import directory: RVA=$importRva size=$importSize" }
+          if ($importRva -eq 0 -or $importSize -eq 0) { throw "ASI should import its explicit Kernel32 boundary." }
           $tlsRva = [BitConverter]::ToUInt32($bytes, $dataDirectories + (9 * 8))
           $tlsSize = [BitConverter]::ToUInt32($bytes, $dataDirectories + (9 * 8) + 4)
           if ($tlsRva -ne 0 -or $tlsSize -ne 0) { throw "ASI unexpectedly contains a TLS directory." }
-          Write-Host "PASS: PE32+ ASI has a custom entrypoint, zero import directory and zero TLS directory."
 
-      - name: Run no-CRT Windows ASI smoke checkpoint
+          $imports = (& dumpbin /nologo /imports $asi) -join "`n"
+          if ($imports -notmatch '(?i)KERNEL32\.dll') { throw "ASI does not import KERNEL32.dll as expected." }
+          if ($imports -match '(?i)VCRUNTIME|MSVCP|api-ms-win-crt|ucrtbase|ScriptHookV\.dll') {
+            throw "ASI import boundary violation: CRT/C++ runtime or direct ScriptHookV import detected.`n$imports"
+          }
+          $required = @('GetModuleHandleW','GetProcAddress','GetModuleFileNameW','CreateDirectoryW','GetLastError','CreateFileW','WriteFile','FlushFileBuffers','CloseHandle')
+          foreach ($name in $required) {
+            if ($imports -notmatch [regex]::Escape($name)) { throw "Expected Kernel32 import missing: $name" }
+          }
+          Write-Host "PASS: custom-entry ASI imports only the intended Win32 boundary, contains no CRT/TLS and dynamically resolves ScriptHookV."
+
+      - name: Run synthetic ScriptHookV game-thread checkpoint
         shell: pwsh
         run: |
           $runtime = Resolve-Path ./projects/gta5-modern-overhaul/build-runtime/Release
           & (Join-Path $runtime "gta5_enhanced.exe")
-          if ($LASTEXITCODE -ne 0) { throw "No-CRT runtime smoke checkpoint failed with exit code $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { throw "ScriptHookV game-thread smoke checkpoint failed with exit code $LASTEXITCODE" }
 
       - name: Package checkpoint
         shell: pwsh
@@ -110,7 +120,7 @@ jobs:
           ./projects/gta5-modern-overhaul/tools/PackageCheckpoint.ps1
           -BuildDirectory ./projects/gta5-modern-overhaul/build-runtime
           -OutputDirectory ./projects/gta5-modern-overhaul/dist
-          -Version 0.0.1-dev.10
+          -Version 0.0.1-dev.11
           -Commit $env:GITHUB_SHA
 
       - name: Verify package contents
@@ -133,11 +143,14 @@ jobs:
               throw "Package missing required file: $relative"
             }
           }
+          if (Test-Path -LiteralPath (Join-Path $extract "ScriptHookV.dll")) {
+            throw "Package must never redistribute the test fake or user's ScriptHookV.dll."
+          }
 
       - name: Upload GTA-ready checkpoint ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: VOX-GTA5-Modern-Overhaul-0.0.1-dev.10
-          path: projects/gta5-modern-overhaul/dist/VOX-GTA5-Modern-Overhaul-0.0.1-dev.10.zip
+          name: VOX-GTA5-Modern-Overhaul-0.0.1-dev.11
+          path: projects/gta5-modern-overhaul/dist/VOX-GTA5-Modern-Overhaul-0.0.1-dev.11.zip
           if-no-files-found: error
           retention-days: 30
