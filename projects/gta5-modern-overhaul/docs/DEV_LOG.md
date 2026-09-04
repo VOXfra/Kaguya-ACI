@@ -2,6 +2,69 @@
 
 This is the precise engineering trace for the project. Patch notes summarize changes; this log records what was done, why, validation performed and what is still unproven.
 
+## 2026-09-04 — dev.15.1 real Story Mode crash → dev.15.2 differential asset isolation
+
+### Real dev.15.1 setup/install evidence
+The user ran the corrected package in the real GTA V Enhanced root. The environment/bootstrap path completed successfully with Python 3.11.4, FiveFury 0.4.21 and `VOX_VISUAL_PROBE_SELF_TEST_OK`.
+
+The retail scan then completed and selected:
+- model: `prop_roadcone02a`;
+- source: `x64f.rpf/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr`;
+- loose destination: `newmods/platform/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr`;
+- requested render scale: `1.65`.
+
+The tool reported `VOX_VISUAL_PROBE_INSTALLED` and completed without an installation error.
+
+### Real game outcome — FAIL
+The game crashes immediately when entering Story Mode with the transformed loose YDR active. No stable in-game frame showing the oversized asset was reached. dev.15.1 is therefore **not** a D4 visual success.
+
+Returned logs show before the crash:
+- ASI loader maps RageOpenV, ScriptHookVDotNet, TrainerV and `VOXModernOverhaul.asi`, then reports `LOADER: Finished loading *.asi plugins`;
+- ScriptHookV identifies Enhanced `VER_EN_1_0_1158_13` and registers VOX;
+- VOX logs `VOX_SCRIPT_MAIN_ENTER`, resume after wait, `VOX_CORE_START`, persistence save, Core ready, bridge ready, game-thread queue dispatch, five Core ticks and five ScriptHook heartbeats;
+- RageOpenV release log reports only `RageOpenV Inited!` and does not expose the open/archive operation at crash time.
+
+Interpretation: the known runtime path finishes its proof markers before the crash. The only newly introduced runtime input relative to the dev.14 stable state is the visual override path. However, the logs alone cannot distinguish:
+1. RageOpenV/newmods mount/path behavior; from
+2. a retail YDR produced by FiveFury that passes FiveFury validation but is rejected by RAGE Enhanced.
+
+No exact exception/module is claimed from these logs.
+
+### Differential isolation design
+Instead of changing several variables at once, dev.15.2 keeps the exact same override path and changes only the file bytes.
+
+Added:
+- `Isolate-VisualProbeCrash.ps1`;
+- `04_ISOLATE_VISUAL_CRASH.cmd`.
+
+The script:
+1. loads the existing dev.15.1 manifest;
+2. verifies the active transformed override still matches `generated_sha256`;
+3. locates the already extracted `work/original/<model>.ydr`;
+4. verifies that file matches `source_sha256`;
+5. copies it through a temporary file to the exact active `newmods/platform` destination;
+6. requires the installed SHA-256 to equal the source SHA-256;
+7. preserves the old transformed hash as `transformed_sha256`;
+8. sets `probe_mode=IDENTITY_OVERRIDE`;
+9. advances manifest `generated_sha256` to the source hash so the existing rollback remains ownership-safe.
+
+Expected interpretation in the real game:
+- **crash persists with byte-identical source bytes** → transformed YDR is not required to reproduce the crash; investigate RageOpenV/newmods mount/path next;
+- **Story Mode loads** → the same mount can serve the exact original, so the FiveFury retail YDR reconstruction becomes the primary suspect.
+
+### Regression protection
+Windows CI now creates a synthetic visual-probe tree containing different source/transformed byte sequences, executes the same PowerShell isolation script, and requires:
+- transformed ownership hash before replacement;
+- exact source hash after replacement;
+- `probe_mode=IDENTITY_OVERRIDE`;
+- preservation of the old transformed hash;
+- active/rollback hash updated to the source hash.
+
+A strict-mode compatibility defect was caught during source review before delivery: the original isolation draft accessed a missing `probe_mode` property directly on a dev.15.1 manifest. Under `Set-StrictMode -Version Latest`, that could fail before the script had a chance to add the field. The code now queries `PSObject.Properties['probe_mode']` safely first. The regression uses a legacy-style manifest without that property.
+
+### Evidence boundary
+No claim is made yet that RageOpenV's mount is faulty or that FiveFury's writer is faulty. dev.15.2 exists specifically to separate those hypotheses with one real Story Mode launch.
+
 ## 2026-09-04 — dev.15 real setup failure → dev.15.1 executable installer regression
 
 ### User failure evidence
