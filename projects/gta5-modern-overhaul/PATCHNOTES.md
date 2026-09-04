@@ -2,6 +2,24 @@
 
 All user-visible, architectural and tooling changes are recorded here.
 
+## [0.0.1-dev.4] — 2026-09-04
+
+### Added
+- Added warnings-as-errors build mode (`VOX_WARNINGS_AS_ERRORS`).
+- Added concurrent EventBus validation: 4 publisher threads × 1000 events.
+- Added Linux sanitizer CI job using AddressSanitizer + UndefinedBehaviorSanitizer.
+- Added `docs/STATUS.md` with evidence-based D0–D6 validation state per Phase 0 capability.
+
+### Verified locally
+- GNU C++ 14.2.0 / C++20.
+- `-Wall -Wextra -Wpedantic -Werror` passes.
+- ASan + UBSan pass.
+- Concurrent EventBus test reaches exactly 4000 delivered events.
+- CTest: 1/1 passing, 0 failures.
+
+### Pending external proof
+- Final GitHub CI run on Windows/MSVC, Linux and sanitizer job must complete successfully before cross-platform status is promoted.
+
 ## [0.0.1-dev.3] — 2026-09-04
 
 ### Added
@@ -37,7 +55,7 @@ All user-visible, architectural and tooling changes are recorded here.
 
 ### Validation boundary
 - Linux/GCC standalone core is validated at D3 for the tested primitives.
-- Windows/MSVC validation is delegated to the newly added CI job and remains pending until a successful workflow run is observed.
+- Windows/MSVC validation is delegated to CI and remains pending until a successful workflow run is observed.
 - GTA V Enhanced runtime integration remains unimplemented and therefore unvalidated.
 
 ## [0.0.1-dev.1] — 2026-09-04
@@ -63,10 +81,3 @@ All user-visible, architectural and tooling changes are recorded here.
 - Source-level logic reviewed for invalid-ID, comparison and simulation-tier invariants.
 - Core scaffold is designed to compile without ScriptHookV SDK or GTA files.
 - GTA V Enhanced runtime integration is **not yet implemented or claimed working**.
-
-### Known next steps
-- Compile core scaffold in CI/local toolchain.
-- Add deterministic event bus and versioned configuration.
-- Add Windows GTA V Enhanced install/build detector.
-- Add ScriptHookV adapter only after SDK/API audit.
-- Build automated package/install/rollback workflow.

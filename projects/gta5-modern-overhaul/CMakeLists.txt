@@ -3,6 +3,21 @@ cmake_minimum_required(VERSION 3.24)
 project(VOXGTA5ModernOverhaul VERSION 0.0.1 LANGUAGES CXX)
 
 option(VOX_BUILD_TESTS "Build standalone core tests" ON)
+option(VOX_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+
+function(vox_apply_warnings target)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W4 /permissive- /EHsc)
+        if(VOX_WARNINGS_AS_ERRORS)
+            target_compile_options(${target} PRIVATE /WX)
+        endif()
+    else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+        if(VOX_WARNINGS_AS_ERRORS)
+            target_compile_options(${target} PRIVATE -Werror)
+        endif()
+    endif()
+endfunction()
 
 add_library(vox_core STATIC
     src/core/src/Logger.cpp
@@ -14,12 +29,7 @@ target_include_directories(vox_core
 )
 
 target_compile_features(vox_core PUBLIC cxx_std_20)
-
-if(MSVC)
-    target_compile_options(vox_core PRIVATE /W4 /permissive- /EHsc)
-else()
-    target_compile_options(vox_core PRIVATE -Wall -Wextra -Wpedantic)
-endif()
+vox_apply_warnings(vox_core)
 
 if(VOX_BUILD_TESTS)
     enable_testing()
@@ -30,12 +40,7 @@ if(VOX_BUILD_TESTS)
 
     target_link_libraries(vox_core_tests PRIVATE vox_core)
     target_compile_features(vox_core_tests PRIVATE cxx_std_20)
-
-    if(MSVC)
-        target_compile_options(vox_core_tests PRIVATE /W4 /permissive- /EHsc)
-    else()
-        target_compile_options(vox_core_tests PRIVATE -Wall -Wextra -Wpedantic)
-    endif()
+    vox_apply_warnings(vox_core_tests)
 
     add_test(NAME vox_core_tests COMMAND vox_core_tests)
 endif()

@@ -3,6 +3,9 @@
 #include "vox/core/EventBus.hpp"
 #include "vox/core/Logger.hpp"
 #include "vox/core/SimulationTier.hpp"
+#include <atomic>
+#include <thread>
+#include <vector>
 #include <filesystem>
 #include <iostream>
 #include <limits>
@@ -78,6 +81,33 @@ int main() {
     bus.Publish(TestEvent{2});
     if (sum != 13 || nested != 5) {
         return Fail("EventBus unsubscribe invariant failed");
+    }
+
+    struct ConcurrentEvent final { int value; };
+    std::atomic<int> concurrentCount{0};
+    const auto concurrentToken = bus.Subscribe<ConcurrentEvent>([&](const ConcurrentEvent& event) {
+        concurrentCount.fetch_add(event.value, std::memory_order_relaxed);
+    });
+    if (!concurrentToken.valid()) {
+        return Fail("EventBus concurrent-test subscription failed");
+    }
+
+    constexpr int threadCount = 4;
+    constexpr int publishesPerThread = 1000;
+    std::vector<std::thread> publishers;
+    publishers.reserve(threadCount);
+    for (int threadIndex = 0; threadIndex < threadCount; ++threadIndex) {
+        publishers.emplace_back([&] {
+            for (int i = 0; i < publishesPerThread; ++i) {
+                bus.Publish(ConcurrentEvent{1});
+            }
+        });
+    }
+    for (auto& publisher : publishers) {
+        publisher.join();
+    }
+    if (concurrentCount.load(std::memory_order_relaxed) != threadCount * publishesPerThread) {
+        return Fail("EventBus concurrent publish invariant failed");
     }
 
     const auto logPath = std::filesystem::temp_directory_path() / "vox_gta5_modern_overhaul" / "core_test.log";

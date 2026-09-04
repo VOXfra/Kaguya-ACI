@@ -26,10 +26,31 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure
-        run: cmake -S projects/gta5-modern-overhaul -B projects/gta5-modern-overhaul/build -DVOX_BUILD_TESTS=ON
+        run: cmake -S projects/gta5-modern-overhaul -B projects/gta5-modern-overhaul/build -DVOX_BUILD_TESTS=ON -DVOX_WARNINGS_AS_ERRORS=ON
 
       - name: Build
         run: cmake --build projects/gta5-modern-overhaul/build --config Release --parallel 2
 
       - name: Test
         run: ctest --test-dir projects/gta5-modern-overhaul/build -C Release --output-on-failure
+
+  core-sanitizers:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure ASan + UBSan
+        run: >-
+          cmake -S projects/gta5-modern-overhaul
+          -B projects/gta5-modern-overhaul/build-sanitized
+          -DVOX_BUILD_TESTS=ON
+          -DVOX_WARNINGS_AS_ERRORS=ON
+          -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+
+      - name: Build ASan + UBSan
+        run: cmake --build projects/gta5-modern-overhaul/build-sanitized --parallel 2
+
+      - name: Test ASan + UBSan
+        run: ctest --test-dir projects/gta5-modern-overhaul/build-sanitized --output-on-failure
