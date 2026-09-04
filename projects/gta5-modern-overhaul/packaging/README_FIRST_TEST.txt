@@ -1,17 +1,24 @@
 VOX GTA V MODERN OVERHAUL — CHECKPOINT 0I / FIRST VISIBLE ENHANCED ASSET OVERRIDE
-Version: 0.0.1-dev.15
+Version: 0.0.1-dev.15.1
 
 PURPOSE
 The real dev.14 two-launch test is successful. GTA V Enhanced loads the VOX ScriptHookV runtime and isolated C++ core, creates world_state.v1 on the first launch, reloads the same persistent EntityId/high-water state on the second launch, and executes the bounded game-thread queue marker while remaining stable.
 
-Checkpoint dev.15 keeps that validated runtime foundation and adds the first user-side Enhanced/Gen9 asset pipeline proof.
+Checkpoint dev.15.1 keeps that validated runtime foundation and contains the corrected first user-side Enhanced/Gen9 asset pipeline proof.
 
-WHAT DEV.15 DOES
+DEV.15 INSTALLER DEFECT FIXED BEFORE THIS PACKAGE
+The original dev.15 package created its Python virtual environment successfully on the user's machine, then failed while querying the venv version because the PowerShell command embedded backslash-escaped quotes inside a single-quoted argument. PowerShell passed those backslashes through and Python received malformed source.
+
+Dev.15.1 removes that quoting pattern entirely. The exact environment-bootstrap path now has a dedicated CI mode that really creates a fresh Windows venv, queries the Python version using quote-free expressions, installs FiveFury 0.4.21 and executes the Gen9 self-test. A PowerShell parse-only check is no longer considered sufficient for this path.
+
+WHAT DEV.15.1 DOES
 The included one-click visual tool:
 - verifies it is inside a GTA V Enhanced root;
 - requires the already-installed RageOpenV.asi instead of editing Rockstar archives directly;
 - creates an isolated Python environment under VOXModernOverhaul\tools\.venv-assets;
+- verifies the venv is Python 3.11+ with actually executed Python commands;
 - installs the pinned public-domain FiveFury 0.4.21 tooling dependency locally from PyPI;
+- runs the Gen9 transformer self-test before scanning GTA;
 - indexes the user's own GTA V Enhanced installation;
 - selects one common BASE-GAME static YDR that is not already overridden by another loose mod;
 - extracts that asset locally from the user's installation;
@@ -29,18 +36,20 @@ GTA Enhanced asset -> locate -> extract -> modify -> Gen9 rebuild -> validate ->
 
 Once this succeeds, the same pipeline is used for actual visual upgrades instead of exaggerated scaling.
 
-INSTALL DEV.15
+INSTALL DEV.15.1
 1. Close GTA V Enhanced completely.
 2. Extract this ZIP into the GTA V Enhanced root containing GTA5_Enhanced.exe.
 3. Replace/merge the included VOXModernOverhaul.asi, VOXModernCore.dll and VOXModernOverhaul folder.
 4. Leave ScriptHookV.dll, dinput8.dll, RageOpenV.asi, ScriptHookVDotNet and TrainerV unchanged.
-5. Do NOT delete VOXModernOverhaul\state\world_state.v1; dev.14 persistence is now the known-good base.
+5. Keep VOXModernOverhaul\state\world_state.v1 if present. If it was intentionally deleted before this package, the current early registry simply creates a fresh system state on the next launch; do not keep deleting it once persistent world data becomes meaningful.
 
 INSTALL THE FIRST VISUAL PROBE
 Run:
 VOXModernOverhaul\tools\assets\01_INSTALL_VISUAL_PROBE.cmd
 
 The first run may take a while because the tool creates a private Python environment and indexes the local GTA archives. It does not require administrator rights and does not modify GTA archives in place.
+
+If the broken dev.15 run already created VOXModernOverhaul\tools\.venv-assets, dev.15.1 can safely reuse it. You do not need to delete it unless dev.15.1 explicitly reports that the environment is invalid or too old.
 
 When complete it writes:
 VOXModernOverhaul\visual_probe\visual_probe_report.txt
@@ -49,14 +58,15 @@ VOXModernOverhaul\visual_probe\visual_probe_manifest.json
 The report tells you exactly which model was selected and which newmods/platform path was generated.
 
 REAL-GAME TEST
-1. After the installer says VOX DEV.15 VISUAL PROBE INSTALLED, launch GTA V Enhanced normally.
+1. After the installer says VOX DEV.15.1 VISUAL PROBE INSTALLED, launch GTA V Enhanced normally.
 2. Enter Story Mode and drive around Los Santos for a few minutes.
 3. Look for the selected model described in visual_probe_report.txt. Traffic lights/street lights are preferred because they are common; bins/cones/palms/trees are fallbacks.
 4. The chosen model should be visibly around 1.65x its normal size.
 5. Take a screenshot when you see it and send that plus visual_probe_report.txt.
 
 SUCCESS CRITERIA
-- installer completes without an error;
+- installer environment bootstrap completes without an error;
+- FiveFury/Gen9 self-test completes before any newmods install;
 - visual_probe_report.txt says status=INSTALLED;
 - manifest contains a base x64*.rpf source and a newmods/platform destination;
 - generated YDR has a different SHA-256 from the source and passes FiveFury validation;
@@ -65,6 +75,8 @@ SUCCESS CRITERIA
 
 SAFE FAILURE BEHAVIOR
 - If Python 3.11+ is missing, setup stops before touching newmods.
+- If the isolated venv cannot execute or reports an old Python version, setup stops before touching newmods.
+- If FiveFury installation or the Gen9 self-test fails, setup stops before touching newmods.
 - If RageOpenV.asi is missing, setup stops before touching newmods.
 - If no supported base-game candidate is found, nothing is installed.
 - Existing loose overrides are never overwritten.
@@ -86,6 +98,7 @@ DEPENDENCY / PROVENANCE
 - No Rockstar asset is shipped in this package; all source extraction happens locally from the user's legally installed game.
 
 KNOWN LIMITATIONS OF THE PROOF
+- The full retail GTA archive scan cannot be executed in GitHub CI because CI does not contain the user's GTA installation. The exact environment/bootstrap and synthetic Gen9 rewrite paths are executed in CI; the retail scan/override remains the D4 user gate.
 - Render geometry and render bounds are scaled, but collision is intentionally NOT scaled.
 - The original YTYP archetype extents are not rewritten in this first proof, so extreme camera/culling cases may still use original world metadata.
 - This is one model-family override, not the graphical vertical slice yet.
