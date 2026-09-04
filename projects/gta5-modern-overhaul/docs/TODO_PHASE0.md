@@ -15,6 +15,7 @@ Legend:
 - [x] Windows/Linux build+test CI
 - [x] Linux ASan + UBSan CI
 - [x] project-local `AGENT.md` development contract
+- [x] user-facing installer execution-smoke rule added after dev.15 quoting defect
 - [x] PATCHNOTES / DEV_LOG / STATUS evidence tracking
 - [x] reproducible GTA-root-ready checkpoint packaging
 - [ ] formatting/static-analysis gate
@@ -104,8 +105,10 @@ Legend:
 - [x] package excludes fake ScriptHookV and generated persistent state
 - [x] dev.13 delivered + D4 tested
 - [x] dev.14 delivered + two-launch D4 tested
-- [x] dev.15 package now includes source-only visual tool scripts
-- [x] dev.15 package rejects bundled `.ydr`, FiveFury environment and visual-probe user state
+- [x] dev.15 introduced source-only visual tool scripts
+- [x] dev.15 user setup failure isolated before any newmods write
+- [x] dev.15.1 package version/readme boundary enforced in CI
+- [x] package rejects bundled `.ydr`, FiveFury environment and visual-probe user state
 - [ ] general installer/root discovery for later public builds
 
 ## Story compatibility foundation
@@ -122,10 +125,15 @@ Legend:
 - [x] choose non-destructive Enhanced override path using existing RageOpenV `newmods/platform` mount — implementation boundary
 - [x] pin local authoring dependency FiveFury 0.4.21 (Unlicense; not bundled)
 - [x] Python 3.11+ isolated-venv installer
+- [x] dev.15 PowerShell→Python quoting defect isolated from real user error
+- [x] quote-free venv Python compatibility/version probes
+- [x] existing venv >=3.11 validation
+- [x] executable `-EnvironmentOnly` setup path
+- [x] fresh Windows venv → Python version → FiveFury install → Gen9 self-test — **D3 EXECUTED PASS, run 33893214202**
 - [x] base-game `x64*.rpf` asset-path acceptance / update-DLC rejection
 - [x] traversal / drive-style path rejection
 - [x] visible-prop candidate selection without overwriting an existing loose override
-- [x] local asset extraction from user's own installation
+- [x] local asset extraction from user's own installation — implementation; retail execution pending
 - [x] editable Gen9 YDR render-geometry transformation
 - [x] recompute render bounding box / sphere / LOD distances
 - [x] preserve source YDR version across rewrite
@@ -146,26 +154,38 @@ Legend:
 
 ## Current checkpoint
 
-**Checkpoint 0I — first visible GTA V Enhanced asset override (`0.0.1-dev.15`)**
+**Checkpoint 0I — corrected first visible GTA V Enhanced asset override (`0.0.1-dev.15.1`)**
 
-Already proven before user delivery:
+Real dev.15 outcome:
+
+1. packaged CMD/PowerShell launched from the user's actual GTA root — PASS.
+2. isolated `.venv-assets` creation — PASS.
+3. original Python version query — **FAIL** due malformed `-c` source caused by PowerShell/backslash quote handling.
+4. failure occurred before FiveFury install, GTA archive scan, asset generation or `newmods` installation.
+
+Regression now proven before corrected delivery:
 
 1. dev.14 persistent-world two-launch real test — PASS.
 2. current C++ runtime Windows/Linux/ASan+UBSan regressions — PASS.
 3. FiveFury 0.4.21 installs in Windows CI — PASS.
-4. dev.15 visual Python compiles — PASS.
+4. visual Python compiles — PASS.
 5. synthetic Enhanced/Gen9 YDR version 159 creation/rewrite/reopen — PASS.
 6. expected vertex scale survives binary round trip — PASS.
 7. YDR validation after rewrite — PASS.
 8. base-RPF → RageOpenV platform mirror mapping — PASS.
 9. update/DLC/traversal/drive path refusal — PASS.
-10. visual PowerShell wrapper parser validation — PASS.
-11. runtime ASI/Core synthetic persistence regressions remain PASS.
-12. package boundary excludes YDR assets, user state, fake ScriptHookV and FiveFury venv — PASS.
+10. PowerShell parser validation — PASS.
+11. **actual packaged setup script creates a fresh Windows venv and executes both corrected version queries — PASS.**
+12. same setup script installs FiveFury 0.4.21 into that venv and executes Gen9 self-test — PASS.
+13. `VOX_VISUAL_ENVIRONMENT_SMOKE_OK` — PASS, run `33893214202`.
+14. runtime ASI/Core synthetic persistence regressions remain PASS.
+15. package boundary excludes YDR assets, user state, fake ScriptHookV and FiveFury venv — PASS.
 
-Required real dev.15 proof:
+Required real dev.15.1 proof:
 
+- install corrected dev.15.1 over the current files; existing valid `.venv-assets` may remain;
 - run `VOXModernOverhaul/tools/assets/01_INSTALL_VISUAL_PROBE.cmd`;
+- environment bootstrap and Gen9 self-test complete;
 - report becomes `status=INSTALLED`;
 - report identifies the selected common model and exact base `x64*.rpf` source;
 - generated override exists only in the reported `newmods/platform` path;
