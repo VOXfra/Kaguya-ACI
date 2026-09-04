@@ -105,6 +105,33 @@ jobs:
             }
           }
 
+      - name: Execute visual installer environment bootstrap on Windows
+        shell: pwsh
+        run: |
+          $venv = './projects/gta5-modern-overhaul/tools/.venv-assets'
+          if (Test-Path -LiteralPath $venv) {
+            Remove-Item -LiteralPath $venv -Recurse -Force
+          }
+
+          & ./projects/gta5-modern-overhaul/tools/assets/Setup-And-Install-VisualProbe.ps1 -EnvironmentOnly
+          if ($LASTEXITCODE -ne 0) {
+            throw "The exact packaged installer environment path failed with exit code $LASTEXITCODE."
+          }
+
+          $venvPython = Join-Path $venv 'Scripts/python.exe'
+          if (-not (Test-Path -LiteralPath $venvPython -PathType Leaf)) {
+            throw "Installer smoke did not create the expected venv Python executable."
+          }
+          $versionLines = @(& $venvPython -c 'import sys; print(sys.version.split()[0])')
+          if ($LASTEXITCODE -ne 0 -or $versionLines.Count -lt 1 -or [string]::IsNullOrWhiteSpace($versionLines[-1].ToString())) {
+            throw "Installer-created venv could not execute the same Python version query used by the package."
+          }
+          & $venvPython ./projects/gta5-modern-overhaul/tools/assets/vox_visual_probe.py self-test
+          if ($LASTEXITCODE -ne 0) {
+            throw "Installer-created venv failed the Gen9 transformer self-test."
+          }
+          Write-Host "PASS: real PowerShell -> venv -> version query -> FiveFury -> Gen9 self-test bootstrap executed."
+
       - name: Configure runtime x64
         run: cmake -S projects/gta5-modern-overhaul -B projects/gta5-modern-overhaul/build-runtime -A x64 -DVOX_BUILD_TESTS=OFF -DVOX_BUILD_RUNTIME=ON -DVOX_WARNINGS_AS_ERRORS=ON
 
@@ -174,7 +201,7 @@ jobs:
           ./projects/gta5-modern-overhaul/tools/PackageCheckpoint.ps1
           -BuildDirectory ./projects/gta5-modern-overhaul/build-runtime
           -OutputDirectory ./projects/gta5-modern-overhaul/dist
-          -Version 0.0.1-dev.15
+          -Version 0.0.1-dev.15.1
           -Commit $env:GITHUB_SHA
 
       - name: Verify package contents and visual-tool boundary
@@ -221,14 +248,21 @@ jobs:
             throw "Package must never redistribute Rockstar or CI-generated YDR assets."
           }
           $buildInfo = Get-Content -LiteralPath (Join-Path $extract 'BUILD_INFO.txt') -Raw
+          if ($buildInfo -notmatch 'version=0\.0\.1-dev\.15\.1') {
+            throw "BUILD_INFO does not identify dev.15.1."
+          }
           if ($buildInfo -notmatch 'visual_probe_fivefury=0\.4\.21') {
             throw "BUILD_INFO does not pin FiveFury 0.4.21."
+          }
+          $readme = Get-Content -LiteralPath (Join-Path $extract 'README_FIRST_TEST.txt') -Raw
+          if ($readme -notmatch 'Version: 0\.0\.1-dev\.15\.1') {
+            throw "Packaged README does not identify dev.15.1."
           }
 
       - name: Upload GTA-ready checkpoint ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: VOX-GTA5-Modern-Overhaul-0.0.1-dev.15
-          path: projects/gta5-modern-overhaul/dist/VOX-GTA5-Modern-Overhaul-0.0.1-dev.15.zip
+          name: VOX-GTA5-Modern-Overhaul-0.0.1-dev.15.1
+          path: projects/gta5-modern-overhaul/dist/VOX-GTA5-Modern-Overhaul-0.0.1-dev.15.1.zip
           if-no-files-found: error
           retention-days: 30
