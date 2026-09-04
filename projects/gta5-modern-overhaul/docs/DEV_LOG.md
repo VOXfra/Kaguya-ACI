@@ -2,6 +2,32 @@
 
 This is the precise engineering trace for the project. Patch notes summarize changes; this log records what was done, why, validation performed and what is still unproven.
 
+## 2026-09-04 — dev.15.4 compact-RPF CI defect caught before delivery
+
+The first consolidated dev.15.4 package run correctly stopped before packaging. Core Windows/Linux and sanitizer jobs were green, but the new compact-RPF self-test failed with:
+
+`FrozenInstanceError: cannot assign to field 'x'`
+
+Root cause was confined to the synthetic test fixture: it read a synthetic YDR and attempted to mutate FiveFury `Vector3` values in place. Those vector values are immutable. The production compact-RPF extraction/migration path does not perform that mutation; the test itself was invalid.
+
+The self-test was rewritten to create a separate transformed `YdrMeshInput` with scaled immutable `Vector3` values instead of modifying parsed vectors. This preserves the intended proof: source YDR and transformed YDR differ, the nested RPF can be extracted byte-identically from a parent RPF, the target member can be replaced, the resulting real RPF can be reopened, and every unrelated standalone member remains hash-identical.
+
+Regression run `33909016490` at commit `45aa553b8f97fdcecc3685a22d98e8431868d472` then passed all jobs and all package steps:
+- Windows core build/tests;
+- Linux core build/tests;
+- ASan + UBSan;
+- FiveFury 0.4.21 install;
+- all visual Python compile/self-tests including `VOX_COMPACT_RPF_SELF_TEST_OK`;
+- all visual PowerShell parser checks;
+- exact fresh-venv user bootstrap followed by compact-RPF self-test from that venv;
+- runtime x64 build;
+- CRT-free/no-TLS ASI boundary;
+- two-process persistence smoke;
+- dev.15.4 package build and content boundary;
+- artifact upload.
+
+This is D3/synthetic evidence only for the compact RPF. Real-game identity stability/performance remains the next D4 gate.
+
 ## 2026-09-04 — dev.15.3 complete directory archive performance failure → dev.15.4 real compact RPF
 
 ### Real dev.15.3 outcome
@@ -500,8 +526,8 @@ The Windows smoke host now requires:
 - at least five ScriptHook heartbeats.
 
 CI run `33881321657` passed:
-- Windows core build/tests;
-- Linux core build/tests;
+- core Windows build/tests;
+- core Linux build/tests;
 - ASan + UBSan;
 - ASI custom PE/CRT boundary;
 - fallback ABI path;
