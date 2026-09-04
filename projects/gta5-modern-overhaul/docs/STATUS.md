@@ -38,11 +38,12 @@ Validation levels are defined in `QUALITY_GATES.md`.
 | Story Compatibility runtime | D0 | contract only |
 | Visual installer environment/bootstrap | **D4 real setup PASS / D3 Windows regression** | dev.15.1 real machine completes venv/FiveFury/self-test/retail scan; CI executes exact bootstrap path |
 | Enhanced retail asset locator/extraction | **D4 real PASS** | dev.15.1 real scan selected and extracted `prop_roadcone02a` from base `x64f.rpf` |
-| Gen9 YDR transform tooling | **D3 synthetic / real runtime compatibility FAILED OR UNPROVEN** | FiveFury synthetic rewrite validates, but the first real transformed YDR is associated with Story Mode crash and is not trusted |
-| RageOpenV `newmods/platform` mount integration | **D4 crash-isolation pending** | real loose override exists at expected path, but Story Mode crashes; source-identical override test is now required to separate mount from YDR writer |
-| First visible graphics replacement | **D4 FAILED / blocked on isolation** | dev.15.1 never reached a stable visible frame; Story Mode crashes immediately after transformed override installation |
-| Byte-identical override isolation | **D3 Windows synthetic / D4 pending** | dev.15.2 replaces active transformed file with exact source bytes at same path using manifest/hash ownership |
-| Runtime checkpoint packaging | D3 Windows | ASI+Core+visual tools required; fake ScriptHook/user state/YDR assets excluded; package version/readme checked |
+| Gen9 YDR transform tooling | **D3 synthetic / real runtime compatibility UNPROVEN** | transformed YDR is not required for the observed crash because dev.15.2 still crashes with source-identical bytes |
+| RageOpenV one-file nested-RPF directory probe | **D4 real FAIL** | dev.15.1 transformed target crashes; dev.15.2 source-identical target at same one-file archive path also crashes |
+| Complete nested-RPF mirror strategy | **D3 synthetic / D4 pending** | dev.15.3 mirrors every indexed member before target substitution; real Story Mode test pending |
+| First visible graphics replacement | **D4 FAILED / blocked on complete-archive test** | no stable visible modified frame yet |
+| Byte-identical override isolation | **D4 real FAIL as one-file archive** | source-identical target still crashes, proving modified target bytes are not necessary for crash |
+| Runtime checkpoint packaging | D3 Windows | ASI+Core+visual tools required; fake ScriptHook/user state/YDR/RPF assets excluded; package version/readme checked |
 | GitHub Windows/Linux CI | D3 | current jobs pass when final checkpoint CI is green |
 | ASan + UBSan CI | D3 | current sanitizer jobs pass |
 
@@ -58,36 +59,37 @@ Real GTA evidence proves `VOXModernCore.dll` start, bridge ready, five core tick
 Two user-provided real-game logs prove the complete create/reload sequence. Persistent Entity Registry, high-water restoration and live queue path are D4.
 
 ### dev.15.1 — installer/scan pass, visual runtime crash
-Real setup output proves:
-- Python 3.11.4 environment runs;
-- FiveFury 0.4.21 installs;
-- `VOX_VISUAL_PROBE_SELF_TEST_OK`;
-- real Enhanced archive scan completes;
-- selected model is `prop_roadcone02a`;
-- source is `x64f.rpf/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr`;
-- loose override is installed at `newmods/platform/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr`.
+Real setup output proves Python/FiveFury setup, real Enhanced archive scan, `prop_roadcone02a` selection/extraction, and one-file `newmods/platform/.../v_construction.rpf/prop_roadcone02a.ydr` installation.
 
-The subsequent game attempt crashes immediately entering Story Mode.
+The game then crashes entering Story Mode. Returned logs show the VOX runtime and ScriptHookV lifecycle complete through five ticks/heartbeats before the crash.
 
-The returned logs prove before crash:
-- ASI loader finishes loading RageOpenV, SHVDN, TrainerV and VOX;
-- ScriptHookV identifies `VER_EN_1_0_1158_13` and registers VOX;
-- VOX reaches `VOX_PERSISTENCE_SAVE_OK`, `VOX_CORE_RUNTIME_READY`, `VOX_CORE_BRIDGE_READY`, `VOX_GAME_THREAD_QUEUE_DISPATCHED=1`, five Core ticks and five ScriptHook heartbeats;
-- RageOpenV release log only reports successful initialization.
+### dev.15.2 — source-identical target still crashes
+The transformed target was replaced at the exact same path with the preserved Rockstar source bytes and hash identity was verified. The user reports Story Mode still crashes.
 
-Conclusion: the visual checkpoint is a **real D4 failure**. Existing evidence does not prove whether the crash is caused by RageOpenV/newmods routing or by the FiveFury-rebuilt retail YDR.
+Conclusion:
+- transformed FiveFury YDR bytes are not required to trigger the crash;
+- the one-file custom directory-archive layout is now the primary suspect;
+- no visible pipeline D4 pass exists yet.
 
-## dev.15.2 current crash-isolation checkpoint
+## dev.15.3 current complete-archive checkpoint
 
-### Goal
-Keep the exact same loose override path but replace its transformed bytes with the exact extracted source bytes.
+### Source-based hypothesis
+RageOpenV mounts `newmods/platform/` as `platform:/`. Its custom archive hook checks whether the requested archive path resolves to a custom-device directory and then treats that directory as the archive. A directory named `v_construction.rpf` containing only one YDR can therefore shadow the complete Rockstar nested RPF instead of merging with it.
 
-### Interpretation
-- Story Mode still crashes -> mount/path layer is implicated; transformed geometry is not necessary for the crash.
-- Story Mode loads -> mount/path layer can serve the exact original; FiveFury retail YDR reconstruction is implicated despite synthetic validation.
+### dev.15.3 strategy
+- enumerate every indexed asset whose logical path is below the selected nested RPF;
+- extract standalone bytes for the whole nested archive into staging;
+- verify the selected target still equals the original source hash;
+- replace the incomplete one-file directory only after the complete mirror is ready;
+- record the complete mirrored file set and per-file SHA-256;
+- first test with a source-identical target;
+- only after that loads, enable the preserved transformed target inside the complete archive;
+- rollback only after exact set/hash verification.
 
-### D4 rule
-No visual pipeline component is promoted from this test beyond what the evidence supports. A visible graphics replacement remains blocked until GTA can load a non-vanilla asset stably.
+### D4 interpretation
+- Complete identity mirror loads -> incomplete archive shadowing hypothesis supported; proceed to transformed full archive.
+- Complete identity mirror still crashes -> custom directory-archive mount remains incompatible/deeper bug; capture WER/minidump or replace RageOpenV route.
+- Transformed full archive loads and visible model changes -> first stable visible asset replacement D4 PASS.
 
 ## Rule
 
