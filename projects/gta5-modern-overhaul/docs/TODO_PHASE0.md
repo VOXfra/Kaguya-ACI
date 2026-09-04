@@ -40,10 +40,9 @@ Legend:
   - [x] PowerShell parser CI
   - [x] fake-GTA evidence collector smoke test
   - [x] reproducible crash-capture package + artifact
-- [ ] obtain real GTA crash minidump/exception/module from current user environment
-- [ ] analyze real dump and identify faulting module/offset
+- [ ] obtain real GTA crash minidump/exception/module if instability recurs
+- [ ] analyze real dump and identify faulting module/offset if captured
 - [ ] add production crash/exception capture to runtime only after stable loader path exists
-- [ ] log rotation / bounded size for future runtime logs
 - [x] startup environment/build report foundation — dev.8 real execution observed
 - [ ] full runtime dependency/build compatibility report
 
@@ -118,7 +117,7 @@ Legend:
 
 ## Native runtime adapter
 
-- [ ] complete native runtime adapter — BLOCKED ON LOADER/CRASH ISOLATION
+- [ ] complete native runtime adapter — GATED ON REPEATABLE D4 LOAD
   - [x] minimal Windows x64 ASI binary target — D3
   - [x] dev.8 real GTA process loads ASI and reaches exact `CHECKPOINT_OK`
   - [ ] dev.8 real GTA stability — **FAILED**
@@ -134,15 +133,16 @@ Legend:
   - [x] dev.10 CI gate: TLS Directory = 0
   - [x] dev.10 independent downloaded-binary inspection: Import/IAT/TLS/LoadConfig all zero
   - [x] dev.10 synthetic load/residency/unload — D3, run `33873756374`
-  - [ ] dev.10 real GTA stability — **FAILED**
-  - [x] stop speculative application/runtime changes after dev.10 failure
+  - [x] dev.10 initial real GTA crash observed
+  - [x] stop speculative application/runtime changes after initial dev.10 failure
   - [x] add controlled baseline tool that disables only VOX ASI by rename
   - [x] add external crash-module/minidump capture tooling
-  - [ ] run otherwise-identical GTA baseline with VOX ASI disabled — **CURRENT USER CHECKPOINT**
-  - [ ] if baseline stable: reproduce dev.10 crash with capture enabled
-  - [ ] if baseline crashes: investigate non-VOX mod/loader environment first
-  - [ ] obtain faulting module/exception/offset
-  - [ ] determine whether simple ASI presence/image/coexistence is root cause
+  - [x] dev.10 later real GTA load succeeds after user remove/restore cycle — **D4 provisional**
+  - [ ] repeat exact dev.10 successful cold launch at least twice without changing other plugins — **CURRENT USER CHECKPOINT**
+  - [ ] sustain Story Mode/free-roam for a meaningful interval with dev.10
+  - [ ] complete at least one clean normal exit + relaunch cycle
+  - [ ] if crash recurs: collect WER/minidump before any further runtime code change
+  - [ ] determine whether earlier failures were stale file state, intermittent loader coexistence or unrelated host instability
   - [ ] ScriptHookV SDK acquisition/documented dependency for native calls
   - [ ] ScriptHookV/game-thread registration adapter
   - [ ] one safe in-game tick
@@ -154,7 +154,7 @@ Legend:
 
 - dev.8 `CreateThread`-from-`DllMain` bootstrap: quarantined; do not reuse as production lifecycle.
 - dev.9 default MSVC CRT startup pattern: not accepted as a zero-work isolation baseline because CRT startup imports remained.
-- New application/gameplay code on top of dev.10: forbidden until baseline + external crash evidence identifies the failing layer.
+- Do not add gameplay/native functionality until dev.10 repeatability is proven.
 
 ## Packaging / rollback
 
@@ -169,11 +169,6 @@ Legend:
 - [x] dev.9 artifact upload — run `33872399873`
 - [x] dev.10 artifact upload — run `33873756374`
 - [x] crash-capture tooling package — run `33875088958`
-  - [x] parser validation
-  - [x] evidence collector smoke test
-  - [x] package build
-  - [x] package content verification
-  - [x] artifact upload
 - [ ] installer/automatic root detection for later public builds
 
 ## Story compatibility foundation
@@ -200,26 +195,27 @@ Runtime isolation checkpoints intentionally do not mutate story/world state. Sto
 
 ## Current checkpoint
 
-**Checkpoint 0D — controlled baseline + external crash evidence**
+**Checkpoint 0E — repeatable real GTA V Enhanced dev.10 stability**
 
-Automated tooling validation is complete:
+Known evidence:
 
-1. Crash capture PowerShell parse checks — PASS.
-2. Evidence collector fake-GTA smoke test — PASS.
-3. Crash-capture package build — PASS.
-4. Package extraction/required-file verification — PASS.
-5. Artifact upload — PASS.
-6. Exact GitHub Actions run: `33875088958`.
-7. User ZIP SHA-256: `30414e69d05283d8f326b289b38c87d372faf1e0d9588ad1604cabd4911ed27a`.
+1. dev.10 binary/toolchain validation — PASS.
+2. initial real-game attempts — CRASHED after successful ASI mapping.
+3. user later removed VOX, restored/re-added it, and GTA then appeared to load successfully.
+4. latest loader log confirms `VOXModernOverhaul.asi` maps successfully and plugin loading completes.
+5. latest ScriptHookV/RageOpenV logs show normal initialization.
 
-User test sequence:
+Required promotion test:
 
-1. Enable crash capture.
-2. Disable only `VOXModernOverhaul.asi` using the packaged rename tool.
-3. Launch the otherwise identical modded GTA V Enhanced installation.
-4. If it crashes, collect evidence immediately and leave VOX disabled.
-5. If stable, quit normally, restore dev.10 ASI, reproduce the crash and collect evidence.
-6. Upload the generated `VOX-Crash-Evidence-*.zip`.
-7. Do not change other plugins between baseline and VOX run.
+1. Leave every file/plugin exactly as it is now.
+2. Stay in Story Mode/free roam for roughly 10 minutes.
+3. Quit GTA normally.
+4. Launch GTA again without touching the mod folder.
+5. Reach Story Mode again and remain loaded for several minutes.
+6. Ideally perform one additional cold launch later with the same files.
+7. If any crash occurs, run the already prepared crash-evidence collector before replacing/removing anything.
 
-No runtime feature development resumes until this checkpoint identifies the failing layer.
+Decision:
+
+- **Repeatably stable:** promote loader path to stable D4 and immediately begin proper ScriptHookV/game-thread registration + one safe tick.
+- **Crash recurs:** keep architecture frozen, collect WER/minidump and identify the actual failing module/exception.
