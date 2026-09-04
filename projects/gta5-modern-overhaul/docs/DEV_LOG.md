@@ -2,6 +2,75 @@
 
 This is the precise engineering trace for the project. Patch notes summarize changes; this log records what was done, why, validation performed and what is still unproven.
 
+## 2026-09-04 — dev.15 real setup failure → dev.15.1 executable installer regression
+
+### User failure evidence
+The user ran the packaged `01_INSTALL_VISUAL_PROBE.cmd` from the real GTA V Enhanced root. The wrapper reached `Setup-And-Install-VisualProbe.ps1`, correctly identified:
+- GTA root `E:\Jeux Epic\GTAVEnhanced`;
+- the visual setup path;
+- the isolated venv destination `VOXModernOverhaul\tools\.venv-assets`.
+
+The venv was actually created. Immediately after creation, setup failed on the version query with Python syntax output equivalent to:
+
+`print(f{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro})`
+
+followed by PowerShell attempting `.Trim()` on null and aborting with exit code 1.
+
+No FiveFury install, GTA archive scan, generated YDR or `newmods` override had happened yet. This isolates the defect to the environment bootstrap boundary rather than FiveFury, Gen9 rewriting or RageOpenV.
+
+### Root cause
+The packaged line used a single-quoted PowerShell argument containing Python `f\"...\"`. Backslash is not PowerShell's escape character for a quote in this context. The literal/command-line conversion therefore did not preserve the intended Python source across `powershell.exe -> python.exe -c`.
+
+The previous CI only parsed the PowerShell source and separately ran Python/Gen9 tests. That proved syntax and the transformer, but **did not execute the packaged installer process boundary that failed for the user**. This was an insufficient regression gate.
+
+### dev.15.1 correction
+The version bootstrap now avoids nested quotes entirely:
+- numeric compatibility query: `import sys; print(sys.version_info.major * 100 + sys.version_info.minor)`;
+- display query: `import sys; print(sys.version.split()[0])`.
+
+Additional hardening:
+- venv output is wrapped into arrays before last-line indexing, preventing PowerShell scalar unrolling from turning a one-line result into character indexing;
+- existing venv Python is explicitly required to be >=3.11;
+- venv launcher arguments are assembled and splatted explicitly;
+- failed Python queries preserve output and fail with an explicit stage error;
+- `-EnvironmentOnly` runs the exact environment path and stops before retail GTA root/archive work.
+
+### Executable regression evidence — CI run 33893214202
+Run `33893214202`, commit `30de815cfeebe33e6361a6c3639396909819f37b`, used Windows Server 2025 / Python 3.11.9 and executed the real setup script with `-EnvironmentOnly` after deleting the CI venv.
+
+Observed log sequence:
+- `Creating isolated Python environment ...`;
+- `Asset Python: 3.11.9`;
+- pinned `fivefury==0.4.21` installed into that new venv;
+- packaged Gen9 transformer self-test printed `VOX_VISUAL_PROBE_SELF_TEST_OK`;
+- setup printed `VOX_VISUAL_ENVIRONMENT_SMOKE_OK`;
+- CI printed `PASS: real PowerShell -> venv -> version query -> FiveFury -> Gen9 self-test bootstrap executed.`
+
+The same run then retained all prior gates:
+- Windows/Linux core tests PASS;
+- ASan + UBSan PASS;
+- ASI PE/CRT boundary PASS;
+- two-process persistence create/restore PASS;
+- package version/readme boundary PASS;
+- artifact upload PASS.
+
+This is the regression type that would have caught the user's dev.15 failure before shipment.
+
+### Permanent process change
+`AGENT.md` now states that parser/syntax validation is insufficient evidence for user-facing installer/bootstrap scripts when the critical path can run in CI. Process invocation, quoting, venv/environment creation, version checks and dependency/self-test launch must be executed where applicable.
+
+### Persistence note from the same user turn
+The user reported deleting `world_state.v1` after dev.14 and then relaunching GTA, which recreated it. At the current stage this only resets the single proof `EntityKind::System` record, so there is no meaningful persistent world data to recover. This behavior must not become normal once real NPC/property/world state exists; future packages should preserve the VOX state unless an explicit reset/migration is intended.
+
+### Remaining D4 boundary
+The corrected environment/bootstrap path is D3 Windows executed. The actual retail path remains unproven until the user's installation performs:
+1. FiveFury scan of the local Enhanced archives;
+2. candidate extraction;
+3. Gen9 rewrite/validation;
+4. `newmods/platform` install;
+5. GTA launch with a visibly oversized streamed instance;
+6. hash-scoped rollback and return to vanilla appearance.
+
 ## 2026-09-04 — dev.14 real D4 persistence + dev.15 first visible Enhanced asset pipeline
 
 ### Real dev.14 evidence received
