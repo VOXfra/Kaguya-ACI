@@ -2,6 +2,42 @@
 
 This is the precise engineering trace for the project. Patch notes summarize changes; this log records what was done, why, validation performed and what is still unproven.
 
+## 2026-09-04 — dev.10 intermittent behavior: successful load after remove/restore
+
+### New user evidence
+- After prior dev.10 crashes, the user reports manually removing the VOX plugin, putting it back, and then successfully reaching a loaded GTA V Enhanced state.
+- `asiloader(3).log` shows the same plugin order as previous attempts: RageOpenV, ScriptHookVDotNet, TrainerV, then `VOXModernOverhaul.asi`, followed by `LOADER: Finished loading *.asi plugins`.
+- `ScriptHookV(3).log` reports `INIT: Success, game version is VER_EN_1_0_1158_13` and registers ScriptHookVDotNet/TrainerV normally.
+- `RageOpenV(3).log` reports successful initialization.
+- dev.10 itself remains intentionally silent because it has no imports, CRT, logging, GTA calls or ScriptHookV calls.
+
+### Interpretation
+- This proves the exact dev.10 loading concept is **not deterministically incompatible** with the current GTA V Enhanced + plugin environment.
+- It does **not** prove the earlier crashes were caused by a stale file, loader timing, plugin coexistence, or some unrelated game/mod condition.
+- It also does not yet prove sustained stability; one successful launch after multiple failed launches is insufficient for stable D4 promotion.
+- The runtime architecture therefore remains frozen at the zero-work checkpoint until repeatability is demonstrated.
+
+### Traceability decision
+- `dev.10` status changed from unconditional D4 stability failure to **D4 provisional**.
+- Patch notes advanced to `0.0.1-debug.2`.
+- Phase 0 current checkpoint changed from baseline/crash capture to **repeatable dev.10 stability**.
+- External WER crash capture remains available and should be used immediately if the failure recurs before files are changed again.
+
+### Promotion test
+To promote the loader path to stable D4:
+1. keep the exact current plugin folder unchanged;
+2. sustain Story Mode/free roam for roughly 10 minutes;
+3. quit normally;
+4. relaunch without modifying files and reach Story Mode again;
+5. repeat at least one additional launch if practical;
+6. on any recurring crash, collect WER/minidump evidence before replacing/removing the ASI.
+
+### Next implementation if stable
+- Acquire/document the exact ScriptHookV SDK/API boundary used by the Enhanced build.
+- Register the VOX runtime through the proper ScriptHookV script/game-thread lifecycle.
+- Add a one-tick, no-world-mutation runtime probe.
+- Do **not** resurrect the dev.8 free-thread-from-`DllMain` bootstrap.
+
 ## 2026-09-04 — dev.9 real crash, binary inspection, dev.10 no-CRT isolation
 
 ### User evidence received for dev.9
@@ -58,10 +94,10 @@ This is the precise engineering trace for the project. Patch notes summarize cha
 - Independent `objdump -x` inspection shows Import Directory = 0, IAT = 0, TLS = 0, Load Configuration = 0, Delay Import = 0, CLR = 0.
 - `.text` is only 6 bytes in the downloaded ASI; no imported DLL/function table exists.
 
-### Decision boundary
-- Real GTA test of dev.10 is required next.
-- If stable, MSVC CRT/default DLL startup becomes the primary dev.9 compatibility suspect; the production runtime will still use ScriptHookV/game-thread registration rather than returning to the dev.8 free-thread lifecycle.
-- If dev.10 still crashes, application code and CRT startup are both eliminated. Further application edits are forbidden until ASI-loader/file-image/plugin-coexistence behavior is isolated and an external crash-module/exception capture path is added.
+### Decision boundary at that time
+- Initial real GTA tests of dev.10 crashed, so application code and CRT startup were both eliminated as deterministic prerequisites.
+- External crash capture and controlled-baseline tooling were added instead of changing application logic again.
+- A later successful remove/restore launch is recorded in the newer section above and changes dev.10 classification to provisional/intermittent rather than deterministically failing.
 
 ## 2026-09-04 — Real GTA dev.8 crash + dev.9 inert isolation
 
