@@ -2,6 +2,123 @@
 
 This is the precise engineering trace for the project. Patch notes summarize changes; this log records what was done, why, validation performed and what is still unproven.
 
+## 2026-09-04 — dev.12 real D4 pass + dev.13 isolated C++ core bridge
+
+### Real dev.12 evidence received
+The user returned four files from the real GTA V Enhanced installation:
+- `runtime_game_thread.log`
+- `asiloader(5).log`
+- `RageOpenV(5).log`
+- `ScriptHookV(5).log`
+
+Observed facts:
+- ASI loader maps `VOXModernOverhaul.asi` and completes plugin enumeration.
+- RageOpenV reports successful initialization.
+- ScriptHookV reports build `v3889.0/1158.13`, identifies `VER_EN_1_0_1158_13` and explicitly registers `VOXModernOverhaul.asi`.
+- `runtime_game_thread.log` contains `VOX_SCRIPT_MAIN_ENTER`.
+- The same log contains `VOX_SCRIPT_MAIN_RESUMED_AFTER_WAIT`, proving the ScriptHookV script yielded and resumed rather than only executing during load.
+- Exactly five fresh `VOX_SCRIPT_HEARTBEAT` markers were returned.
+- User reports the game launches and remains stable.
+
+Conclusion: dev.12 is promoted to the first **D4 real active runtime**. The dev.11 real failure was not a scheduler failure; the export-resolution fallback in dev.12 fixed the registration boundary sufficiently for the user's current ScriptHookV build.
+
+### Why dev.13 splits the runtime
+Keeping the full long-lived project in the tiny no-CRT ASI would make normal C++ features unnecessarily difficult and would tempt future code back into the loader callback. The selected production architecture is therefore:
+
+1. `VOXModernOverhaul.asi` stays deliberately tiny and CRT-free.
+2. It owns only ASI load safety, ScriptHookV discovery/registration, scheduler entry and host callbacks.
+3. `VoxScriptMain` yields through `scriptWait(0)` and only after that resume loads `VOXModernCore.dll`.
+4. `VOXModernCore.dll` is a normal C++20 DLL using the tested `vox_core` library.
+5. ASI↔Core communication uses a small versioned plain-C ABI so implementation details do not leak across the boundary.
+
+This preserves the safety lesson from dev.8/dev.9 while giving the actual project a normal C++ environment for persistence, entity systems, events and future GTA adapters.
+
+### Core API added
+Added `CoreApi.h` with:
+- `VOX_CORE_API_VERSION`
+- `VoxHostApi`
+- host log callback
+- `VoxCoreStart`
+- `VoxCoreTick`
+- `VoxCoreStop`
+
+`VoxCoreStart` validates struct size, API version and callback presence. It refuses a second start, then allocates one test ID through `EntityIdGenerator`. Expected proof markers:
+- `VOX_CORE_START`
+- `VOX_CORE_ENTITY_ID=1`
+
+The ASI resolves all required core exports and only declares the bridge ready after successful `VoxCoreStart`:
+- `VOX_CORE_BRIDGE_READY`
+
+`VoxCoreTick` records the first five core ticks:
+- `VOX_CORE_TICK=1` through `VOX_CORE_TICK=5`
+
+No persistent registry/database or GTA native call is present yet; the ID allocation is strictly a bridge proof.
+
+### Loader-context boundary
+- `VOXModernCore.dll` is **not** loaded from `VoxDllEntry` / the ASI loader callback.
+- The ASI remains CRT-free.
+- `LoadLibraryW(VOXModernCore.dll)` occurs only from `VoxScriptMain` after the real ScriptHookV scheduling boundary has already been crossed and resumed.
+- Core export failure, API rejection or missing DLL fails closed and writes explicit markers instead of continuing in an ambiguous state.
+
+### Synthetic checkpoint changes
+The Windows smoke host now requires:
+- core DLL physically present;
+- ScriptHook export-drift fallback still working;
+- ASI registration;
+- ScriptMain entry;
+- wait/resume;
+- `VOX_CORE_START`;
+- `VOX_CORE_ENTITY_ID=1`;
+- `VOX_CORE_BRIDGE_READY`;
+- at least five core ticks;
+- at least five ScriptHook heartbeats.
+
+CI run `33881321657` passed:
+- Windows core build/tests;
+- Linux core build/tests;
+- ASan + UBSan;
+- ASI custom PE/CRT boundary;
+- fallback ABI path;
+- ScriptHook registration and scheduler proof;
+- core DLL load/export/start/tick handshake;
+- first EntityId marker;
+- package creation and content verification.
+
+### Packaging trace issue caught before delivery
+The first `dev.13` artifact from run `33881321657` was structurally correct and contained:
+- `VOXModernOverhaul.asi`
+- `VOXModernCore.dll`
+- config
+- `BUILD_INFO.txt`
+- `README_FIRST_TEST.txt`
+
+Hashes in that artifact matched `BUILD_INFO.txt`, and CI package validation passed. However, manual inspection before user delivery found that `README_FIRST_TEST.txt` still described dev.12. This was a trace/documentation defect, not a binary defect.
+
+Action:
+- do **not** deliver that first dev.13 artifact as the final user checkpoint;
+- update packaged instructions to Checkpoint 0G/dev.13;
+- update PATCHNOTES, STATUS and TODO_PHASE0;
+- rebuild from the documented branch head so package commit/hash and instructions describe the same state.
+
+### Current gate
+The next user checkpoint is dev.13 real D4 core bridge validation. Required runtime markers:
+- `VOX_SCRIPT_MAIN_ENTER`
+- `VOX_SCRIPT_MAIN_RESUMED_AFTER_WAIT`
+- `VOX_CORE_START`
+- `VOX_CORE_ENTITY_ID=1`
+- `VOX_CORE_BRIDGE_READY`
+- five core tick markers
+- five ScriptHook heartbeat markers
+
+No world mutation is attached until this passes.
+
+### Work immediately after dev.13 D4
+1. Persistent Entity Registry.
+2. Queued/deferred game-thread EventBus adapter.
+3. First atomic/versioned persistent-state file including ID high-water mark.
+4. Read-only mission-active detector and Story Compatibility skeleton.
+5. In parallel, start the Enhanced asset locator/override pipeline so the next major checkpoint can begin producing visible graphical changes rather than remaining runtime-only.
+
 ## 2026-09-04 — dev.11 ScriptHookV game-thread lifecycle checkpoint
 
 ### Trigger / user validation
@@ -87,18 +204,7 @@ The fake ScriptHookV is never included in the GTA user package; package verifica
 - fake ScriptHookV redistribution guard: PASS.
 
 ### Current evidence boundary
-- The ScriptHookV lifecycle is D3 Windows synthetic, not yet D4 real GTA execution.
-- The next user package is `0.0.1-dev.11`.
-- Required real-game evidence is `VOXModernOverhaul/runtime_game_thread.log` containing ENTER, RESUMED_AFTER_WAIT and five fresh HEARTBEAT lines while GTA remains stable.
-- Persistence, game natives, Entity Registry wiring and mission detection remain intentionally disconnected until this gate passes.
-
-### Next work after real D4 pass
-1. Persistent Entity Registry.
-2. Queued/deferred EventBus adapter so non-game threads never call GTA APIs directly.
-3. First atomic versioned persistent-state file including EntityId high-water mark.
-4. Read-only mission-active detector.
-5. Story Compatibility Manager skeleton / canonical-overlay interface.
-6. Begin Enhanced asset locator/override tooling for the visual vertical slice in parallel once runtime boundaries are proven.
+- At dev.11 this lifecycle was D3 synthetic only; the later real dev.11 test failed at registration and dev.12 subsequently fixed it.
 
 ## 2026-09-04 — dev.10 intermittent behavior: successful load after remove/restore
 
