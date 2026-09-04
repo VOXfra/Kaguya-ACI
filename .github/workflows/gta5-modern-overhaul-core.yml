@@ -96,7 +96,17 @@ jobs:
           $tlsSize = [BitConverter]::ToUInt32($bytes, $dataDirectories + (9 * 8) + 4)
           if ($tlsRva -ne 0 -or $tlsSize -ne 0) { throw "ASI unexpectedly contains a TLS directory." }
 
-          $imports = (& dumpbin /nologo /imports $asi) -join "`n"
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path -LiteralPath $vswhere -PathType Leaf)) { throw "vswhere.exe not found." }
+          $vsInstall = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
+          if ([string]::IsNullOrWhiteSpace($vsInstall)) { throw "No Visual Studio installation with x64 VC tools was found." }
+          $dumpbinCandidates = @(Get-ChildItem -LiteralPath (Join-Path $vsInstall 'VC\Tools\MSVC') -Filter dumpbin.exe -File -Recurse | Where-Object { $_.FullName -match 'Hostx64\\x64\\dumpbin\.exe$' } | Sort-Object FullName -Descending)
+          if ($dumpbinCandidates.Count -lt 1) { throw "Could not locate x64 dumpbin.exe under '$vsInstall'." }
+          $dumpbin = $dumpbinCandidates[0].FullName
+          Write-Host "Using dumpbin: $dumpbin"
+
+          $imports = (& $dumpbin /nologo /imports $asi) -join "`n"
+          if ($LASTEXITCODE -ne 0) { throw "dumpbin /imports failed with exit code $LASTEXITCODE" }
           if ($imports -notmatch '(?i)KERNEL32\.dll') { throw "ASI does not import KERNEL32.dll as expected." }
           if ($imports -match '(?i)VCRUNTIME|MSVCP|api-ms-win-crt|ucrtbase|ScriptHookV\.dll') {
             throw "ASI import boundary violation: CRT/C++ runtime or direct ScriptHookV import detected.`n$imports"
