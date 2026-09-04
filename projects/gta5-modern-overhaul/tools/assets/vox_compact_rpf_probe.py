@@ -534,7 +534,7 @@ def rollback(gta_root: Path) -> int:
 
 
 def self_test() -> int:
-    from fivefury import Vector2, Vector3, YdrGen9Shader, YdrMeshInput, create_ydr, read_ydr
+    from fivefury import Vector2, Vector3, YdrGen9Shader, YdrMeshInput, create_ydr
     from fivefury.rpf import RpfArchive
 
     outer, nested, target, relative = compact_archive_info(
@@ -553,19 +553,18 @@ def self_test() -> int:
         root = Path(temp)
         source_ydr = root / "source.ydr"
         transformed_ydr = root / "transformed.ydr"
-        mesh = YdrMeshInput(
+        source_mesh = YdrMeshInput(
             positions=[Vector3(0.0, 0.0, 0.0), Vector3(1.0, 0.0, 0.0), Vector3(0.0, 1.0, 0.0)],
             indices=[0, 1, 2],
             texcoords=[[Vector2(), Vector2(1.0, 0.0), Vector2(0.0, 1.0)]],
         )
-        create_ydr(meshes=[mesh], shader=YdrGen9Shader.DEFAULT, name="compact_probe", version=159).save(source_ydr)
-        drawable = read_ydr(source_ydr)
-        first_mesh = next(iter(drawable.iter_meshes()))
-        for pos in first_mesh.positions:
-            pos.x *= 1.5
-            pos.y *= 1.5
-            pos.z *= 1.5
-        drawable.save(transformed_ydr)
+        transformed_mesh = YdrMeshInput(
+            positions=[Vector3(0.0, 0.0, 0.0), Vector3(1.5, 0.0, 0.0), Vector3(0.0, 1.5, 0.0)],
+            indices=[0, 1, 2],
+            texcoords=[[Vector2(), Vector2(1.0, 0.0), Vector2(0.0, 1.0)]],
+        )
+        create_ydr(meshes=[source_mesh], shader=YdrGen9Shader.DEFAULT, name="compact_probe", version=159).save(source_ydr)
+        create_ydr(meshes=[transformed_mesh], shader=YdrGen9Shader.DEFAULT, name="compact_probe", version=159).save(transformed_ydr)
         source_hash = sha256_file(source_ydr)
         transformed_hash = sha256_file(transformed_ydr)
         if source_hash == transformed_hash:
