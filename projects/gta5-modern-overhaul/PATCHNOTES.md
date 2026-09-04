@@ -2,6 +2,27 @@
 
 All user-visible, architectural and tooling changes are recorded here.
 
+## [0.0.1-debug.2] — 2026-09-04
+
+### dev.10 successful real-game load observed after remove/restore cycle
+- After previous real-game crashes with dev.10, the user manually removed the VOX ASI, restored/re-added it, and reports that GTA V Enhanced then appeared to load successfully.
+- New `asiloader(3).log` confirms `VOXModernOverhaul.asi` was mapped successfully after RageOpenV, ScriptHookVDotNet and TrainerV and the loader completed plugin enumeration.
+- New `ScriptHookV(3).log` reports successful initialization for `VER_EN_1_0_1158_13` and registration of ScriptHookVDotNet/TrainerV.
+- New `RageOpenV(3).log` reports successful initialization.
+- No VOX runtime log is expected because dev.10 remains the zero-import/no-CRT isolation image.
+
+### Classification
+- dev.10 is no longer classified as "always crashes".
+- Current state is **D4 load observed + provisional real-game stability success on one launch**.
+- Root cause of the earlier crashes remains unresolved. Plausible remaining categories include transient loader/plugin coexistence state, stale/replaced file state, or unrelated host/mod instability; none is declared proven.
+- No production runtime/gameplay code is reintroduced yet.
+
+### Next validation gate
+- Re-run the exact same dev.10 installation without changing any other plugin.
+- Require repeated successful starts plus sustained Story Mode/free-roam runtime before promoting the ASI load path to stable D4.
+- Keep external WER crash capture tooling available so any recurrence yields an exception/module/minidump instead of another ambiguous text-log stop.
+- Only after repeatability is proven will development proceed to the ScriptHookV/game-thread lifecycle and first safe in-game tick.
+
 ## [0.0.1-debug.1] — 2026-09-04
 
 ### dev.10 real-game result
@@ -69,10 +90,10 @@ All user-visible, architectural and tooling changes are recorded here.
 - GTA-ready ZIP SHA-256: `6ba7a17a3c7958cff0224b29895a8408bbf480e3b47dc7e59c7f99a33fcb1d6a`.
 - GitHub Actions outer artifact digest: `sha256:09e7212f37e6ebedca7e7ada9be9e4805984ec352fa7238e7d59c21a47087cb2`.
 
-### Real GTA result
-- **FAILED D4 stability.** The user reports the game still crashes with dev.10.
-- The loader log confirms the ASI was mapped successfully; adjacent ScriptHookV/RageOpenV startup logs show success but still contain no crash module/exception.
-- Investigation therefore moved to controlled baseline + external crash capture rather than another speculative runtime build.
+### Real GTA result history
+- Initial real-game attempts crashed after successful ASI mapping.
+- A later remove/restore cycle produced at least one successful load; see `0.0.1-debug.2`.
+- Therefore the loader path is treated as intermittent/unproven rather than permanently failed.
 
 ## [0.0.1-dev.9] — 2026-09-04
 
