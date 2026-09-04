@@ -21,6 +21,7 @@
 namespace {
 
 constexpr char kRuntimeVersion[] = "0.0.1-dev.8";
+constexpr wchar_t kEnhancedProcessName[] = L"gta5_enhanced.exe";
 constexpr wchar_t kDataDirectoryName[] = L"VOXModernOverhaul";
 constexpr wchar_t kConfigRelativePath[] = L"config\\core.cfg";
 constexpr wchar_t kLogRelativePath[] = L"logs\\bootstrap.log";
@@ -32,6 +33,11 @@ std::optional<std::filesystem::path> CurrentExecutablePath() {
         return std::nullopt;
     }
     return std::filesystem::path{std::wstring_view{buffer.data(), static_cast<std::size_t>(length)}};
+}
+
+bool IsEnhancedProcess(const std::filesystem::path& executablePath) {
+    const std::wstring filename = executablePath.filename().wstring();
+    return CompareStringOrdinal(filename.c_str(), -1, kEnhancedProcessName, -1, TRUE) == CSTR_EQUAL;
 }
 
 std::optional<std::string> ReadTextFile(const std::filesystem::path& path) {
@@ -78,13 +84,19 @@ DWORD RunBootstrap() {
     logger.Write(vox::core::LogLevel::Info, std::string{"VOX Modern Overhaul bootstrap "} + kRuntimeVersion);
     logger.Write(vox::core::LogLevel::Info, std::string{"process="} + Utf8Path(*executablePath));
 
+    if (!IsEnhancedProcess(*executablePath)) {
+        logger.Write(vox::core::LogLevel::Error,
+                     "Current process is not gta5_enhanced.exe. Runtime disabled without touching game state.");
+        return 0;
+    }
+
     const auto install = vox::core::ProbeEnhancedInstall(gameRoot);
     logger.Write(vox::core::LogLevel::Info,
                  std::string{"enhanced_probe="} + std::string{vox::core::ToString(install.status)});
 
     if (!install.valid()) {
         logger.Write(vox::core::LogLevel::Error,
-                     "Unsupported process/install. Runtime disabled without touching game state.");
+                     "Enhanced install validation failed. Runtime disabled without touching game state.");
         return 0;
     }
 
@@ -128,9 +140,13 @@ DWORD RunBootstrap() {
                      "config key diagnostic_bootstrap_enabled must be true or false");
         return 0;
     }
+    if (!*enabled) {
+        logger.Write(vox::core::LogLevel::Info,
+                     "diagnostic_bootstrap_enabled=false; checkpoint disabled by configuration");
+        return 0;
+    }
 
-    logger.Write(vox::core::LogLevel::Info,
-                 std::string{"diagnostic_bootstrap_enabled="} + (*enabled ? "true" : "false"));
+    logger.Write(vox::core::LogLevel::Info, "diagnostic_bootstrap_enabled=true");
     logger.Write(vox::core::LogLevel::Info,
                  "CHECKPOINT_OK: ASI loaded in GTA V Enhanced; no gameplay hooks or memory patches are active.");
     return 0;
