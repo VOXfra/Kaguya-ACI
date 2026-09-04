@@ -1,5 +1,6 @@
 param(
-    [double]$Scale = 1.65
+    [double]$Scale = 1.65,
+    [switch]$EnvironmentOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -35,7 +36,9 @@ function Resolve-PythonLauncher {
         if ($null -eq $command) { continue }
         try {
             $args = @($candidate.Prefix) + @('-c', 'import sys; print(sys.version_info.major * 100 + sys.version_info.minor)')
-            $versionCodeText = (& $command.Source @args 2>$null | Select-Object -Last 1).Trim()
+            $lines = @(& $command.Source @args 2>$null)
+            if ($LASTEXITCODE -ne 0 -or $lines.Count -lt 1) { continue }
+            $versionCodeText = $lines[-1].ToString().Trim()
             $versionCode = 0
             if ([int]::TryParse($versionCodeText, [ref]$versionCode) -and $versionCode -ge 311) {
                 return @{ File = $command.Source; Prefix = @($candidate.Prefix) }
@@ -47,20 +50,41 @@ function Resolve-PythonLauncher {
     return $null
 }
 
-Write-Step 'VOX dev.15 visual asset pipeline setup started.'
+function Invoke-CheckedPython {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments,
+        [Parameter(Mandatory = $true)]
+        [string]$FailureMessage
+    )
+
+    $output = @(& $VenvPython @Arguments 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        if ($output.Count -gt 0) {
+            $output | ForEach-Object { Write-Host $_ }
+        }
+        throw "$FailureMessage Exit code: $LASTEXITCODE."
+    }
+    return $output
+}
+
+Write-Step 'VOX dev.15.1 visual asset pipeline setup started.'
 Write-Step "GTA root: $GtaRoot"
 
-if (-not (Test-Path -LiteralPath $Exe -PathType Leaf)) {
-    throw "GTA5_Enhanced.exe was not found in '$GtaRoot'. Keep the VOXModernOverhaul folder directly inside the GTA V Enhanced root."
-}
-if (-not (Test-Path -LiteralPath $RageOpenV -PathType Leaf)) {
-    throw 'RageOpenV.asi is required and was not found. This checkpoint will not modify GTA archives directly.'
-}
 if (-not (Test-Path -LiteralPath $ProbeScript -PathType Leaf)) {
     throw "Missing visual probe script: $ProbeScript"
 }
 if ($Scale -le 1.0 -or $Scale -gt 3.0) {
     throw 'Scale must be > 1.0 and <= 3.0.'
+}
+
+if (-not $EnvironmentOnly) {
+    if (-not (Test-Path -LiteralPath $Exe -PathType Leaf)) {
+        throw "GTA5_Enhanced.exe was not found in '$GtaRoot'. Keep the VOXModernOverhaul folder directly inside the GTA V Enhanced root."
+    }
+    if (-not (Test-Path -LiteralPath $RageOpenV -PathType Leaf)) {
+        throw 'RageOpenV.asi is required and was not found. This checkpoint will not modify GTA archives directly.'
+    }
 }
 
 if (-not (Test-Path -LiteralPath $VenvPython -PathType Leaf)) {
@@ -69,13 +93,31 @@ if (-not (Test-Path -LiteralPath $VenvPython -PathType Leaf)) {
         throw 'Python 3.11 or newer was not found. Install Python 3.11+ with the Windows Python launcher, then run this file again.'
     }
     Write-Step "Creating isolated Python environment at $Venv"
-    & $launcher.File @($launcher.Prefix) -m venv $Venv
+    $venvArgs = @($launcher.Prefix) + @('-m', 'venv', $Venv)
+    & $launcher.File @venvArgs
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $VenvPython -PathType Leaf)) {
         throw "Python venv creation failed with exit code $LASTEXITCODE."
     }
 }
 
-$venvVersion = (& $VenvPython -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")').Trim()
+$versionCodeOutput = Invoke-CheckedPython -Arguments @('-c', 'import sys; print(sys.version_info.major * 100 + sys.version_info.minor)') -FailureMessage 'Could not query the isolated Python version.'
+if ($versionCodeOutput.Count -lt 1) {
+    throw 'The isolated Python version query returned no output.'
+}
+$versionCodeText = $versionCodeOutput[-1].ToString().Trim()
+$versionCode = 0
+if (-not [int]::TryParse($versionCodeText, [ref]$versionCode) -or $versionCode -lt 311) {
+    throw "The isolated Python environment must be Python 3.11 or newer; got version code '$versionCodeText'. Delete VOXModernOverhaul\tools\.venv-assets and run setup again after installing Python 3.11+."
+}
+
+$versionOutput = Invoke-CheckedPython -Arguments @('-c', 'import sys; print(sys.version.split()[0])') -FailureMessage 'Could not read the isolated Python version string.'
+if ($versionOutput.Count -lt 1) {
+    throw 'The isolated Python version string query returned no output.'
+}
+$venvVersion = $versionOutput[-1].ToString().Trim()
+if ([string]::IsNullOrWhiteSpace($venvVersion)) {
+    throw 'The isolated Python version string was empty.'
+}
 Write-Step "Asset Python: $venvVersion"
 
 Write-Step 'Installing pinned FiveFury 0.4.21 inside the isolated VOX environment.'
@@ -90,6 +132,12 @@ if ($LASTEXITCODE -ne 0) {
     throw "Visual probe self-test failed with exit code $LASTEXITCODE. Nothing was installed into newmods."
 }
 
+if ($EnvironmentOnly) {
+    Write-Step 'Environment-only installer smoke completed successfully.'
+    Write-Host 'VOX_VISUAL_ENVIRONMENT_SMOKE_OK'
+    exit 0
+}
+
 Write-Step 'Scanning the local Enhanced installation and building one reversible oversized-asset proof.'
 & $VenvPython $ProbeScript install --gta-root $GtaRoot --scale $Scale
 if ($LASTEXITCODE -ne 0) {
@@ -100,7 +148,7 @@ $Report = Join-Path $LogDir 'visual_probe_report.txt'
 Write-Step 'Visual probe installed successfully.'
 Write-Host ''
 Write-Host '============================================================'
-Write-Host ' VOX DEV.15 VISUAL PROBE INSTALLED'
+Write-Host ' VOX DEV.15.1 VISUAL PROBE INSTALLED'
 Write-Host '============================================================'
 Write-Host "Report: $Report"
 Write-Host 'Launch GTA V Enhanced and enter Story Mode.'
