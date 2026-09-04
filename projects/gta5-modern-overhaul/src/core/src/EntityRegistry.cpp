@@ -85,7 +85,6 @@ std::size_t EntityRegistry::size() const {
 }
 
 EntityId::ValueType EntityRegistry::next_entity_id() const noexcept {
-    std::scoped_lock lock{mutex_};
     return generator_.next_value();
 }
 
