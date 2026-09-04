@@ -1,105 +1,75 @@
-VOX GTA V MODERN OVERHAUL — CHECKPOINT 0I.3 / COMPLETE NESTED-RPF MIRROR
-Version: 0.0.1-dev.15.3
+VOX GTA V MODERN OVERHAUL — CHECKPOINT 0I.4 / REAL COMPACT RPF
+Version: 0.0.1-dev.15.4
 
-PURPOSE
-Dev.15.2 established a decisive new fact in the user's real GTA V Enhanced installation:
-- the active loose prop_roadcone02a.ydr was replaced with a byte-for-byte copy of Rockstar's extracted original;
-- the path remained newmods/platform/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr;
-- Story Mode still crashed.
+WHY DEV.15.3 IS RETIRED
+The complete directory mirror fixed the missing-member crash mechanism enough to let Story Mode run, but the user's real game dropped to roughly 5 FPS. That makes the directory-as-RPF approach technically informative but unusable.
 
-Therefore the FiveFury-modified YDR bytes are not required to trigger this crash. The previous one-file RageOpenV directory-archive layout is the primary suspect.
+The returned loader/runtime logs from the later attempts still show the normal VOX lifecycle completing: ASI loading, ScriptHookV registration, Core start, persistence save, game-thread queue dispatch and five Core/ScriptHook ticks. RageOpenV's release log still exposes only its initialization line, so the logs do not identify a deeper runtime exception.
 
-ROOT-CAUSE HYPOTHESIS BEING TESTED
-RageOpenV's custom-device hook treats a directory whose name ends in .rpf as the archive itself. The old probe created:
+DEV.15.4 STRATEGY
+RageOpenV only forces archive type 2 when the .rpf path resolves to a DIRECTORY. A real .rpf FILE is left on the normal archive-open path.
 
-newmods/platform/levels/gta5/props/roadside/v_construction.rpf/
-    prop_roadcone02a.ydr
+Dev.15.4 therefore removes the expensive virtual-directory archive and installs a real compact nested RPF file at:
 
-That directory can therefore shadow the complete Rockstar v_construction.rpf instead of overlaying only one member. If GTA requests any other resource from v_construction.rpf, the one-file directory cannot provide it. This explains why even a byte-identical prop_roadcone02a.ydr can still crash Story Mode.
+newmods/platform/levels/gta5/props/roadside/v_construction.rpf
 
-WHAT DEV.15.3 DOES
-Dev.15.3 keeps the same proven runtime and visual-tool environment but changes the RageOpenV archive strategy.
+The identity file is extracted directly from the user's own x64f.rpf. It is not rebuilt for the first test. The selected prop_roadcone02a.ydr inside it is cross-checked against the source SHA-256 already recorded by dev.15.1.
 
-05_INSTALL_FULL_ARCHIVE_IDENTITY.cmd:
-- requires the existing dev.15.2 identity probe state;
-- rescans/reuses the user's local GTA V Enhanced index;
-- identifies the complete nested RPF containing the selected model;
-- extracts EVERY indexed member below that nested RPF from the user's own installation using standalone archive bytes;
-- builds the complete archive as a staging directory;
-- verifies the selected target still exactly matches source_sha256;
-- refuses to proceed if the current incomplete directory contains any unowned extra file;
-- swaps the one-file directory for the complete mirrored archive directory;
-- records every mirrored relative path and SHA-256 in the manifest;
-- leaves prop_roadcone02a.ydr byte-identical to Rockstar for the first real-game test.
+No Rockstar RPF/YDR is bundled in this package.
 
-If that identity test loads Story Mode, dev.15.3 also contains:
-
-06_ENABLE_SCALED_PROBE.cmd
-
-This keeps the complete mirrored archive in place and replaces ONLY prop_roadcone02a.ydr with the preserved 1.65x transformed YDR from dev.15.1. The manifest updates the target hash so the full archive remains safely removable.
-
-A dedicated rollback is included:
-
-07_ROLLBACK_FULL_ARCHIVE_PROBE.cmd
-
-Rollback compares the complete file set and SHA-256 of every mirrored member against the manifest before recursively deleting the VOX-owned mirrored archive. Any missing, added or changed file causes rollback to refuse deletion.
-
-INSTALL DEV.15.3
+FIRST TEST — REAL RPF, COMPLETELY VANILLA CONTENT
 1. Close GTA V Enhanced completely.
-2. Extract this ZIP into the GTA V Enhanced root containing GTA5_Enhanced.exe.
-3. Replace/merge the included files.
-4. KEEP VOXModernOverhaul\visual_probe and its work directory from dev.15.1/dev.15.2.
-5. KEEP VOXModernOverhaul\tools\.venv-assets.
-6. Do not rerun 01_INSTALL_VISUAL_PROBE.cmd.
-7. Do not rerun 04_ISOLATE_VISUAL_CRASH.cmd.
+2. Extract dev.15.4 over the existing installation.
+3. KEEP VOXModernOverhaul\visual_probe and VOXModernOverhaul\tools\.venv-assets.
+4. Do NOT run 01, 04, 05, 06 or 07.
+5. Run:
 
-FIRST TEST — COMPLETE ARCHIVE, VANILLA TARGET
-Run:
-VOXModernOverhaul\tools\assets\05_INSTALL_FULL_ARCHIVE_IDENTITY.cmd
+VOXModernOverhaul\tools\assets\08_INSTALL_COMPACT_RPF_IDENTITY.cmd
 
-Expected success markers:
-VOX_ARCHIVE_MIRROR_SELF_TEST_OK
-VOX_FULL_ARCHIVE_IDENTITY_INSTALLED
-VOX_FULL_ARCHIVE_FILES=<non-zero count>
+The installer validates ownership of the previous VOX virtual archive, extracts the original nested v_construction.rpf from the user's x64f.rpf, verifies that its prop_roadcone02a.ydr matches the preserved source hash, stages the exact RPF bytes, then atomically replaces the directory-form archive with the real RPF file.
 
-The report should say:
-status=FULL_ARCHIVE_IDENTITY_INSTALLED
+Expected markers:
+VOX_COMPACT_RPF_IDENTITY_INSTALLED
+VOX_COMPACT_RPF_PATH=newmods/platform/levels/gta5/props/roadside/v_construction.rpf
+VOX_COMPACT_RPF_MEMBERS=<non-zero>
+VOX_COMPACT_RPF_SHA256=<sha256>
 
-Then launch GTA V Enhanced and enter Story Mode.
+Then launch Story Mode.
 
-There should be NO visual difference yet.
+There should be NO visual difference. Check only:
+- does Story Mode load;
+- are FPS back to the normal range.
 
-OUTCOME A — STORY MODE LOADS
-Close GTA cleanly. This strongly supports the incomplete-directory shadowing hypothesis.
+If it crashes or remains around 5 FPS, do NOT enable the transformed probe. Return the fresh logs/report and the compact-RPF route is rejected.
 
-Then run:
-VOXModernOverhaul\tools\assets\06_ENABLE_SCALED_PROBE.cmd
+SECOND TEST — ONLY AFTER IDENTITY IS STABLE AND FAST
+Close GTA, then run:
+
+VOXModernOverhaul\tools\assets\09_ENABLE_COMPACT_SCALED_PROBE.cmd
+
+This rebuilds the compact copy from the preserved identity RPF and changes only prop_roadcone02a.ydr at the standalone-member level. CI requires every other RPF member path and standalone SHA-256 to remain unchanged.
 
 Expected marker:
-VOX_FULL_ARCHIVE_TRANSFORMED_INSTALLED
+VOX_COMPACT_RPF_TRANSFORMED_INSTALLED
 
-Launch Story Mode again. The chosen prop should now be visibly oversized while every other v_construction.rpf member remains available from the complete mirror.
-
-If that works, the RageOpenV mount strategy is validated and the project can finally retire the diagnostic scaling proof and move to meaningful graphics work.
-
-OUTCOME B — STORY MODE STILL CRASHES WITH COMPLETE IDENTITY ARCHIVE
-Do not run 06_ENABLE_SCALED_PROBE.cmd.
-At that point the problem is deeper than a missing-member archive shadow. The next step is WER/minidump capture around RageOpenV's custom directory-archive mount or abandoning this mount route for another non-destructive override strategy.
+Then launch Story Mode. FPS should remain normal and prop_roadcone02a should be visibly about 1.65x oversized.
 
 ROLLBACK
-After either test, when requested, run:
-VOXModernOverhaul\tools\assets\07_ROLLBACK_FULL_ARCHIVE_PROBE.cmd
+Run:
 
-The full mirrored archive is removed only after exact file-set and per-file hash verification.
+VOXModernOverhaul\tools\assets\10_ROLLBACK_COMPACT_RPF_PROBE.cmd
 
-SAFETY / OWNERSHIP
-- No Rockstar RPF is modified in place.
-- No Rockstar YDR/RPF is bundled in this package.
-- All mirrored resource bytes come from the user's own installed game at test time.
-- The current archive destination must contain only the known dev.15.2 identity file before conversion; otherwise installation fails closed.
-- Complete mirror creation occurs in staging before the active directory is replaced.
-- Rollback refuses recursive deletion if any mirrored member was added, removed or changed.
-- The persistent VOX world_state.v1 is unrelated and should be preserved.
+The real RPF file is removed only if its active SHA-256 still matches the manifest. Local source/generated working data is kept so diagnosis does not force another full extraction pass.
 
-NO D4 CLAIM YET
-Dev.15.3 is still an isolation checkpoint until the user's real GTA proves either the complete identity mirror or the transformed complete mirror loads successfully.
+SAFETY
+- Rockstar archives are never edited in place.
+- No Rockstar RPF/YDR is shipped.
+- dev.15.3 directory members are hash-verified before automatic migration.
+- Migration builds and validates the real RPF before swapping the active path.
+- If the final swap fails, the previous virtual archive is restored.
+- The transformed compact RPF is reopened and checked for the same member path set.
+- Every non-target standalone member hash must remain identical during rebuild.
+- world_state.v1 is unrelated; keep it.
+
+CURRENT D4 BOUNDARY
+The directory-mirror route is rejected for production because of real ~5 FPS performance. The compact real-RPF route is D3 tooling until the user's real GTA proves normal performance/stability with identity content, then stable rendering with the transformed target.
