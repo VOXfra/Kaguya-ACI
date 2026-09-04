@@ -2,6 +2,29 @@
 
 All user-visible, architectural and tooling changes are recorded here.
 
+## [0.0.1-dev.15.3] — 2026-09-04
+
+### dev.15.2 real outcome — source-identical YDR still crashes
+- The user confirmed Story Mode still crashes after dev.15.2 replaces the transformed `prop_roadcone02a.ydr` with a byte-for-byte copy of the extracted Rockstar original at the exact same `newmods/platform` path.
+- This means the FiveFury-modified YDR bytes are not required to trigger the crash and shifts the primary suspect from YDR reconstruction to the RageOpenV directory-archive layout.
+
+### Root-cause hypothesis from RageOpenV source
+- RageOpenV mounts `newmods/platform/` as `platform:/` and, when an `.rpf` path resolves to a custom-device directory, changes the archive-open type so that directory is treated as the archive.
+- The previous probe created only `v_construction.rpf/prop_roadcone02a.ydr`. That can shadow the complete Rockstar `v_construction.rpf` with a one-file directory rather than overlay one member.
+- Missing sibling resources therefore provide a concrete explanation for a Story Mode crash even when the one present YDR is source-identical.
+
+### Complete nested-RPF mirror
+- Added `vox_archive_mirror_probe.py` and commands `05_INSTALL_FULL_ARCHIVE_IDENTITY.cmd`, `06_ENABLE_SCALED_PROBE.cmd`, and `07_ROLLBACK_FULL_ARCHIVE_PROBE.cmd`.
+- dev.15.3 enumerates every indexed member below the selected nested RPF, extracts standalone archive bytes from the user's own GTA installation into a staging directory, verifies the selected target still equals `source_sha256`, then replaces the one-file virtual archive with the complete mirrored directory.
+- The first test keeps the selected target byte-identical to Rockstar. Only after that real game test succeeds can `06_ENABLE_SCALED_PROBE.cmd` replace the target with the preserved transformed YDR while retaining all sibling resources.
+- Manifest state records the complete mirrored file set and SHA-256 for every member. Full rollback refuses recursive deletion if any file is missing, added, or modified.
+- No Rockstar YDR/RPF is redistributed; all archive contents are extracted locally at test time.
+
+### Current gate
+- First prove Story Mode loads with `FULL_ARCHIVE_IDENTITY_INSTALLED`.
+- If it loads, enable the transformed target inside the complete archive and prove the visible oversized model without a crash.
+- If the complete identity archive still crashes, capture a WER/minidump around RageOpenV or abandon this custom directory-archive mount route.
+
 ## [0.0.1-dev.15.2] — 2026-09-04
 
 ### Real dev.15.1 result — installer passes, Story Mode crashes
@@ -236,7 +259,7 @@ All user-visible, architectural and tooling changes are recorded here.
 ## [0.0.1-dev.11] — 2026-09-04
 - Added the proper ScriptHookV lifecycle checkpoint while retaining a CRT-free ASI host.
 - Synthetic registration, ScriptMain execution, wait/resume and heartbeat tests passed.
-- Real GTA proved the ASI loaded but did not register because exact decorated export resolution was too brittle.
+- Real GTA proved the ASI loaded but did not register because exact decorated exports were brittle.
 
 ## [0.0.1-debug.2] — 2026-09-04
 - dev.10 began launching successfully after the earlier remove/restore cycle and was later promoted to the stable no-CRT load baseline.
