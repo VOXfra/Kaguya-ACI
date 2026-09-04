@@ -2,6 +2,67 @@
 
 This is the precise engineering trace for the project. Patch notes summarize changes; this log records what was done, why, validation performed and what is still unproven.
 
+## 2026-09-04 — dev.9 real crash, binary inspection, dev.10 no-CRT isolation
+
+### User evidence received for dev.9
+- User reports GTA V Enhanced still crashes with `0.0.1-dev.9`.
+- `asiloader(1).log` shows the Enhanced ASI loader loaded `RageOpenV.asi`, `ScriptHookVDotNet.asi`, `TrainerV.asi`, then `VOXModernOverhaul.asi`, and finished plugin loading.
+- `ScriptHookV(1).log` reports successful initialization for `VER_EN_1_0_1158_13` and registration of ScriptHookVDotNet/TrainerV.
+- `RageOpenV(1).log` reports successful RageOpenV initialization.
+- No VOX log is expected from dev.9 because explicit project logging was removed.
+- Available logs still do not include an exception code, crashing module or stack trace.
+
+### Blocker protocol: move below application logic
+- dev.9 had already removed `CreateThread`, project logging, filesystem/config access, Enhanced probing, version reads, project-core linkage, ScriptHookV calls, GTA natives, hooks and world/save writes from the ASI's project code.
+- Because the real game still crashed, no additional application/runtime feature work was added.
+- The exact packaged dev.9 `VOXModernOverhaul.asi` was extracted and its PE headers/import table inspected independently.
+
+### Important dev.9 binary finding
+- Despite an intentionally empty project `DllMain`, the MSVC-generated DLL still had a normal CRT startup entrypoint.
+- dev.9 imported `VCRUNTIME140.dll` (`__std_type_info_destroy_list`, `__C_specific_handler`, `memcpy`).
+- dev.9 imported `api-ms-win-crt-runtime-l1-1-0.dll`, including `_cexit`, `_execute_onexit_table`, `_initialize_onexit_table`, `_initialize_narrow_environment`, `_configure_narrow_argv`, `_seh_filter_dll`, `_initterm_e` and `_initterm`.
+- It also imported several KERNEL32 timing/process functions through the runtime startup path.
+- Therefore dev.9 did **not** prove that zero non-game code executed during DLL load. It only proved that our explicit application body did no work.
+- Root cause is still not declared; CRT startup became the next isolated layer.
+
+### dev.10 design
+- Added `src/runtime/windows/NoCrtEntry.c`.
+- Entry function accepts the three DLL-loader arguments, intentionally ignores them and returns success.
+- ASI target links with `/NODEFAULTLIB` and custom `/ENTRY:VoxDllEntry`.
+- ASI compile disables `/GS` security-cookie dependency and omits default-library directives (`/Zl`).
+- No project core, STL, CRT, Win32 API, ScriptHookV or GTA code is linked into the dev.10 ASI.
+
+### New binary correctness gate
+- GitHub Actions now parses the generated ASI bytes before packaging.
+- Requires valid PE32+ format and non-zero custom entrypoint.
+- Requires Import Directory RVA = 0 and size = 0.
+- Requires TLS Directory RVA = 0 and size = 0.
+- Synthetic host still performs Windows `LoadLibraryW` -> residency -> `FreeLibrary` on the exact generated ASI.
+
+### dev.10 automated evidence
+- Exact package commit: `a193e307a443e491f13e6576f8ea18896f91945c`.
+- GitHub Actions run: `33873756374`.
+- Windows/MSVC core build + tests: PASS.
+- Linux core build + tests: PASS.
+- ASan + UBSan: PASS.
+- no-CRT x64 ASI build: PASS.
+- PE zero-import/zero-TLS check: PASS.
+- synthetic load/residency/unload: PASS.
+- package creation/extraction verification: PASS.
+- artifact upload: PASS.
+
+### Independent downloaded-package verification
+- Inner GTA-ready ZIP SHA-256: `6ba7a17a3c7958cff0224b29895a8408bbf480e3b47dc7e59c7f99a33fcb1d6a`.
+- ASI SHA-256: `c77d3c2b43081fadf05165155a032f154189f8a3fec8406a81266ee3101fc63b`.
+- `BUILD_INFO.txt` contains the same ASI hash and commit `a193e307a443e491f13e6576f8ea18896f91945c`.
+- Independent `objdump -x` inspection shows Import Directory = 0, IAT = 0, TLS = 0, Load Configuration = 0, Delay Import = 0, CLR = 0.
+- `.text` is only 6 bytes in the downloaded ASI; no imported DLL/function table exists.
+
+### Decision boundary
+- Real GTA test of dev.10 is required next.
+- If stable, MSVC CRT/default DLL startup becomes the primary dev.9 compatibility suspect; the production runtime will still use ScriptHookV/game-thread registration rather than returning to the dev.8 free-thread lifecycle.
+- If dev.10 still crashes, application code and CRT startup are both eliminated. Further application edits are forbidden until ASI-loader/file-image/plugin-coexistence behavior is isolated and an external crash-module/exception capture path is added.
+
 ## 2026-09-04 — Real GTA dev.8 crash + dev.9 inert isolation
 
 ### User evidence received
@@ -19,16 +80,13 @@ This is the precise engineering trace for the project. Patch notes summarize cha
 
 ### Classification
 - dev.8 proved real-game ASI loading and successful bootstrap execution, but **failed D4 stability**.
-- The available logs contain no exception code, crash module or stack trace. They therefore do not prove which module/instruction caused the crash.
-- The previous asynchronous bootstrap remains the leading architecture-level suspect because it creates a Win32 thread from `DllMain` and immediately performs C++/filesystem/logging work outside the normal ScriptHookV game-thread lifecycle.
-- This remains a hypothesis, not a declared root cause.
+- The available logs contain no exception code, crash module or stack trace.
+- The asynchronous bootstrap created a Win32 thread from `DllMain` and immediately performed C++/filesystem/logging work outside the normal ScriptHookV game-thread lifecycle; this path was quarantined rather than extended.
 
 ### Blocker protocol applied
 - Stopped building additional systems on top of dev.8.
-- Quarantined the `CreateThread`-from-`DllMain` runtime path.
-- Reduced the failing surface to the smallest possible ASI: dev.9 `DllMain` immediately returns `TRUE` and does nothing else.
-- Removed project-core linkage, logger, filesystem access, config access, Enhanced probing, version reading, ScriptHookV calls, native calls, hooks, memory writes and save/world changes from the dev.9 ASI.
-- Kept the old bootstrap source in the repository for forensic comparison but removed it from the built target.
+- Reduced explicit project runtime work to dev.9 `DllMain` immediate success.
+- Removed project-core linkage, logger, filesystem access, config access, Enhanced probing, version reading, ScriptHookV calls, native calls, hooks, memory writes and save/world changes from dev.9 project logic.
 
 ### dev.9 automated isolation harness
 - Added `InertSmokeHost.cpp`.
@@ -40,187 +98,83 @@ This is the precise engineering trace for the project. Patch notes summarize cha
 - ASan + UBSan: PASS.
 - Windows x64 inert ASI build: PASS.
 - inert ASI load/residency/unload smoke: PASS.
-- package creation: PASS.
-- package extraction/required-file verification: PASS.
-- artifact upload: PASS.
+- package creation/extraction verification/artifact upload: PASS.
 
 ### dev.9 package identity
-- Version: `0.0.1-dev.9`.
-- Implementation commit embedded in package: `818376c8c3a3a8afaa2499ee44225ab68850b266`.
 - ASI SHA-256: `c8d3db56304565da90c6d69dc83c48c09cc771a8fc174f99902e473414a2cde7`.
 - Inner GTA-ready ZIP SHA-256: `e50a393791f94d8cd60ba5a6ea84f15449569ba0ff39f5aa5c6c207191d73b44`.
 - GitHub Actions outer artifact digest: `sha256:23e3152fbdf50f5e2f5ebe29bfa29398441938bd2a919b4e735289f1d2062ec1`.
 
-### Next evidence required
-- User replaces dev.8 ASI with dev.9 and runs the real game beyond the dev.8 failure point.
-- No new VOX bootstrap log is expected because dev.9 intentionally performs no logging.
-- If stable, reject the old asynchronous bootstrap and implement proper ScriptHookV/game-thread lifecycle.
-- If still unstable, investigate ASI binary/load/toolchain/loader interaction one layer lower rather than retrying the dev.8 approach.
-
 ## 2026-09-04 — Checkpoint 0: GTA-ready diagnostic ASI + reproducible package
 
 ### Development contract
-- Added project-local `AGENT.md` as the authoritative working contract for this overhaul.
-- Recorded the requirement to continue through meaningful checkpoints instead of stopping after isolated helpers.
-- Recorded the blocker protocol: stop repetition, isolate the failing component, capture exact evidence, reproduce minimally, fix/root-cause or replace the approach, add regression protection, then resume.
-- Recorded the rule to ask the user when a subjective/design decision is genuinely unresolved rather than inventing a preference.
-- Recorded mandatory TODO/patchnote/dev-log/status synchronization and a GTA-ready ZIP for every completed user-testable stage.
+- Added project-local `AGENT.md` as the authoritative working contract.
+- Recorded continuous-checkpoint, blocker/root-cause, ask-before-guessing, mandatory traceability and GTA-ready packaging rules.
 
 ### Diagnostic ASI implemented
 - Added Windows x64 `VOXModernOverhaul.asi` target.
-- The bootstrap performs no GTA native calls, gameplay hooks, memory patches, save writes or world changes.
-- Resolves the current process executable and refuses to continue unless its filename is `gta5_enhanced.exe` (case-insensitive Win32 ordinal comparison).
-- Reuses the Enhanced install probe to validate `MZ`, `PE` and AMD64 architecture.
-- Reads/logs the Windows file version of `gta5_enhanced.exe` when available.
-- Reports presence/absence of `dinput8.dll` ASI loader and `ScriptHookV.dll` without bundling either dependency.
-- Reads `VOXModernOverhaul/config/core.cfg`; missing/malformed/disabled config fails closed.
-- Successful bootstrap emits the exact marker:
-  `CHECKPOINT_OK: ASI loaded in GTA V Enhanced; no gameplay hooks or memory patches are active.`
-- Top-level bootstrap thread catches unexpected exceptions and disables the checkpoint rather than propagating an unhandled C++ exception into the host process.
+- Bootstrap performed no GTA native calls, gameplay hooks, memory patches, save writes or world changes.
+- Validated Enhanced process/install/build, config and dependencies and wrote exact `CHECKPOINT_OK` marker.
 
 ### Synthetic Windows runtime smoke harness
-- Added `tests/runtime/BootstrapSmokeHost.cpp`.
-- CMake builds the harness as x64 `gta5_enhanced.exe` so process-name validation follows the same path as the real game.
-- Harness `LoadLibraryW`s the generated `.asi`, waits for the bootstrap log and fails unless the exact checkpoint marker appears.
-- This validates DLL loading, `DllMain`, bootstrap-thread startup, filesystem paths, Enhanced executable probing, Windows version lookup, config parsing and logging together.
-- It remains D3 synthetic validation; only an actual user GTA launch can promote the runtime to D4.
+- Added a synthetic x64 `gta5_enhanced.exe` host that `LoadLibraryW`s the generated ASI and requires the expected checkpoint marker.
 
 ### Packaging
-- Added `tools/PackageCheckpoint.ps1`.
-- Script requires exactly one generated `VOXModernOverhaul.asi`, creates root-mergeable package structure, copies the versioned config and first-test instructions, records commit + ASI SHA-256 in `BUILD_INFO.txt`, compresses to ZIP and reports ZIP SHA-256.
-- CI extracts the finished archive again and checks required files before artifact upload.
-- No third-party binary is included in the package.
+- Added reproducible `PackageCheckpoint.ps1`.
+- Package records commit + ASI SHA-256 and is extracted/revalidated in CI before artifact upload.
 
-### Blocker / root-cause analysis
-- CI run `33865550459` failed only on Windows while Linux, sanitizers and the ASI build itself succeeded.
-- MSVC log showed warning C4003/error C2589 at `std::numeric_limits<EntityId::ValueType>::max()`.
-- Root cause: including `windows.h` exposed the legacy function-like `max` macro, which rewrote the standard-library call.
-- The failure was not worked around at the individual test line.
-- Applied `NOMINMAX` globally to every MSVC target through the common CMake warnings/platform function, preventing recurrence across future Win32 code.
-- Added/kept warnings-as-errors so equivalent platform pollution cannot silently pass CI.
+### Build blocker / correction
+- Windows CI exposed legacy `windows.h` `max` macro pollution at `std::numeric_limits<...>::max()`.
+- Root cause was fixed globally with `NOMINMAX` for every MSVC target rather than patching individual call sites.
 
 ### Exact validation evidence
 - Source checkpoint commit: `389e5cb5a12de7bd33eecca999479ec86e2822da`.
 - GitHub Actions run: `33865763371`.
-- `core-build-test (windows-latest)`: SUCCESS.
-- `core-build-test (ubuntu-latest)`: SUCCESS.
-- `core-sanitizers`: SUCCESS.
-- `runtime-package`: SUCCESS.
-- Runtime package substeps all succeeded: x64 configure, ASI + smoke-host build, Windows ASI smoke checkpoint, package creation, package extraction/required-file verification and artifact upload.
-
-### Current boundary / next required evidence
-- A real GTA V Enhanced process had not yet loaded this exact package at the time of this entry.
-- That later test is recorded above: dev.8 reached `CHECKPOINT_OK` but the game then crashed, so D4 stability failed.
+- Windows, Linux, ASan+UBSan, ASI smoke, packaging and artifact upload: PASS.
+- Later real-game test reached `CHECKPOINT_OK` but crashed, so D4 stability failed.
 
 ## 2026-09-04 — GTA V Enhanced install/build probe foundation
 
-### Implemented
-- Added explicit-root GTA V Enhanced installation probe.
-- Requires `gta5_enhanced.exe` at the supplied root.
-- Validates that the root exists and is a directory.
-- Validates that the executable exists and is a regular file.
-- Parses the DOS `MZ` signature and PE signature.
-- Reads the PE COFF machine field and requires AMD64 (`0x8664`).
-- Added clear status values for missing path/directory/executable, wrong file type, malformed PE, wrong architecture and filesystem errors.
-
-### Windows build/version reader
-- Added a Windows-only adapter around `GetFileVersionInfoSizeW`, `GetFileVersionInfoW` and `VerQueryValueW`.
-- Reads the native `VS_FIXEDFILEINFO` file version into four explicit numeric components.
-- Validates the fixed-info signature before accepting the version block.
-- CMake links the Windows adapter against `Version.lib` only on Windows.
-
-### Correctness review
-- `ProbeEnhancedInstall` is intentionally not `noexcept`: filesystem-path copies/construction and stream creation can allocate and may throw. Marking it `noexcept` would create an unnecessary `std::terminate` path on allocation failure.
-- Filesystem queries use `std::error_code` for ordinary path/access failures.
-- The PE parser is deliberately minimal and bounded: fixed 64-byte DOS header, explicit `e_lfanew`, 6-byte PE signature/machine read. It does not claim to fully validate arbitrary PE integrity.
-
-### Validation
-- GNU C++ 14.2.0 / C++20 local validation.
-- warnings-as-errors: PASS.
-- AddressSanitizer: PASS.
-- UndefinedBehaviorSanitizer: PASS.
-- Missing directory/executable: PASS.
-- malformed/non-PE: PASS.
-- x86 PE fixture rejection: PASS.
-- AMD64 PE fixture acceptance: PASS.
-- Later checkpoint run `33865763371` promoted the detector and Windows version reader to D3 CI-validated status.
+- Added explicit-root Enhanced installation probe requiring `gta5_enhanced.exe`.
+- Validates root, executable, MZ/PE signature and AMD64 machine.
+- Added Windows file-version reader with `VS_FIXEDFILEINFO` validation.
+- Portable probe positive/negative fixtures and Windows version tests pass.
 
 ## 2026-09-04 — Phase 0 execution checklist + config CI promotion
 
-### Traceability
-- Added `TODO_PHASE0.md` to track implementation and validation below the broad feature TODO.
-- The checklist distinguishes completed D3 foundations from partially implemented systems such as the full config stack.
-
-### CI evidence
-- Exact config commit: `58cec3c98e44da4b7d284cf1ff0743833140b0ed`.
-- GitHub Actions run: `33864582553`.
-- Result: SUCCESS across Windows/Linux and sanitizer job.
+- Added `TODO_PHASE0.md` granular execution tracking.
+- Exact config commit `58cec3c98e44da4b7d284cf1ff0743833140b0ed`, CI run `33864582553`: SUCCESS.
 
 ## 2026-09-04 — Versioned configuration parser
 
-### Implemented
-- Added `ConfigParseResult` with structured errors, parsed values and explicit schema version.
-- Added strict `key=value` parser supporting blank lines, comments, CRLF/LF and trimmed whitespace.
-- `schema_version` is mandatory, numeric, non-zero and constrained to `uint32_t` range.
-- Duplicate and invalid keys fail closed.
-- Typed readers exist for exact lowercase booleans (`true`/`false`) and unsigned integers.
-
-### Correctness review
-- Initial lookup methods were declared `noexcept` while constructing a temporary `std::string` for unordered-map lookup could allocate and theoretically throw.
-- Removed those `noexcept` declarations before commit so allocation failure is not converted into unintended `std::terminate`.
-
-### Tests / validation
-- Valid CRLF config + typed reads: PASS.
-- Duplicate schema / missing schema / non-numeric schema failure paths: PASS.
-- warnings-as-errors + ASan + UBSan + CTest: PASS.
+- Added strict `key=value` parser with mandatory non-zero numeric `schema_version`.
+- Duplicate/invalid keys fail closed.
+- Typed exact boolean and unsigned readers added.
+- Removed incorrect `noexcept` lookup declarations that could have converted allocation failure into `std::terminate`.
+- Warnings-as-errors + ASan + UBSan + CTest: PASS.
 
 ## 2026-09-04 — CI hardening / concurrent EventBus validation
 
-- Added `VOX_WARNINGS_AS_ERRORS` CMake option.
-- GNU/Clang validation uses `-Werror`; MSVC uses `/WX` with `/W4 /permissive- /EHsc`.
+- Added warnings-as-errors validation mode (`-Werror` / `/WX`).
 - EventBus concurrent validation: 4 publisher threads × 1000 events, expected/observed 4000.
-- AddressSanitizer + UndefinedBehaviorSanitizer: PASS.
 - Added `docs/STATUS.md` evidence levels.
 
 ## 2026-09-04 — Precommit defect catch / ID generator hardening
 
-### Defects caught before in-game integration
-- Fixed EventBus use-after-invalidation risk in `Unsubscribe` by computing the result before erasing its owning map entry.
-- Detected that an automated test edit had failed to insert generator assertions; inspected source, corrected it and rebuilt.
-- Replaced theoretical EventBus token-ID wraparound with fail-closed exhaustion semantics.
-
-### ID allocation
-- Added `EntityIdGenerator`.
-- Zero permanently reserved for invalid IDs.
-- Resume from persisted next-ID/high-water value.
-- Maximum 64-bit ID issued at most once, then allocation fails closed.
+- Fixed EventBus use-after-invalidation risk in `Unsubscribe`.
+- Corrected a test-edit failure that had omitted generator assertions before commit.
+- Added fail-closed EventBus subscription token exhaustion.
+- Added resumable `EntityIdGenerator`, reserves zero and fails closed after maximum 64-bit ID.
 
 ## 2026-09-04 — Core compile/test checkpoint
 
-- Added typed native EventBus.
-- Added GitHub Actions Windows/Linux workflow.
-- Core configure/compile/link/test passed.
-- No GTA runtime behavior claimed.
+- Added typed native EventBus and GitHub Actions Windows/Linux workflow.
+- Core configure/compile/link/test passed; no GTA runtime behavior claimed.
 
 ## 2026-09-04 — Project initialization / Phase 0 start
 
-### Scope frozen
-- Created charter, architecture, TODO, roadmap, story-compatibility contract and initial data model.
-- Visual quality is first production priority after tooling/audit.
-- Persistence/procedural systems are architectural requirements.
-- Vanilla story compatibility is non-negotiable.
-
-### Runtime/tool research
-- ScriptHookV supports Enhanced.
-- Official ScriptHookVDotNet is not considered a sufficiently reliable Enhanced foundation for the critical runtime.
-- Enhanced SHVDN fork threading limitation recorded.
-- Decision: native C++ critical runtime with GTA calls isolated behind adapters.
-- CodeWalker Enhanced/Gen9 detection confirmed.
-- Sollumz Enhanced conversion workflow recorded.
-- OpenRPF selected for non-destructive Enhanced asset override loading.
-
-### Engineering rules
-- Core logic compiles without GTA/ScriptHook SDK.
-- Stable project IDs, never transient GTA handles, represent persistent entities.
-- No TODO completion without its validation gate.
-- Patch notes and development log track every project-state change.
+- Created charter, architecture, TODO, roadmap, story compatibility contract and data model.
+- Visual quality first; persistence/procedural systems mandatory; vanilla story compatibility non-negotiable.
+- Critical runtime direction: native C++ with GTA calls isolated behind adapters.
+- CodeWalker Enhanced/Gen9, Sollumz Enhanced conversion and OpenRPF non-destructive override paths recorded.
+- Stable project IDs, validation gates, patch notes and development log are mandatory.
