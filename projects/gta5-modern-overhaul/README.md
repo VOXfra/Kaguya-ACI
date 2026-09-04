@@ -13,6 +13,28 @@ The project is designed around four principles:
 3. **Procedural over bespoke whenever possible.** Generic IK, interaction, wardrobe, job and simulation systems should produce thousands of believable outcomes instead of requiring thousands of hand-authored scenes.
 4. **Story compatibility is non-negotiable.** Every subsystem must be virtualizable, paused, overridden or restored when a vanilla mission requires canonical world state.
 
+## Development contract
+
+`AGENT.md` is authoritative for work on this project. It defines the continuous-checkpoint rule, blocker/root-cause protocol, validation gates, ask-before-guessing rule for subjective decisions, traceability requirements, packaging requirements and story-safety constraints.
+
+The user is not expected to author code/assets. Normal user involvement should be limited to installing a checkpoint, launching GTA V Enhanced and returning logs/screenshots/video or subjective feedback when requested.
+
+## Current checkpoint
+
+**0.0.1-dev.8 — Diagnostic ASI bootstrap**
+
+Engineering validation is complete through D3:
+
+- Windows/MSVC core build and tests;
+- Linux core build and tests;
+- ASan + UBSan;
+- Windows x64 `.asi` compilation;
+- synthetic `gta5_enhanced.exe` host loading the generated `.asi`;
+- exact `CHECKPOINT_OK` bootstrap marker;
+- reproducible GTA-root ZIP creation and content verification.
+
+The next gate is D4: actual GTA V Enhanced loading on the user's installation. No gameplay hook or world mutation is active in this checkpoint.
+
 ## Primary pillars
 
 ### 01 — Visual Foundation
@@ -39,16 +61,14 @@ Eating, sleep, hygiene, body-fat/muscle evolution, gym/sports, canoe/kayak, divi
 ### 08 — Extended Regions & Content Adaptation
 North Yankton as a properly usable region, Cayo Perico integration where technically viable, and an adapter layer for selected GTA Online content in single-player with AI crew support.
 
-## Player role in development
-
-The implementation is intended to minimize manual technical work by the user. Development should favor automated asset discovery, conversion, packaging, validation and diagnostics. The user should mainly need to install/run builds, launch GTA V Enhanced and report visual/runtime results.
-
 ## Working branch
 
 `gta5-modern-world-overhaul`
 
 See:
 
+- `AGENT.md`
+- `PATCHNOTES.md`
 - `docs/ARCHITECTURE.md`
 - `docs/TODO.md`
 - `docs/TODO_PHASE0.md`

@@ -2,6 +2,62 @@
 
 This is the precise engineering trace for the project. Patch notes summarize changes; this log records what was done, why, validation performed and what is still unproven.
 
+## 2026-09-04 — Checkpoint 0: GTA-ready diagnostic ASI + reproducible package
+
+### Development contract
+- Added project-local `AGENT.md` as the authoritative working contract for this overhaul.
+- Recorded the requirement to continue through meaningful checkpoints instead of stopping after isolated helpers.
+- Recorded the blocker protocol: stop repetition, isolate the failing component, capture exact evidence, reproduce minimally, fix/root-cause or replace the approach, add regression protection, then resume.
+- Recorded the rule to ask the user when a subjective/design decision is genuinely unresolved rather than inventing a preference.
+- Recorded mandatory TODO/patchnote/dev-log/status synchronization and a GTA-ready ZIP for every completed user-testable stage.
+
+### Diagnostic ASI implemented
+- Added Windows x64 `VOXModernOverhaul.asi` target.
+- The bootstrap performs no GTA native calls, gameplay hooks, memory patches, save writes or world changes.
+- Resolves the current process executable and refuses to continue unless its filename is `gta5_enhanced.exe` (case-insensitive Win32 ordinal comparison).
+- Reuses the Enhanced install probe to validate `MZ`, `PE` and AMD64 architecture.
+- Reads/logs the Windows file version of `gta5_enhanced.exe` when available.
+- Reports presence/absence of `dinput8.dll` ASI loader and `ScriptHookV.dll` without bundling either dependency.
+- Reads `VOXModernOverhaul/config/core.cfg`; missing/malformed/disabled config fails closed.
+- Successful bootstrap emits the exact marker:
+  `CHECKPOINT_OK: ASI loaded in GTA V Enhanced; no gameplay hooks or memory patches are active.`
+- Top-level bootstrap thread catches unexpected exceptions and disables the checkpoint rather than propagating an unhandled C++ exception into the host process.
+
+### Synthetic Windows runtime smoke harness
+- Added `tests/runtime/BootstrapSmokeHost.cpp`.
+- CMake builds the harness as x64 `gta5_enhanced.exe` so process-name validation follows the same path as the real game.
+- Harness `LoadLibraryW`s the generated `.asi`, waits for the bootstrap log and fails unless the exact checkpoint marker appears.
+- This validates DLL loading, `DllMain`, bootstrap-thread startup, filesystem paths, Enhanced executable probing, Windows version lookup, config parsing and logging together.
+- It remains D3 synthetic validation; only an actual user GTA launch can promote the runtime to D4.
+
+### Packaging
+- Added `tools/PackageCheckpoint.ps1`.
+- Script requires exactly one generated `VOXModernOverhaul.asi`, creates root-mergeable package structure, copies the versioned config and first-test instructions, records commit + ASI SHA-256 in `BUILD_INFO.txt`, compresses to ZIP and reports ZIP SHA-256.
+- CI extracts the finished archive again and checks required files before artifact upload.
+- No third-party binary is included in the package.
+
+### Blocker / root-cause analysis
+- CI run `33865550459` failed only on Windows while Linux, sanitizers and the ASI build itself succeeded.
+- MSVC log showed warning C4003/error C2589 at `std::numeric_limits<EntityId::ValueType>::max()`.
+- Root cause: including `windows.h` exposed the legacy function-like `max` macro, which rewrote the standard-library call.
+- The failure was not worked around at the individual test line.
+- Applied `NOMINMAX` globally to every MSVC target through the common CMake warnings/platform function, preventing recurrence across future Win32 code.
+- Added/kept warnings-as-errors so equivalent platform pollution cannot silently pass CI.
+
+### Exact validation evidence
+- Source checkpoint commit: `389e5cb5a12de7bd33eecca999479ec86e2822da`.
+- GitHub Actions run: `33865763371`.
+- `core-build-test (windows-latest)`: SUCCESS.
+- `core-build-test (ubuntu-latest)`: SUCCESS.
+- `core-sanitizers`: SUCCESS.
+- `runtime-package`: SUCCESS.
+- Runtime package substeps all succeeded: x64 configure, ASI + smoke-host build, Windows ASI smoke checkpoint, package creation, package extraction/required-file verification and artifact upload.
+
+### Current boundary / next required evidence
+- A real GTA V Enhanced process has not yet loaded this exact package.
+- D4 requires the user to copy the generated ZIP into the GTA V Enhanced root, launch Story Mode, quit normally, and return `VOXModernOverhaul/logs/bootstrap.log`.
+- No gameplay feature will be added on top of an unproven loader path before that real-game checkpoint is resolved.
+
 ## 2026-09-04 — GTA V Enhanced install/build probe foundation
 
 ### Implemented
@@ -18,47 +74,33 @@ This is the precise engineering trace for the project. Patch notes summarize cha
 - Reads the native `VS_FIXEDFILEINFO` file version into four explicit numeric components.
 - Validates the fixed-info signature before accepting the version block.
 - CMake links the Windows adapter against `Version.lib` only on Windows.
-- Windows tests will read a real version from `kernel32.dll` and verify a missing-file failure path.
 
 ### Correctness review
 - `ProbeEnhancedInstall` is intentionally not `noexcept`: filesystem-path copies/construction and stream creation can allocate and may throw. Marking it `noexcept` would create an unnecessary `std::terminate` path on allocation failure.
 - Filesystem queries use `std::error_code` for ordinary path/access failures.
 - The PE parser is deliberately minimal and bounded: fixed 64-byte DOS header, explicit `e_lfanew`, 6-byte PE signature/machine read. It does not claim to fully validate arbitrary PE integrity.
 
-### Local validation
-- GNU C++ 14.2.0 / C++20.
+### Validation
+- GNU C++ 14.2.0 / C++20 local validation.
 - warnings-as-errors: PASS.
 - AddressSanitizer: PASS.
 - UndefinedBehaviorSanitizer: PASS.
-- Tested missing directory: PASS.
-- Tested missing executable: PASS.
-- Tested malformed/non-PE file: PASS.
-- Tested x86 PE fixture rejection: PASS.
-- Tested AMD64 PE fixture acceptance: PASS.
-
-### Pending
-- Exact commit Windows/MSVC build and Windows native-version API test.
-- Storefront auto-discovery (Epic/Steam/Rockstar).
-- Mapping file version to the project's supported-build policy.
-- Actual GTA V Enhanced runtime load remains unimplemented.
+- Missing directory/executable: PASS.
+- malformed/non-PE: PASS.
+- x86 PE fixture rejection: PASS.
+- AMD64 PE fixture acceptance: PASS.
+- Later checkpoint run `33865763371` promoted the detector and Windows version reader to D3 CI-validated status.
 
 ## 2026-09-04 — Phase 0 execution checklist + config CI promotion
 
 ### Traceability
 - Added `TODO_PHASE0.md` to track implementation and validation below the broad feature TODO.
 - The checklist distinguishes completed D3 foundations from partially implemented systems such as the full config stack.
-- This prevents a primitive/parser from being confused with a finished production subsystem.
 
 ### CI evidence
 - Exact config commit: `58cec3c98e44da4b7d284cf1ff0743833140b0ed`.
 - GitHub Actions run: `33864582553`.
-- Result: SUCCESS.
-- The run covers Windows/Linux build+test and the Linux sanitizer job configured by the project workflow.
-- Versioned config parser is therefore promoted from local D3 to D3 cross-platform.
-
-### Runtime boundary
-- No GTA V Enhanced runtime adapter exists yet.
-- No in-game behavior has been claimed or marked complete.
+- Result: SUCCESS across Windows/Linux and sanitizer job.
 
 ## 2026-09-04 — Versioned configuration parser
 
@@ -66,53 +108,31 @@ This is the precise engineering trace for the project. Patch notes summarize cha
 - Added `ConfigParseResult` with structured errors, parsed values and explicit schema version.
 - Added strict `key=value` parser supporting blank lines, comments, CRLF/LF and trimmed whitespace.
 - `schema_version` is mandatory, numeric, non-zero and constrained to `uint32_t` range.
-- Duplicate keys fail closed.
-- Invalid keys fail closed.
+- Duplicate and invalid keys fail closed.
 - Typed readers exist for exact lowercase booleans (`true`/`false`) and unsigned integers.
 
 ### Correctness review
 - Initial lookup methods were declared `noexcept` while constructing a temporary `std::string` for unordered-map lookup could allocate and theoretically throw.
 - Removed those `noexcept` declarations before commit so allocation failure is not converted into unintended `std::terminate`.
 
-### Tests
-- valid CRLF config parses with schema 1
-- boolean read succeeds
-- unsigned read succeeds
-- duplicate schema key invalidates document
-- missing schema invalidates document
-- non-numeric schema invalidates document
-
-### Local validation
-- warnings as errors: PASS
-- ASan: PASS
-- UBSan: PASS
-- CTest: 1/1 PASS
+### Tests / validation
+- Valid CRLF config + typed reads: PASS.
+- Duplicate schema / missing schema / non-numeric schema failure paths: PASS.
+- warnings-as-errors + ASan + UBSan + CTest: PASS.
 
 ## 2026-09-04 — CI hardening / concurrent EventBus validation
 
-### Build policy
 - Added `VOX_WARNINGS_AS_ERRORS` CMake option.
-- GNU/Clang-style builds use `-Werror` in validation mode.
-- MSVC builds use `/WX` in validation mode.
-- Existing warning baselines remain `/W4 /permissive- /EHsc` on MSVC and `-Wall -Wextra -Wpedantic` elsewhere.
-
-### Concurrent EventBus validation
-- Added one concurrent subscriber backed by an atomic counter.
-- Spawned 4 publishing threads × 1000 events.
-- Expected and observed delivered count: 4000.
-
-### Sanitizer validation
+- GNU/Clang validation uses `-Werror`; MSVC uses `/WX` with `/W4 /permissive- /EHsc`.
+- EventBus concurrent validation: 4 publisher threads × 1000 events, expected/observed 4000.
 - AddressSanitizer + UndefinedBehaviorSanitizer: PASS.
-- Warnings treated as errors simultaneously: PASS.
-
-### Traceability
-- Added `docs/STATUS.md` to distinguish design, local-test, cross-platform and in-game validation levels.
+- Added `docs/STATUS.md` evidence levels.
 
 ## 2026-09-04 — Precommit defect catch / ID generator hardening
 
 ### Defects caught before in-game integration
 - Fixed EventBus use-after-invalidation risk in `Unsubscribe` by computing the result before erasing its owning map entry.
-- Detected that an automated test edit had failed to insert generator assertions; inspected test source, corrected it and rebuilt.
+- Detected that an automated test edit had failed to insert generator assertions; inspected source, corrected it and rebuilt.
 - Replaced theoretical EventBus token-ID wraparound with fail-closed exhaustion semantics.
 
 ### ID allocation
@@ -121,16 +141,11 @@ This is the precise engineering trace for the project. Patch notes summarize cha
 - Resume from persisted next-ID/high-water value.
 - Maximum 64-bit ID issued at most once, then allocation fails closed.
 
-### Validation
-- GNU C++ 14.2.0 / C++20.
-- ASan + UBSan.
-- CTest 1/1 PASS.
-
 ## 2026-09-04 — Core compile/test checkpoint
 
 - Added typed native EventBus.
 - Added GitHub Actions Windows/Linux workflow.
-- Core configure/compile/link/test passed locally.
+- Core configure/compile/link/test passed.
 - No GTA runtime behavior claimed.
 
 ## 2026-09-04 — Project initialization / Phase 0 start
@@ -142,8 +157,8 @@ This is the precise engineering trace for the project. Patch notes summarize cha
 - Vanilla story compatibility is non-negotiable.
 
 ### Runtime/tool research
-- ScriptHookV supports current Enhanced builds.
-- Official ScriptHookVDotNet is not considered a sufficiently reliable Enhanced foundation for this project's critical runtime.
+- ScriptHookV supports Enhanced.
+- Official ScriptHookVDotNet is not considered a sufficiently reliable Enhanced foundation for the critical runtime.
 - Enhanced SHVDN fork threading limitation recorded.
 - Decision: native C++ critical runtime with GTA calls isolated behind adapters.
 - CodeWalker Enhanced/Gen9 detection confirmed.

@@ -2,23 +2,53 @@
 
 All user-visible, architectural and tooling changes are recorded here.
 
+## [0.0.1-dev.8] — 2026-09-04
+
+### First GTA-ready checkpoint
+- Added the first Windows x64 `.asi` diagnostic bootstrap: `VOXModernOverhaul.asi`.
+- The bootstrap is deliberately non-invasive: it performs no GTA native calls, gameplay hooks, memory patches, save writes or world mutations.
+- It validates that the host process is actually `gta5_enhanced.exe`, validates the Enhanced executable as AMD64 PE, reads its Windows file version and writes a startup diagnostic report.
+- Added fail-closed configuration loading from `VOXModernOverhaul/config/core.cfg`.
+- Missing, malformed or disabled configuration stops the checkpoint cleanly instead of continuing in an ambiguous state.
+- Added detection/reporting for `dinput8.dll` and `ScriptHookV.dll` without bundling either third-party binary.
+
+### Development contract
+- Added project-local `AGENT.md` containing the permanent project rules: continuous progress until meaningful checkpoints, blocker isolation/root-cause protocol, ask-before-guessing on subjective design choices, mandatory story compatibility, procedural-first architecture, external-asset licensing rules, validation gates, traceability and GTA-ready ZIP packaging rules.
+
+### Automated Windows runtime validation
+- Added a purpose-built x64 smoke host compiled as `gta5_enhanced.exe`.
+- CI now loads the real generated `.asi` with `LoadLibraryW`, exercises `DllMain` + bootstrap thread + path/config/version logic and requires the exact `CHECKPOINT_OK` marker before packaging.
+- This is a D3 Windows runtime-smoke result, not a D4 real-GTA claim.
+
+### Packaging
+- Added reproducible `PackageCheckpoint.ps1` packaging.
+- Checkpoint ZIP layout is directly mergeable into the GTA V Enhanced root.
+- Package contains the ASI, versioned config, first-test/rollback instructions and `BUILD_INFO.txt` with commit plus ASI SHA-256.
+- CI extracts the generated ZIP and verifies every required file before uploading the artifact.
+
+### Blocker found and permanently corrected
+- Windows CI exposed legacy `windows.h` `max` macro pollution, which broke `std::numeric_limits<T>::max()` in the existing EntityId regression test.
+- Root cause was isolated from the MSVC build log; Linux and sanitizer jobs were already green and the ASI itself had compiled.
+- Fixed globally by defining `NOMINMAX` for every MSVC target in the project rather than patching individual call sites.
+- This is now a permanent build-level regression guard for all future Win32 code.
+
+### Verified
+- Exact checkpoint commit tested by GitHub Actions run `33865763371`.
+- Windows/MSVC core build + tests: PASS.
+- Linux core build + tests: PASS.
+- Linux ASan + UBSan: PASS.
+- Windows x64 ASI build: PASS.
+- Windows synthetic `gta5_enhanced.exe` ASI load/smoke checkpoint: PASS.
+- GTA-ready ZIP construction: PASS.
+- ZIP required-file verification: PASS.
+- Artifact upload: PASS.
+
+### Still requires the user's real-game test
+- Loading inside an actual GTA V Enhanced process is intentionally **not** marked D4 until the user launches this checkpoint and returns `VOXModernOverhaul/logs/bootstrap.log` containing `CHECKPOINT_OK`.
+- No gameplay system is enabled in this checkpoint.
+
 ## [0.0.1-dev.7] — 2026-09-04
-
-### Added
-- Added portable GTA V Enhanced install probing from an explicit root path.
-- Probe now requires `gta5_enhanced.exe` to exist as a regular file, contain a valid `MZ`/`PE` signature and declare AMD64 (`0x8664`) architecture.
-- Added Windows file-version reader using the executable's native `VS_FIXEDFILEINFO` resource.
-- Added Windows CI test path that reads a real system DLL version and verifies clear failure for a missing file.
-
-### Correctness / validation
-- The install probe intentionally is **not** declared `noexcept`: copying/constructing filesystem paths and opening streams can allocate and may throw. This avoids accidental `std::terminate` on allocation failure.
-- Portable install probe validated locally with GNU C++ 14.2.0, warnings-as-errors, ASan and UBSan.
-- Negative tests cover missing directory, missing executable, malformed PE and non-AMD64 PE; positive fixture covers AMD64 PE.
-
-### Pending
-- Windows/MSVC compile and native file-version test for this exact commit must pass in CI before Windows build/version detection is promoted.
-- Epic/Steam/Rockstar automatic install discovery is not implemented yet.
-- No GTA V Enhanced runtime hook is claimed working.
+- Added explicit-root Enhanced install/PE/architecture probing and the Windows file-version reader.
 
 ## [0.0.1-dev.6] — 2026-09-04
 - Added granular Phase 0 execution checklist and promoted config parser to D3 cross-platform after CI run `33864582553` succeeded.

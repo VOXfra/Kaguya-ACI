@@ -12,13 +12,15 @@ Legend:
 - [x] C++20 standalone core scaffold — D3 cross-platform
 - [x] CMake warnings policy — D3 cross-platform
 - [x] warnings-as-errors validation mode — D3 cross-platform
+- [x] global MSVC `NOMINMAX` protection against Win32 macro pollution — D3 Windows
 - [x] GitHub Windows/Linux build+test CI — D3
 - [x] Linux ASan + UBSan CI — D3
+- [x] project-local `AGENT.md` development contract — active
 - [x] project patch notes — active
 - [x] precise development log — active
 - [x] evidence-based engineering status table — active
 - [ ] add formatting/static-analysis gate (clang-format/clang-tidy or equivalent)
-- [ ] add release artifact build once runtime adapter exists
+- [x] add first reproducible user-testable artifact build — D3 Windows
 
 ## Diagnostics
 
@@ -27,7 +29,13 @@ Legend:
 - [ ] structured subsystem/event fields
 - [ ] crash/exception capture
 - [ ] minidump or equivalent Windows crash artifact
-- [ ] startup environment/build report
+- [x] startup environment/build report foundation — D3 Windows smoke
+  - [x] process path
+  - [x] Enhanced install validation status
+  - [x] Windows GTA executable file version
+  - [x] ASI loader (`dinput8.dll`) presence
+  - [x] ScriptHookV presence
+  - [ ] full runtime dependency/build compatibility report
 
 ## Persistent identity
 
@@ -70,26 +78,28 @@ Legend:
   - [x] duplicate-key rejection — D3 cross-platform
   - [x] typed bool/unsigned readers — D3 cross-platform
   - [x] ASan/UBSan + warnings-as-errors validation
-  - [x] exact config commit Windows/Linux/sanitizer CI — run `33864582553`
+  - [x] Windows/Linux/sanitizer CI validation
+  - [x] checkpoint config packaged and parsed by Windows ASI smoke host
+  - [x] malformed/missing runtime config fails closed in bootstrap
   - [ ] typed project runtime schema
   - [ ] schema migration framework
   - [ ] atomic file write / rollback
-  - [ ] malformed-config recovery behavior
+  - [ ] production malformed-config recovery/default policy
 
 ## GTA V Enhanced environment
 
 - [ ] Enhanced install/build detector — IN PROGRESS
-  - [x] explicit-root directory probe — D3 local
-  - [x] exact `gta5_enhanced.exe` requirement — D3 local
-  - [x] `MZ` + `PE` signature validation — D3 local
-  - [x] AMD64 machine validation — D3 local
-  - [ ] exact detector commit Windows/Linux/sanitizer CI
-  - [ ] Windows file-version reader CI validation
+  - [x] explicit-root directory probe — D3 cross-platform
+  - [x] exact `gta5_enhanced.exe` requirement — D3 cross-platform
+  - [x] `MZ` + `PE` signature validation — D3 cross-platform
+  - [x] AMD64 machine validation — D3 cross-platform
+  - [x] detector Windows/Linux/sanitizer CI — run `33865763371`
+  - [x] Windows file-version reader CI validation — D3 Windows
   - [ ] supported-build policy mapping
 - [ ] Epic install discovery
 - [ ] Steam install discovery
 - [ ] Rockstar Launcher install discovery
-- [ ] explicit user-path config wiring
+- [ ] explicit user-path config wiring for external tools
 - [ ] tool discovery: CodeWalker
 - [ ] tool discovery: OpenRPF
 - [ ] tool discovery: Blender/Sollumz
@@ -97,14 +107,32 @@ Legend:
 
 ## Native runtime adapter
 
-- [ ] ScriptHookV SDK acquisition/documented dependency
-- [ ] minimal native ASI target
-- [ ] plugin load/unload lifecycle
-- [ ] one safe in-game tick
-- [ ] startup log containing exact GTA build
-- [ ] graceful disable on unsupported build
-- [ ] no-crash test on missing config/data
-- [ ] first GTA V Enhanced D4 validation
+- [ ] complete native runtime adapter — IN PROGRESS
+  - [x] minimal Windows x64 ASI target — D3 compile/runtime-smoke
+  - [x] ASI host-process validation (`gta5_enhanced.exe`)
+  - [x] fail-closed exception boundary
+  - [x] synthetic x64 Enhanced-named host loads real generated ASI — D3
+  - [x] bootstrap thread reaches exact `CHECKPOINT_OK` in smoke harness
+  - [x] no gameplay/native/memory/save modifications in checkpoint 0
+  - [ ] actual GTA V Enhanced ASI load — D4 pending user test
+  - [ ] ScriptHookV SDK acquisition/documented dependency for native calls
+  - [ ] ScriptHookV/game-thread registration adapter
+  - [ ] one safe in-game tick
+  - [ ] supported-build policy + graceful disable
+  - [ ] plugin unload/shutdown lifecycle for later stateful systems
+- [ ] first GTA V Enhanced D4 validation — **CURRENT USER CHECKPOINT**
+
+## Packaging / rollback
+
+- [x] reproducible PowerShell checkpoint packager — D3 Windows
+- [x] package contains only project files; no third-party binaries
+- [x] ASI SHA-256 recorded in `BUILD_INFO.txt`
+- [x] commit/version recorded in `BUILD_INFO.txt`
+- [x] generated ZIP extracted and required files verified in CI
+- [x] first-test instructions packaged
+- [x] explicit removal/rollback instructions packaged
+- [x] GitHub Actions artifact upload — run `33865763371`
+- [ ] installer/automatic root detection for later public builds
 
 ## Story compatibility foundation
 
@@ -114,6 +142,8 @@ Legend:
 - [ ] canonical overlay interface
 - [ ] ambient-system pause/resume interface
 - [ ] first harmless mission regression test
+
+Checkpoint 0 does not mutate GTA world/story state, so no mission override is required for this diagnostic load test.
 
 ## Asset pipeline
 
@@ -126,10 +156,23 @@ Legend:
 - [ ] automated before/after test package
 - [ ] first in-game asset replacement D4
 
-## Current next checkpoint
+## Current checkpoint
 
-1. Receive successful CI for the Enhanced detector/version-reader commit.
-2. Add storefront discovery (Epic first, then Steam/Rockstar) with explicit-path fallback.
-3. Add typed runtime config + migration skeleton.
-4. Add Entity Registry.
-5. Only then create the minimal ScriptHookV/ASI runtime adapter.
+**Checkpoint 0 — real GTA V Enhanced ASI load**
+
+Engineering/synthetic validation is complete. The next action requires the real game:
+
+1. Copy the generated `0.0.1-dev.8` ZIP contents into the GTA V Enhanced root.
+2. Launch Story Mode.
+3. Quit normally after the bootstrap has had time to execute.
+4. Return `VOXModernOverhaul/logs/bootstrap.log`.
+5. Promote the diagnostic ASI to D4 only if the real log contains the exact `CHECKPOINT_OK` marker and the game remains stable.
+
+After D4 validation, continue Phase 0 with:
+
+1. supported-build policy + ScriptHookV/game-thread adapter;
+2. one harmless in-game tick/probe;
+3. Entity Registry + persisted high-water mark;
+4. typed runtime config/migration skeleton;
+5. mission/story detection foundation;
+6. first non-destructive asset pipeline proof for the visual vertical slice.
