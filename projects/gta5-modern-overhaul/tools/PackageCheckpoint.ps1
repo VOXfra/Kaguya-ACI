@@ -30,6 +30,8 @@ if ($CoreCandidates.Count -ne 1) {
 $PackageRoot = Join-Path $OutputDirectory "package"
 $DataRoot = Join-Path $PackageRoot "VOXModernOverhaul"
 $ConfigRoot = Join-Path $DataRoot "config"
+$AssetToolSource = Join-Path $ProjectRoot "tools/assets"
+$AssetToolRoot = Join-Path $DataRoot "tools/assets"
 $ZipPath = Join-Path $OutputDirectory "VOX-GTA5-Modern-Overhaul-$Version.zip"
 
 if (Test-Path -LiteralPath $PackageRoot) {
@@ -40,19 +42,42 @@ if (Test-Path -LiteralPath $ZipPath) {
 }
 
 New-Item -ItemType Directory -Path $ConfigRoot -Force | Out-Null
+New-Item -ItemType Directory -Path $AssetToolRoot -Force | Out-Null
 
 Copy-Item -LiteralPath $AsiCandidates[0].FullName -Destination (Join-Path $PackageRoot "VOXModernOverhaul.asi")
 Copy-Item -LiteralPath $CoreCandidates[0].FullName -Destination (Join-Path $PackageRoot "VOXModernCore.dll")
 Copy-Item -LiteralPath (Join-Path $ProjectRoot "packaging/config/core.cfg") -Destination (Join-Path $ConfigRoot "core.cfg")
 Copy-Item -LiteralPath (Join-Path $ProjectRoot "packaging/README_FIRST_TEST.txt") -Destination (Join-Path $PackageRoot "README_FIRST_TEST.txt")
 
+if (-not (Test-Path -LiteralPath $AssetToolSource -PathType Container)) {
+    throw "Visual asset tool source directory is missing: $AssetToolSource"
+}
+$RequiredAssetTools = @(
+    "vox_visual_probe.py",
+    "Setup-And-Install-VisualProbe.ps1",
+    "Rollback-VisualProbe.ps1",
+    "01_INSTALL_VISUAL_PROBE.cmd",
+    "02_OPEN_VISUAL_PROBE_REPORT.cmd",
+    "03_ROLLBACK_VISUAL_PROBE.cmd"
+)
+foreach ($Name in $RequiredAssetTools) {
+    $Source = Join-Path $AssetToolSource $Name
+    if (-not (Test-Path -LiteralPath $Source -PathType Leaf)) {
+        throw "Required visual asset tool is missing: $Source"
+    }
+    Copy-Item -LiteralPath $Source -Destination (Join-Path $AssetToolRoot $Name)
+}
+
 $AsiHash = (Get-FileHash -LiteralPath (Join-Path $PackageRoot "VOXModernOverhaul.asi") -Algorithm SHA256).Hash.ToLowerInvariant()
 $CoreHash = (Get-FileHash -LiteralPath (Join-Path $PackageRoot "VOXModernCore.dll") -Algorithm SHA256).Hash.ToLowerInvariant()
+$VisualToolHash = (Get-FileHash -LiteralPath (Join-Path $AssetToolRoot "vox_visual_probe.py") -Algorithm SHA256).Hash.ToLowerInvariant()
 $BuildInfo = @(
     "version=$Version",
     "commit=$Commit",
     "asi_sha256=$AsiHash",
-    "core_sha256=$CoreHash"
+    "core_sha256=$CoreHash",
+    "visual_probe_sha256=$VisualToolHash",
+    "visual_probe_fivefury=0.4.21"
 ) -join [Environment]::NewLine
 Set-Content -LiteralPath (Join-Path $PackageRoot "BUILD_INFO.txt") -Value $BuildInfo -Encoding utf8NoBOM
 
