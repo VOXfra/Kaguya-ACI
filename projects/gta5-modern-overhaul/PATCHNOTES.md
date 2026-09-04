@@ -2,6 +2,35 @@
 
 All user-visible, architectural and tooling changes are recorded here.
 
+## [0.0.1-dev.12] — 2026-09-04
+
+### Real dev.11 result
+- User reports GTA V Enhanced remains stable with dev.11 installed, but `VOXModernOverhaul/runtime_game_thread.log` is not created.
+- New ASI-loader evidence confirms `VOXModernOverhaul.asi` is mapped and plugin enumeration completes.
+- New ScriptHookV log confirms Enhanced `1.0.1158.13` initialization but lists only ScriptHookVDotNet and TrainerV registrations; VOXModernOverhaul is absent.
+- Therefore dev.11 passes ASI loading but **fails the real ScriptHookV registration gate before ScriptMain executes**.
+- RageOpenV initializes normally in the same launch.
+
+### Root-cause boundary
+- dev.11 used exact historical/current MSVC-decorated export strings for `scriptRegister` and `scriptWait` and silently disabled itself if either `GetProcAddress` failed.
+- The real evidence is consistent with that resolution path failing before `scriptRegister` is called. The exact export-table spelling in the user's ScriptHookV binary is not yet directly captured, so decoration mismatch is treated as the leading compatibility issue rather than claimed as proven fact.
+
+### dev.12 compatibility fix
+- Keeps the dev.11 no-CRT custom-entrypoint architecture and the same restricted Kernel32 import boundary.
+- Still never loads ScriptHookV from the loader callback and never directly imports it.
+- Export resolution now uses three stages: historical exact name, undecorated alias, then PE export-name scan for the unique semantic `?scriptRegister@@` / `?scriptWait@@` function identifiers.
+- Ambiguous matches fail closed.
+- No GTA native calls, gameplay hooks, memory patches, save writes or world mutations are added.
+
+### Regression test hardened
+- The fake ScriptHookV intentionally no longer exposes the historical exact names.
+- It exports deliberately drifted names containing the same semantic identifiers, forcing the production runtime to exercise the new PE export-scan fallback.
+- The smoke host verifies that the historical exact names are absent before loading the ASI, then still requires registration, ScriptMain entry, wait/resume and five heartbeats.
+
+### Pending
+- CI/package validation of dev.12.
+- Real GTA D4 retest after CI passes.
+
 ## [0.0.1-dev.11] — 2026-09-04
 
 ### Stable load baseline promoted
@@ -59,9 +88,10 @@ The resume marker is only emitted after `scriptWait(0)` returns, so a real-game 
 - package creation/content verification: PASS.
 - fake ScriptHookV redistribution guard: PASS.
 
-### Pending
-- Real GTA V Enhanced D4 test of dev.11.
-- No persistence, GTA natives or world mutation will be connected until the real log proves the game-thread lifecycle.
+### Real-game outcome
+- ASI loads successfully and GTA remains stable.
+- Real ScriptHookV registration is not observed and no runtime game-thread log is created.
+- dev.11 is therefore not promoted to D4 live runtime.
 
 ## [0.0.1-debug.2] — 2026-09-04
 
