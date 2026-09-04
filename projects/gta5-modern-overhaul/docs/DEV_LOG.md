@@ -2,6 +2,61 @@
 
 This is the precise engineering trace for the project. Patch notes summarize changes; this log records what was done, why, validation performed and what is still unproven.
 
+## 2026-09-04 — dev.15.2 source-identical crash → dev.15.3 complete nested-RPF mirror
+
+### Real dev.15.2 result
+The user confirms GTA V Enhanced still crashes immediately when entering Story Mode after dev.15.2 replaced the transformed `prop_roadcone02a.ydr` with a byte-for-byte copy of the extracted Rockstar original at the exact same loose destination:
+
+`newmods/platform/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr`
+
+The isolation script had already verified the active identity file SHA-256 matched `source_sha256`. Therefore the transformed FiveFury YDR bytes are not necessary to reproduce the crash.
+
+This removes the modified target payload as the primary explanation for the current crash. It does not prove FiveFury retail output is generally correct; it proves only that this crash also occurs without those modified bytes.
+
+### RageOpenV source re-analysis
+RageOpenV's custom-device code mounts `newmods/platform/` as `platform:/`. In `OpenArchiveHook`, when the resolved custom-device path has `FILE_ATTRIBUTE_DIRECTORY`, the archive open `type` is changed to directory mode.
+
+Our previous layout was:
+
+`.../v_construction.rpf/prop_roadcone02a.ydr`
+
+with no sibling members from the original `v_construction.rpf`.
+
+The important architectural implication is that the directory named `v_construction.rpf` is not necessarily a per-file overlay. It can become the archive itself. A one-file directory can therefore shadow the complete Rockstar nested RPF and make all its other resources unavailable. That exactly fits the observed behavior: changing the one present file back to source-identical bytes still crashes because the rest of the archive is still absent.
+
+### dev.15.3 implementation
+Added `vox_archive_mirror_probe.py` plus:
+- `05_INSTALL_FULL_ARCHIVE_IDENTITY.cmd`;
+- `06_ENABLE_SCALED_PROBE.cmd`;
+- `07_ROLLBACK_FULL_ARCHIVE_PROBE.cmd`;
+- PowerShell wrappers for each stage.
+
+The complete identity installer:
+1. requires the existing dev.15.2 visual manifest/work state and source-identical active target;
+2. derives the containing nested-RPF logical prefix from `source_logical_path`;
+3. reuses/rescans the user's Enhanced FiveFury index;
+4. enumerates every indexed asset below that nested RPF;
+5. writes all members as standalone archive bytes into a staging directory, preserving relative paths;
+6. requires no duplicate logical member path;
+7. verifies the selected target inside staging still equals the preserved Rockstar `source_sha256`;
+8. refuses conversion if the current active directory contains anything except the known owned identity target;
+9. renames the incomplete directory out of the active mount, moves the complete staging archive into place, and restores the old directory if the activation move fails;
+10. records `FULL_ARCHIVE_IDENTITY`, nested prefix, mirror root, target relative path, file count and per-file SHA-256 values.
+
+The transformed-stage command is deliberately gated behind `FULL_ARCHIVE_IDENTITY`. It replaces only the target with the previously preserved transformed YDR, updates the complete mirror's target hash and records `FULL_ARCHIVE_TRANSFORMED`.
+
+The full rollback verifies both the exact mirrored file set and the SHA-256 of every member. If any file is added, missing or modified, recursive removal fails closed rather than deleting a directory whose ownership is no longer certain.
+
+### Evidence boundary
+The structural diagnosis is source-driven and consistent with the real failure, but it is not yet a real-game proof. The next D4 test is specifically:
+
+1. install the complete nested-RPF mirror while leaving `prop_roadcone02a.ydr` source-identical;
+2. enter Story Mode;
+3. if stable, enable the transformed target inside the same complete archive and test again;
+4. if the complete identity archive still crashes, stop iterating on missing sibling resources and capture a WER/minidump or switch away from this RageOpenV directory-archive route.
+
+No visible graphics D4 success is claimed yet.
+
 ## 2026-09-04 — dev.15.1 real Story Mode crash → dev.15.2 differential asset isolation
 
 ### Real dev.15.1 setup/install evidence
