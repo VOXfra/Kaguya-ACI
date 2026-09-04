@@ -25,7 +25,7 @@ if (Test-Path -LiteralPath $ZipPath) {
 }
 
 New-Item -ItemType Directory -Path $StagingDir -Force | Out-Null
-Copy-Item -LiteralPath (Join-Path $SourceDir '*') -Destination $StagingDir -Recurse -Force
+Copy-Item -Path (Join-Path $SourceDir '*') -Destination $StagingDir -Recurse -Force
 
 $required = @(
     '01_ENABLE_CRASH_CAPTURE.cmd',
