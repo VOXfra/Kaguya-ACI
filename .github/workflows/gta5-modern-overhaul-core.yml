@@ -130,7 +130,7 @@ jobs:
           ./projects/gta5-modern-overhaul/tools/PackageCheckpoint.ps1
           -BuildDirectory ./projects/gta5-modern-overhaul/build-runtime
           -OutputDirectory ./projects/gta5-modern-overhaul/dist
-          -Version 0.0.1-dev.11
+          -Version 0.0.1-dev.12
           -Commit $env:GITHUB_SHA
 
       - name: Verify package contents
@@ -160,7 +160,7 @@ jobs:
       - name: Upload GTA-ready checkpoint ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: VOX-GTA5-Modern-Overhaul-0.0.1-dev.11
-          path: projects/gta5-modern-overhaul/dist/VOX-GTA5-Modern-Overhaul-0.0.1-dev.11.zip
+          name: VOX-GTA5-Modern-Overhaul-0.0.1-dev.12
+          path: projects/gta5-modern-overhaul/dist/VOX-GTA5-Modern-Overhaul-0.0.1-dev.12.zip
           if-no-files-found: error
           retention-days: 30
