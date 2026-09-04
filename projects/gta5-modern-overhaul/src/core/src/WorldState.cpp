@@ -2,15 +2,16 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cstdio>
 #include <fstream>
 #include <limits>
 #include <set>
 #include <sstream>
 #include <system_error>
+#include <type_traits>
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
 #include <windows.h>
 #else
 #include <fcntl.h>
@@ -22,10 +23,17 @@ namespace {
 
 constexpr std::string_view kMagic = "VOX_WORLD_STATE";
 constexpr std::string_view kChecksumPrefix = "checksum=";
+constexpr std::uintmax_t kMaxStateFileBytes = 256ull * 1024ull * 1024ull;
+
+std::filesystem::path WithSuffix(std::filesystem::path path, const std::filesystem::path::string_type& suffix) {
+    path += suffix;
+    return path;
+}
 
 std::uint64_t Fnv1a64(const std::string_view text) noexcept {
     std::uint64_t hash = 14695981039346656037ull;
-    for (const unsigned char byte : text) {
+    for (const char character : text) {
+        const auto byte = static_cast<unsigned char>(character);
         hash ^= static_cast<std::uint64_t>(byte);
         hash *= 1099511628211ull;
     }
@@ -62,27 +70,30 @@ bool ParseUnsignedExact(const std::string_view text, T& value) noexcept {
 }
 
 bool ReadWholeFile(const std::filesystem::path& path, std::string& text, std::string& error) {
+    std::error_code sizeError;
+    const auto fileSize = std::filesystem::file_size(path, sizeError);
+    if (sizeError) {
+        error = "size_failed";
+        return false;
+    }
+    if (fileSize > kMaxStateFileBytes) {
+        error = "file_too_large";
+        return false;
+    }
+
     std::ifstream stream{path, std::ios::binary};
     if (!stream.is_open()) {
         error = "open_failed";
         return false;
     }
 
-    stream.seekg(0, std::ios::end);
-    const auto size = stream.tellg();
-    if (size < 0) {
-        error = "size_failed";
-        return false;
-    }
-    stream.seekg(0, std::ios::beg);
-
-    text.resize(static_cast<std::size_t>(size));
+    text.resize(static_cast<std::size_t>(fileSize));
     if (!text.empty()) {
         stream.read(text.data(), static_cast<std::streamsize>(text.size()));
-    }
-    if (!stream.good() && !stream.eof()) {
-        error = "read_failed";
-        return false;
+        if (stream.gcount() != static_cast<std::streamsize>(text.size())) {
+            error = "read_short";
+            return false;
+        }
     }
     return true;
 }
@@ -145,14 +156,19 @@ bool ReplaceAtomically(
     const std::filesystem::path& backup,
     std::string& error) {
 #if defined(_WIN32)
-    std::error_code existsError;
-    const bool targetExists = std::filesystem::exists(target, existsError);
-    if (existsError) {
+    std::error_code filesystemError;
+    const bool targetExists = std::filesystem::exists(target, filesystemError);
+    if (filesystemError) {
         error = "target_exists_check_failed";
         return false;
     }
 
     if (targetExists) {
+        std::filesystem::remove(backup, filesystemError);
+        if (filesystemError) {
+            error = "stale_backup_remove_failed";
+            return false;
+        }
         if (ReplaceFileW(
                 target.c_str(),
                 temporary.c_str(),
@@ -176,11 +192,13 @@ bool ReplaceAtomically(
     return true;
 #else
     std::error_code filesystemError;
-    if (std::filesystem::exists(target, filesystemError)) {
-        if (filesystemError) {
-            error = "target_exists_check_failed";
-            return false;
-        }
+    const bool targetExists = std::filesystem::exists(target, filesystemError);
+    if (filesystemError) {
+        error = "target_exists_check_failed";
+        return false;
+    }
+
+    if (targetExists) {
         std::filesystem::copy_file(
             target,
             backup,
@@ -193,16 +211,16 @@ bool ReplaceAtomically(
         if (!FlushFileToDisk(backup, error)) {
             return false;
         }
-    } else if (filesystemError) {
-        error = "target_exists_check_failed";
-        return false;
     }
 
     if (::rename(temporary.c_str(), target.c_str()) != 0) {
         error = "rename_failed";
         return false;
     }
-    (void)FlushDirectoryToDisk(target.parent_path());
+    if (!FlushDirectoryToDisk(target.parent_path())) {
+        error = "directory_flush_failed";
+        return false;
+    }
     return true;
 #endif
 }
@@ -426,7 +444,13 @@ WorldState SnapshotWorldState(const EntityRegistry& registry) {
 
 WorldStateLoadResult LoadWorldStateFile(const std::filesystem::path& path) {
     WorldStateLoadResult result{};
-    const std::filesystem::path backup = path.string() + ".bak";
+    const std::filesystem::path backup = WithSuffix(path, std::filesystem::path::string_type{
+#if defined(_WIN32)
+        L".bak"
+#else
+        ".bak"
+#endif
+    });
 
     std::error_code filesystemError;
     const bool primaryExists = std::filesystem::exists(path, filesystemError);
@@ -506,10 +530,24 @@ bool SaveWorldStateFileAtomic(
         }
     }
 
-    const std::filesystem::path temporary = path.string() + ".tmp";
-    const std::filesystem::path backup = path.string() + ".bak";
+    const std::filesystem::path temporary = WithSuffix(path, std::filesystem::path::string_type{
+#if defined(_WIN32)
+        L".tmp"
+#else
+        ".tmp"
+#endif
+    });
+    const std::filesystem::path backup = WithSuffix(path, std::filesystem::path::string_type{
+#if defined(_WIN32)
+        L".bak"
+#else
+        ".bak"
+#endif
+    });
     std::filesystem::remove(temporary, filesystemError);
-    filesystemError.clear();
+    if (filesystemError) {
+        return fail("stale_temporary_remove_failed");
+    }
 
     {
         std::ofstream stream{temporary, std::ios::binary | std::ios::trunc};
@@ -520,6 +558,7 @@ bool SaveWorldStateFileAtomic(
         stream.flush();
         if (!stream.good()) {
             stream.close();
+            filesystemError.clear();
             std::filesystem::remove(temporary, filesystemError);
             return fail("temporary_write_failed");
         }
@@ -527,12 +566,14 @@ bool SaveWorldStateFileAtomic(
 
     std::string flushError;
     if (!FlushFileToDisk(temporary, flushError)) {
+        filesystemError.clear();
         std::filesystem::remove(temporary, filesystemError);
         return fail(flushError);
     }
 
     std::string replaceError;
     if (!ReplaceAtomically(temporary, path, backup, replaceError)) {
+        filesystemError.clear();
         std::filesystem::remove(temporary, filesystemError);
         return fail(replaceError);
     }
