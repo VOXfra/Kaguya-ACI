@@ -100,7 +100,7 @@ if (-not (Test-Path -LiteralPath $VenvPython -PathType Leaf)) {
     }
 }
 
-$versionCodeOutput = Invoke-CheckedPython -Arguments @('-c', 'import sys; print(sys.version_info.major * 100 + sys.version_info.minor)') -FailureMessage 'Could not query the isolated Python version.'
+$versionCodeOutput = @(Invoke-CheckedPython -Arguments @('-c', 'import sys; print(sys.version_info.major * 100 + sys.version_info.minor)') -FailureMessage 'Could not query the isolated Python version.')
 if ($versionCodeOutput.Count -lt 1) {
     throw 'The isolated Python version query returned no output.'
 }
@@ -110,7 +110,7 @@ if (-not [int]::TryParse($versionCodeText, [ref]$versionCode) -or $versionCode -
     throw "The isolated Python environment must be Python 3.11 or newer; got version code '$versionCodeText'. Delete VOXModernOverhaul\tools\.venv-assets and run setup again after installing Python 3.11+."
 }
 
-$versionOutput = Invoke-CheckedPython -Arguments @('-c', 'import sys; print(sys.version.split()[0])') -FailureMessage 'Could not read the isolated Python version string.'
+$versionOutput = @(Invoke-CheckedPython -Arguments @('-c', 'import sys; print(sys.version.split()[0])') -FailureMessage 'Could not read the isolated Python version string.')
 if ($versionOutput.Count -lt 1) {
     throw 'The isolated Python version string query returned no output.'
 }
