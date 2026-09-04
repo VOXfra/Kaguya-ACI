@@ -1,0 +1,35 @@
+name: GTA5 Modern Overhaul Core CI
+
+on:
+  push:
+    branches:
+      - gta5-modern-world-overhaul
+    paths:
+      - "projects/gta5-modern-overhaul/**"
+      - ".github/workflows/gta5-modern-overhaul-core.yml"
+  pull_request:
+    paths:
+      - "projects/gta5-modern-overhaul/**"
+      - ".github/workflows/gta5-modern-overhaul-core.yml"
+
+jobs:
+  core-build-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S projects/gta5-modern-overhaul -B projects/gta5-modern-overhaul/build -DVOX_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build projects/gta5-modern-overhaul/build --config Release --parallel 2
+
+      - name: Test
+        run: ctest --test-dir projects/gta5-modern-overhaul/build -C Release --output-on-failure

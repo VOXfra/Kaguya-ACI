@@ -2,6 +2,58 @@
 
 This is the precise engineering trace for the project. Patch notes summarize changes; this log records what was done, why, validation performed and what is still unproven.
 
+## 2026-09-04 — Core compile/test checkpoint
+
+### Event system
+- Added a typed native `EventBus`.
+- Subscriptions return explicit tokens carrying event type and unique ID.
+- Unsubscribe is idempotent from the caller's perspective: first valid removal succeeds, repeated removal reports failure rather than silently claiming success.
+- Publish copies callback handles while holding the mutex, then releases the mutex before invoking callbacks.
+- This permits re-entrant publication and avoids a simple deadlock class where a handler publishes another event.
+
+### Automated build protection
+- Added GitHub Actions workflow for Linux and Windows.
+- Workflow configures, builds and runs CTest only for the GTA overhaul subproject.
+- Changes outside this project do not needlessly trigger this CI job.
+
+### Local validation performed
+Environment:
+- GNU C++ 14.2.0
+- CMake
+- C++20
+- warnings: `-Wall -Wextra -Wpedantic`
+
+Result:
+- configure: PASS
+- compile: PASS
+- link: PASS
+- tests: 1/1 PASS
+- failed tests: 0
+
+Tested invariants:
+- invalid `EntityId` is always invalid
+- non-zero IDs are valid and ordered correctly
+- simulation tier fidelity ordering
+- logger creates and writes its file
+- EventBus returns valid tokens
+- multiple subscribers receive events
+- nested/re-entrant publish works
+- unsubscribe removes only the selected subscription
+- repeated unsubscribe does not report a false success
+
+### Validation boundary
+- The isolated core is validated on Linux/GCC for these exact tests.
+- Windows/MSVC is pending CI observation.
+- No GTA runtime adapter exists yet.
+- No claim is made about in-game behavior yet.
+
+### Next checkpoint
+1. Observe Windows/Linux CI.
+2. Add versioned configuration with strict parsing and safe defaults.
+3. Add persistent ID allocation/registry rather than only the `EntityId` primitive.
+4. Add Windows GTA V Enhanced install/build detection.
+5. Audit and integrate the minimal native ScriptHookV adapter.
+
 ## 2026-09-04 — Project initialization / Phase 0 start
 
 ### Scope frozen

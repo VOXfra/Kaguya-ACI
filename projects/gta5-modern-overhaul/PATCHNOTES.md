@@ -2,6 +2,24 @@
 
 All user-visible, architectural and tooling changes are recorded here.
 
+## [0.0.1-dev.2] — 2026-09-04
+
+### Added
+- Added typed native `EventBus` with subscription tokens, unsubscribe support and re-entrant publishing without holding the internal mutex during callbacks.
+- Added GitHub Actions core CI matrix for Windows and Linux.
+- Extended core tests to validate EventBus dispatch, re-entrant publishing and unsubscribe behavior.
+
+### Verified
+- Reproduced the exact committed core sources in an isolated local build environment.
+- CMake configuration succeeded with GNU C++ 14.2.0.
+- C++20 compilation and linking succeeded with `-Wall -Wextra -Wpedantic`.
+- `ctest`: 1/1 tests passed, 0 failures.
+
+### Validation boundary
+- Linux/GCC standalone core is validated at D3 for the tested primitives.
+- Windows/MSVC validation is delegated to the newly added CI job and remains pending until a successful workflow run is observed.
+- GTA V Enhanced runtime integration remains unimplemented and therefore unvalidated.
+
 ## [0.0.1-dev.1] — 2026-09-04
 
 ### Added
