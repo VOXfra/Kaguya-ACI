@@ -17,6 +17,9 @@
 
 namespace {
 
+constexpr char kScriptRegisterExport[] = "?scriptRegister@@YAXPEAUHINSTANCE__@@P6AXXZ@Z@Z";
+constexpr char kScriptWaitExport[] = "?scriptWait@@YAXK@Z";
+
 std::filesystem::path CurrentExecutableDirectory() {
     std::vector<wchar_t> buffer(32768, L'\0');
     const DWORD length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
@@ -64,19 +67,39 @@ int main() {
 
         HMODULE scriptHook = LoadLibraryW(scriptHookPath.c_str());
         if (scriptHook == nullptr) {
-            std::cerr << "FAIL: LoadLibraryW(ScriptHookV.dll) error=" << GetLastError() << '\n';
+            std::cerr << "FAIL_STAGE=LOAD_FAKE_SCRIPHOOK: error=" << GetLastError() << '\n';
+            return 1;
+        }
+
+        // Prove the fake exposes the exact ABI names that the runtime resolves.
+        if (GetProcAddress(scriptHook, kScriptRegisterExport) == nullptr) {
+            std::cerr << "FAIL_STAGE=ABI_EXPORT_SCRIPT_REGISTER: missing " << kScriptRegisterExport << '\n';
+            return 1;
+        }
+        if (GetProcAddress(scriptHook, kScriptWaitExport) == nullptr) {
+            std::cerr << "FAIL_STAGE=ABI_EXPORT_SCRIPT_WAIT: missing " << kScriptWaitExport << '\n';
+            return 1;
+        }
+
+        const auto wasRegistered = reinterpret_cast<BOOL (*)()>(GetProcAddress(scriptHook, "VoxFakeWasRegistered"));
+        const auto runner = reinterpret_cast<void (*)()>(GetProcAddress(scriptHook, "VoxFakeRunRegisteredScript"));
+        if (wasRegistered == nullptr || runner == nullptr) {
+            std::cerr << "FAIL_STAGE=FAKE_CONTROL_EXPORTS\n";
+            return 1;
+        }
+        if (wasRegistered() != FALSE) {
+            std::cerr << "FAIL_STAGE=PRECONDITION: fake ScriptHookV already has a registered script\n";
             return 1;
         }
 
         HMODULE asi = LoadLibraryW(asiPath.c_str());
         if (asi == nullptr) {
-            std::cerr << "FAIL: LoadLibraryW(VOXModernOverhaul.asi) error=" << GetLastError() << '\n';
+            std::cerr << "FAIL_STAGE=LOAD_ASI: error=" << GetLastError() << '\n';
             return 1;
         }
 
-        const auto runner = reinterpret_cast<void (*)()>(GetProcAddress(scriptHook, "VoxFakeRunRegisteredScript"));
-        if (runner == nullptr) {
-            std::cerr << "FAIL: fake ScriptHookV runner export missing\n";
+        if (wasRegistered() == FALSE) {
+            std::cerr << "FAIL_STAGE=SCRIPT_REGISTER_NOT_CALLED\n";
             return 1;
         }
 
@@ -88,30 +111,41 @@ int main() {
             0,
             nullptr);
         if (scriptThread == nullptr) {
-            std::cerr << "FAIL: CreateThread for synthetic scheduler error=" << GetLastError() << '\n';
+            std::cerr << "FAIL_STAGE=SYNTHETIC_SCHEDULER_THREAD: error=" << GetLastError() << '\n';
             return 1;
         }
         CloseHandle(scriptThread);
 
+        bool sawEnter = false;
+        bool sawResume = false;
+        std::size_t heartbeatCount = 0;
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
         while (std::chrono::steady_clock::now() < deadline) {
             const std::string text = ReadTextFile(logPath);
-            if (text.find("VOX_SCRIPT_MAIN_ENTER") != std::string::npos &&
-                text.find("VOX_SCRIPT_MAIN_RESUMED_AFTER_WAIT") != std::string::npos &&
-                CountOccurrences(text, "VOX_SCRIPT_HEARTBEAT") >= 5) {
-                std::cout << "PASS: ScriptHookV registration, first yield/resume and five heartbeats observed\n";
+            sawEnter = text.find("VOX_SCRIPT_MAIN_ENTER") != std::string::npos;
+            sawResume = text.find("VOX_SCRIPT_MAIN_RESUMED_AFTER_WAIT") != std::string::npos;
+            heartbeatCount = CountOccurrences(text, "VOX_SCRIPT_HEARTBEAT");
+            if (sawEnter && sawResume && heartbeatCount >= 5) {
+                std::cout << "PASS: ABI exports, registration, ScriptMain entry, wait/resume and five heartbeats observed\n";
                 return 0;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds{20});
         }
 
-        std::cerr << "FAIL: ScriptHookV game-thread checkpoint markers were not observed\n";
+        if (!sawEnter) {
+            std::cerr << "FAIL_STAGE=SCRIPT_MAIN_NOT_EXECUTED\n";
+        } else if (!sawResume) {
+            std::cerr << "FAIL_STAGE=SCRIPT_WAIT_NOT_RESUMED\n";
+        } else {
+            std::cerr << "FAIL_STAGE=HEARTBEAT_COUNT: observed=" << heartbeatCount << " expected>=5\n";
+        }
+
         if (std::filesystem::exists(logPath)) {
             std::cerr << ReadTextFile(logPath) << '\n';
         }
         return 1;
     } catch (const std::exception& error) {
-        std::cerr << "FAIL: runtime smoke exception: " << error.what() << '\n';
+        std::cerr << "FAIL_STAGE=HOST_EXCEPTION: " << error.what() << '\n';
         return 1;
     }
 }
