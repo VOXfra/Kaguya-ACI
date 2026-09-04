@@ -61,7 +61,7 @@ jobs:
 
   runtime-package:
     runs-on: windows-latest
-    needs: core-build-test
+    needs: [core-build-test, core-sanitizers]
 
     steps:
       - name: Checkout
@@ -117,12 +117,18 @@ jobs:
           }
           Write-Host "PASS: ASI remains CRT-free and only loads the C++ core from ScriptMain."
 
-      - name: Run synthetic ScriptHookV plus core-bridge checkpoint
+      - name: Run synthetic ScriptHookV plus persistent core checkpoint twice
         shell: pwsh
         run: |
           $runtime = Resolve-Path ./projects/gta5-modern-overhaul/build-runtime/Release
+          $stateRoot = Join-Path $runtime "VOXModernOverhaul\state"
+          if (Test-Path -LiteralPath $stateRoot) { Remove-Item -LiteralPath $stateRoot -Recurse -Force }
+
           & (Join-Path $runtime "gta5_enhanced.exe")
-          if ($LASTEXITCODE -ne 0) { throw "ScriptHookV/core-bridge smoke checkpoint failed with exit code $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { throw "First ScriptHookV/persistence smoke process failed with exit code $LASTEXITCODE" }
+
+          & (Join-Path $runtime "gta5_enhanced.exe")
+          if ($LASTEXITCODE -ne 0) { throw "Second fresh-process persistence restore failed with exit code $LASTEXITCODE" }
 
       - name: Package checkpoint
         shell: pwsh
@@ -130,7 +136,7 @@ jobs:
           ./projects/gta5-modern-overhaul/tools/PackageCheckpoint.ps1
           -BuildDirectory ./projects/gta5-modern-overhaul/build-runtime
           -OutputDirectory ./projects/gta5-modern-overhaul/dist
-          -Version 0.0.1-dev.13
+          -Version 0.0.1-dev.14
           -Commit $env:GITHUB_SHA
 
       - name: Verify package contents
@@ -157,11 +163,14 @@ jobs:
           if (Test-Path -LiteralPath (Join-Path $extract "ScriptHookV.dll")) {
             throw "Package must never redistribute the test fake or user's ScriptHookV.dll."
           }
+          if (Test-Path -LiteralPath (Join-Path $extract "VOXModernOverhaul/state/world_state.v1")) {
+            throw "Package must never ship CI-generated persistent user state."
+          }
 
       - name: Upload GTA-ready checkpoint ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: VOX-GTA5-Modern-Overhaul-0.0.1-dev.13
-          path: projects/gta5-modern-overhaul/dist/VOX-GTA5-Modern-Overhaul-0.0.1-dev.13.zip
+          name: VOX-GTA5-Modern-Overhaul-0.0.1-dev.14
+          path: projects/gta5-modern-overhaul/dist/VOX-GTA5-Modern-Overhaul-0.0.1-dev.14.zip
           if-no-files-found: error
           retention-days: 30
