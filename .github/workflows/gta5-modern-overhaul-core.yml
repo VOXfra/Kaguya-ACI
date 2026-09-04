@@ -92,7 +92,8 @@ jobs:
         run: |
           $scripts = @(
             './projects/gta5-modern-overhaul/tools/assets/Setup-And-Install-VisualProbe.ps1',
-            './projects/gta5-modern-overhaul/tools/assets/Rollback-VisualProbe.ps1'
+            './projects/gta5-modern-overhaul/tools/assets/Rollback-VisualProbe.ps1',
+            './projects/gta5-modern-overhaul/tools/assets/Isolate-VisualProbeCrash.ps1'
           )
           foreach ($script in $scripts) {
             $content = Get-Content -LiteralPath $script -Raw
@@ -131,6 +132,40 @@ jobs:
             throw "Installer-created venv failed the Gen9 transformer self-test."
           }
           Write-Host "PASS: real PowerShell -> venv -> version query -> FiveFury -> Gen9 self-test bootstrap executed."
+
+      - name: Validate byte-identical crash-isolation replacement
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'vox-identity-probe'
+          if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force }
+          $probe = Join-Path $root 'VOXModernOverhaul/visual_probe'
+          $originalDir = Join-Path $probe 'work/original'
+          $override = Join-Path $root 'newmods/platform/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr'
+          New-Item -ItemType Directory -Path $originalDir -Force | Out-Null
+          New-Item -ItemType Directory -Path (Split-Path -Parent $override) -Force | Out-Null
+          $original = Join-Path $originalDir 'prop_roadcone02a.ydr'
+          [IO.File]::WriteAllBytes($original, [byte[]](1,2,3,4,5,6,7,8))
+          [IO.File]::WriteAllBytes($override, [byte[]](9,8,7,6,5,4,3,2,1))
+          $sourceHash = (Get-FileHash $original -Algorithm SHA256).Hash.ToLowerInvariant()
+          $generatedHash = (Get-FileHash $override -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifest = [ordered]@{
+            schema_version = 1
+            model_name = 'prop_roadcone02a'
+            source_sha256 = $sourceHash
+            generated_sha256 = $generatedHash
+            override_relative_path = 'newmods/platform/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr'
+          }
+          New-Item -ItemType Directory -Path $probe -Force | Out-Null
+          $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $probe 'visual_probe_manifest.json') -Encoding UTF8
+          & ./projects/gta5-modern-overhaul/tools/assets/Isolate-VisualProbeCrash.ps1 -GtaRootOverride $root
+          if ($LASTEXITCODE -ne 0) { throw "Identity crash-isolation script failed with exit code $LASTEXITCODE." }
+          $activeHash = (Get-FileHash $override -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($activeHash -ne $sourceHash) { throw "Identity override does not exactly match source bytes." }
+          $updated = Get-Content -LiteralPath (Join-Path $probe 'visual_probe_manifest.json') -Raw | ConvertFrom-Json
+          if ([string]$updated.probe_mode -ne 'IDENTITY_OVERRIDE') { throw "Identity probe mode was not recorded." }
+          if (([string]$updated.generated_sha256).ToLowerInvariant() -ne $sourceHash) { throw "Rollback-active hash was not advanced to source hash." }
+          if (([string]$updated.transformed_sha256).ToLowerInvariant() -ne $generatedHash) { throw "Original transformed hash was not preserved for diagnosis." }
+          Write-Host "PASS: transformed override -> hash-verified byte-identical original replacement."
 
       - name: Configure runtime x64
         run: cmake -S projects/gta5-modern-overhaul -B projects/gta5-modern-overhaul/build-runtime -A x64 -DVOX_BUILD_TESTS=OFF -DVOX_BUILD_RUNTIME=ON -DVOX_WARNINGS_AS_ERRORS=ON
@@ -201,7 +236,7 @@ jobs:
           ./projects/gta5-modern-overhaul/tools/PackageCheckpoint.ps1
           -BuildDirectory ./projects/gta5-modern-overhaul/build-runtime
           -OutputDirectory ./projects/gta5-modern-overhaul/dist
-          -Version 0.0.1-dev.15.1
+          -Version 0.0.1-dev.15.2
           -Commit $env:GITHUB_SHA
 
       - name: Verify package contents and visual-tool boundary
@@ -219,9 +254,11 @@ jobs:
             "VOXModernOverhaul/tools/assets/vox_visual_probe.py",
             "VOXModernOverhaul/tools/assets/Setup-And-Install-VisualProbe.ps1",
             "VOXModernOverhaul/tools/assets/Rollback-VisualProbe.ps1",
+            "VOXModernOverhaul/tools/assets/Isolate-VisualProbeCrash.ps1",
             "VOXModernOverhaul/tools/assets/01_INSTALL_VISUAL_PROBE.cmd",
             "VOXModernOverhaul/tools/assets/02_OPEN_VISUAL_PROBE_REPORT.cmd",
             "VOXModernOverhaul/tools/assets/03_ROLLBACK_VISUAL_PROBE.cmd",
+            "VOXModernOverhaul/tools/assets/04_ISOLATE_VISUAL_CRASH.cmd",
             "README_FIRST_TEST.txt",
             "BUILD_INFO.txt"
           )
@@ -248,21 +285,21 @@ jobs:
             throw "Package must never redistribute Rockstar or CI-generated YDR assets."
           }
           $buildInfo = Get-Content -LiteralPath (Join-Path $extract 'BUILD_INFO.txt') -Raw
-          if ($buildInfo -notmatch 'version=0\.0\.1-dev\.15\.1') {
-            throw "BUILD_INFO does not identify dev.15.1."
+          if ($buildInfo -notmatch 'version=0\.0\.1-dev\.15\.2') {
+            throw "BUILD_INFO does not identify dev.15.2."
           }
           if ($buildInfo -notmatch 'visual_probe_fivefury=0\.4\.21') {
             throw "BUILD_INFO does not pin FiveFury 0.4.21."
           }
           $readme = Get-Content -LiteralPath (Join-Path $extract 'README_FIRST_TEST.txt') -Raw
-          if ($readme -notmatch 'Version: 0\.0\.1-dev\.15\.1') {
-            throw "Packaged README does not identify dev.15.1."
+          if ($readme -notmatch 'Version: 0\.0\.1-dev\.15\.2') {
+            throw "Packaged README does not identify dev.15.2."
           }
 
       - name: Upload GTA-ready checkpoint ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: VOX-GTA5-Modern-Overhaul-0.0.1-dev.15.1
-          path: projects/gta5-modern-overhaul/dist/VOX-GTA5-Modern-Overhaul-0.0.1-dev.15.1.zip
+          name: VOX-GTA5-Modern-Overhaul-0.0.1-dev.15.2
+          path: projects/gta5-modern-overhaul/dist/VOX-GTA5-Modern-Overhaul-0.0.1-dev.15.2.zip
           if-no-files-found: error
           retention-days: 30
