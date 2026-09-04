@@ -70,8 +70,8 @@ jobs:
       - name: Configure runtime x64
         run: cmake -S projects/gta5-modern-overhaul -B projects/gta5-modern-overhaul/build-runtime -A x64 -DVOX_BUILD_TESTS=OFF -DVOX_BUILD_RUNTIME=ON -DVOX_WARNINGS_AS_ERRORS=ON
 
-      - name: Build runtime ASI, fake ScriptHookV and smoke host
-        run: cmake --build projects/gta5-modern-overhaul/build-runtime --config Release --target vox_modern_overhaul_asi vox_fake_scripthookv vox_runtime_smoke_host --parallel 2
+      - name: Build runtime ASI, core DLL, fake ScriptHookV and smoke host
+        run: cmake --build projects/gta5-modern-overhaul/build-runtime --config Release --target vox_modern_overhaul_asi vox_modern_core vox_fake_scripthookv vox_runtime_smoke_host --parallel 2
 
       - name: Verify runtime PE dependency boundary
         shell: pwsh
@@ -111,18 +111,18 @@ jobs:
           if ($imports -match '(?i)VCRUNTIME|MSVCP|api-ms-win-crt|ucrtbase|ScriptHookV\.dll') {
             throw "ASI import boundary violation: CRT/C++ runtime or direct ScriptHookV import detected.`n$imports"
           }
-          $required = @('GetModuleHandleW','GetProcAddress','GetModuleFileNameW','CreateDirectoryW','GetLastError','CreateFileW','WriteFile','FlushFileBuffers','CloseHandle')
+          $required = @('GetModuleHandleW','GetProcAddress','GetModuleFileNameW','CreateDirectoryW','GetLastError','CreateFileW','WriteFile','FlushFileBuffers','CloseHandle','LoadLibraryW','FreeLibrary')
           foreach ($name in $required) {
             if ($imports -notmatch [regex]::Escape($name)) { throw "Expected Kernel32 import missing: $name" }
           }
-          Write-Host "PASS: custom-entry ASI imports only the intended Win32 boundary, contains no CRT/TLS and dynamically resolves ScriptHookV."
+          Write-Host "PASS: ASI remains CRT-free and only loads the C++ core from ScriptMain."
 
-      - name: Run synthetic ScriptHookV game-thread checkpoint
+      - name: Run synthetic ScriptHookV plus core-bridge checkpoint
         shell: pwsh
         run: |
           $runtime = Resolve-Path ./projects/gta5-modern-overhaul/build-runtime/Release
           & (Join-Path $runtime "gta5_enhanced.exe")
-          if ($LASTEXITCODE -ne 0) { throw "ScriptHookV game-thread smoke checkpoint failed with exit code $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { throw "ScriptHookV/core-bridge smoke checkpoint failed with exit code $LASTEXITCODE" }
 
       - name: Package checkpoint
         shell: pwsh
@@ -130,7 +130,7 @@ jobs:
           ./projects/gta5-modern-overhaul/tools/PackageCheckpoint.ps1
           -BuildDirectory ./projects/gta5-modern-overhaul/build-runtime
           -OutputDirectory ./projects/gta5-modern-overhaul/dist
-          -Version 0.0.1-dev.12
+          -Version 0.0.1-dev.13
           -Commit $env:GITHUB_SHA
 
       - name: Verify package contents
@@ -143,6 +143,7 @@ jobs:
           Expand-Archive -LiteralPath $zip[0].FullName -DestinationPath $extract
           $required = @(
             "VOXModernOverhaul.asi",
+            "VOXModernCore.dll",
             "VOXModernOverhaul/config/core.cfg",
             "README_FIRST_TEST.txt",
             "BUILD_INFO.txt"
@@ -160,7 +161,7 @@ jobs:
       - name: Upload GTA-ready checkpoint ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: VOX-GTA5-Modern-Overhaul-0.0.1-dev.12
-          path: projects/gta5-modern-overhaul/dist/VOX-GTA5-Modern-Overhaul-0.0.1-dev.12.zip
+          name: VOX-GTA5-Modern-Overhaul-0.0.1-dev.13
+          path: projects/gta5-modern-overhaul/dist/VOX-GTA5-Modern-Overhaul-0.0.1-dev.13.zip
           if-no-files-found: error
           retention-days: 30
