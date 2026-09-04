@@ -66,6 +66,8 @@ Minimum engineering expectations where applicable:
 - no owning raw-pointer architecture in persistent systems;
 - no claim of D4/in-game validation until an actual GTA V Enhanced test has occurred.
 
+For user-facing installers/bootstrap scripts, syntax or parser validation alone is insufficient whenever the critical setup path can reasonably execute in CI. Execute the real bootstrap path before delivery — including process invocation, argument quoting, environment/venv creation, version probes and dependency/self-test launch as applicable. A parse-only PASS must never be presented as evidence that an installer runs.
+
 When a defect is found before release, document both the defect and the regression protection that prevents recurrence.
 
 ## Story compatibility
