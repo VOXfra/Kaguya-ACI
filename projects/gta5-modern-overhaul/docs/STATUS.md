@@ -11,8 +11,9 @@ Validation levels are defined in `QUALITY_GATES.md`.
 | C++20 standalone core scaffold | D3 cross-platform | Windows/Linux CI and sanitizer jobs pass |
 | Core warnings policy | D3 cross-platform | warnings-as-errors CI passes |
 | Win32 macro-isolation policy | D3 Windows | `NOMINMAX` globally applied after MSVC regression |
-| Runtime file logger | D3 cross-platform | unit-tested in core CI; crash capture still separate |
-| Crash diagnostics | D0 | no minidump/exception-code capture yet; dev.8/dev.9 real crashes recorded from adjacent logs only |
+| Runtime file logger | D3 cross-platform | unit-tested in core CI; runtime use remains blocked by loader isolation |
+| External crash capture tooling | D3 Windows tooling | WER setup/restore, collector smoke test, reproducible ZIP, run `33875088958` |
+| Real GTA crash module/exception capture | D4 pending | current checkpoint; no real minidump/event diagnosis received yet |
 | `EntityId` primitive | D3 cross-platform | validity/order tests pass |
 | `EntityIdGenerator` | D3 cross-platform | resume, zero reservation, max-ID and exhaustion tests pass |
 | Persistent Entity Registry | D0 | not implemented |
@@ -25,16 +26,18 @@ Validation levels are defined in `QUALITY_GATES.md`.
 | Windows executable version reader | D4 execution evidence / D3 regression coverage | real dev.8 log reports `1.0.1158.13`; MSVC tests pass |
 | Epic/Steam/Rockstar auto-discovery | D0 | not implemented |
 | dev.8 diagnostic ASI bootstrap | D4 initialization observed / **D4 stability failed** | real game reached `CHECKPOINT_OK`, then crashed |
-| dev.9 inert project-code ASI | D4 load observed / **D4 stability failed** | real game still crashed; later binary inspection found MSVC CRT imports remained |
-| dev.10 no-CRT zero-import ASI | D3 Windows binary/runtime-smoke | run `33873756374`: zero Import/TLS directories + synthetic load PASS; real GTA stability pending |
-| ScriptHookV native/game-thread adapter | D0 | not implemented; bootstrap-via-free-thread path remains rejected/quarantined |
+| dev.9 inert project-code ASI | D4 load observed / **D4 stability failed** | real game still crashed; MSVC CRT imports later found |
+| dev.10 no-CRT zero-import ASI | D4 load observed / **D4 stability failed** | real game still crashes despite zero import/IAT/TLS and no project/game logic |
+| Controlled baseline without VOX ASI | D4 pending | exact other plugin set must remain unchanged |
+| ScriptHookV native/game-thread adapter | D0 blocked | do not implement until loader/crash layer is identified |
 | Mission/story detector | D0 | not implemented |
 | Story Compatibility runtime | D0 | contract only |
 | Asset locator / override pipeline | D0 | tool research only |
-| Checkpoint ZIP packaging/verification | D3 Windows | dev.10 package built, extracted, verified and uploaded |
-| First stable GTA V Enhanced runtime | D4 pending | dev.10 is current real-game isolation checkpoint |
-| GitHub Windows/Linux CI | D3 | dev.10 run `33873756374` PASS |
-| ASan + UBSan CI | D3 | dev.10 run `33873756374` PASS |
+| Runtime checkpoint packaging/verification | D3 Windows | dev.10 package built, extracted, verified and uploaded |
+| Crash-capture packaging/verification | D3 Windows | final run `33875088958` fully green |
+| First stable GTA V Enhanced runtime | D4 blocked | baseline + crash evidence required first |
+| GitHub Windows/Linux CI | D3 | current core jobs continue to pass |
+| ASan + UBSan CI | D3 | current sanitizer jobs continue to pass |
 
 ## Real-game evidence so far
 
@@ -45,42 +48,54 @@ Validation levels are defined in `QUALITY_GATES.md`.
 - User reports the game then crashed.
 
 ### dev.9
-- Project `DllMain` body was reduced to an immediate success return and no explicit project logic.
+- Project `DllMain` body was reduced to immediate success and no explicit project logic.
 - User reports the game still crashed.
-- ASI loader again confirms `VOXModernOverhaul.asi` was loaded; ScriptHookV and RageOpenV startup logs show success.
-- Exact `dev.9` binary inspection shows imports from `VCRUNTIME140.dll` and `api-ms-win-crt-runtime-l1-1-0.dll`, including CRT initialization/termination functions.
-- Therefore `dev.9` eliminated project application logic but did **not** eliminate compiler/runtime startup.
+- Exact binary inspection showed remaining MSVC CRT/VCRUNTIME startup imports, so dev.9 did not isolate compiler-runtime startup.
 
-## dev.10 automated evidence
+### dev.10
+- Built with custom no-CRT entrypoint and `/NODEFAULTLIB`.
+- Independent inspection: Import Directory = 0, IAT = 0, TLS = 0, Load Configuration = 0; `.text` only contains the tiny success-return path.
+- User reports the game still crashes.
+- `asiloader(2).log` confirms `VOXModernOverhaul.asi` was mapped successfully after the same other ASIs.
+- `ScriptHookV(2).log` reports successful initialization for `VER_EN_1_0_1158_13`.
+- `RageOpenV(2).log` reports successful initialization.
+- These logs still do not identify the faulting module or exception.
 
-Exact package commit: `a193e307a443e491f13e6576f8ea18896f91945c`.
-GitHub Actions run: `33873756374`.
+## Crash-capture tooling evidence
 
-- Windows/MSVC core build + tests: PASS.
-- Linux core build + tests: PASS.
-- Linux ASan + UBSan: PASS.
-- no-CRT Windows x64 ASI build: PASS.
-- PE32+ custom entrypoint: PASS.
-- Import Directory RVA/size = 0: PASS.
-- TLS Directory RVA/size = 0: PASS.
-- synthetic no-CRT ASI load/residency/unload: PASS.
-- GTA-ready ZIP package + required-file verification: PASS.
-- independent downloaded-binary inspection also shows Import Directory, IAT, TLS and Load Configuration directories all zero.
+Exact final tooling commit: `226000bb45da0dfe4fc976617731a866b3466b18`.
+GitHub Actions run: `33875088958`.
 
-Package hashes:
-- ASI: `c77d3c2b43081fadf05165155a032f154189f8a3fec8406a81266ee3101fc63b`
-- inner GTA-ready ZIP: `6ba7a17a3c7958cff0224b29895a8408bbf480e3b47dc7e59c7f99a33fcb1d6a`
-- outer Actions artifact digest: `sha256:09e7212f37e6ebedca7e7ada9be9e4805984ec352fa7238e7d59c21a47087cb2`
+- PowerShell parser validation: PASS.
+- Fake-GTA evidence collector smoke test: PASS.
+- Reproducible package build: PASS.
+- Package extraction/content verification: PASS.
+- Artifact upload: PASS.
+- User ZIP SHA-256: `30414e69d05283d8f326b289b38c87d372faf1e0d9588ad1604cabd4911ed27a`.
+
+Two tooling defects were caught before delivery:
+
+1. `Compress-Archive -LiteralPath` was incorrectly used with a wildcard; fixed to wildcard-capable `-Path`.
+2. `Copy-Item -LiteralPath` was incorrectly used with a wildcard in the packager; fixed to `-Path`.
+
+Both fixes are now exercised by CI smoke tests.
 
 ## Current hypothesis boundary
 
 No root cause is declared yet.
 
-`dev.8` eliminated gameplay/native/memory mutation as a prerequisite for the crash.
-`dev.9` eliminated the project's explicit bootstrap/application logic, but not MSVC CRT startup.
-`dev.10` eliminates default-library/CRT imports as well.
+- dev.8 eliminated gameplay/native/memory mutation as a prerequisite.
+- dev.9 eliminated explicit project application logic, but not CRT startup.
+- dev.10 eliminated CRT/default-library imports as well and still crashes.
 
-If dev.10 still crashes in the real game, the investigation must move below application and CRT startup into ASI image/loader/plugin-coexistence behavior and external crash capture. Do not keep changing application logic at that point.
+Therefore the next discriminator is **not another runtime build**. It is:
+
+1. run an otherwise identical modded GTA V Enhanced baseline with only `VOXModernOverhaul.asi` renamed/disabled;
+2. capture WER event/minidump evidence on failure;
+3. if baseline is stable, restore exact dev.10 and capture its crash;
+4. identify faulting module/exception/offset before changing architecture again.
+
+Potential layers still open include ASI image/loader behavior, plugin coexistence, unrelated mod/environment instability, or host-side interaction that adjacent text logs cannot reveal.
 
 ## Rule
 
