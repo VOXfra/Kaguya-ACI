@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.24)
 project(VOXGTA5ModernOverhaul VERSION 0.0.1 LANGUAGES CXX)
 
 option(VOX_BUILD_TESTS "Build standalone core tests" ON)
+option(VOX_BUILD_RUNTIME "Build the Windows GTA V Enhanced ASI bootstrap" ON)
 option(VOX_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 
 function(vox_apply_warnings target)
@@ -46,6 +47,26 @@ if(WIN32)
     target_compile_features(vox_windows_platform PUBLIC cxx_std_20)
     target_link_libraries(vox_windows_platform PRIVATE Version)
     vox_apply_warnings(vox_windows_platform)
+
+    if(VOX_BUILD_RUNTIME)
+        add_library(vox_modern_overhaul_asi SHARED
+            src/runtime/windows/Bootstrap.cpp
+        )
+
+        target_link_libraries(vox_modern_overhaul_asi
+            PRIVATE
+                vox_core
+                vox_windows_platform
+        )
+        target_compile_features(vox_modern_overhaul_asi PRIVATE cxx_std_20)
+        vox_apply_warnings(vox_modern_overhaul_asi)
+
+        set_target_properties(vox_modern_overhaul_asi PROPERTIES
+            OUTPUT_NAME "VOXModernOverhaul"
+            PREFIX ""
+            SUFFIX ".asi"
+        )
+    endif()
 endif()
 
 if(VOX_BUILD_TESTS)

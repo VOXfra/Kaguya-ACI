@@ -12,6 +12,9 @@ on:
       - "projects/gta5-modern-overhaul/**"
       - ".github/workflows/gta5-modern-overhaul-core.yml"
 
+permissions:
+  contents: read
+
 jobs:
   core-build-test:
     strategy:
@@ -26,7 +29,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure
-        run: cmake -S projects/gta5-modern-overhaul -B projects/gta5-modern-overhaul/build -DVOX_BUILD_TESTS=ON -DVOX_WARNINGS_AS_ERRORS=ON
+        run: cmake -S projects/gta5-modern-overhaul -B projects/gta5-modern-overhaul/build -DVOX_BUILD_TESTS=ON -DVOX_BUILD_RUNTIME=ON -DVOX_WARNINGS_AS_ERRORS=ON
 
       - name: Build
         run: cmake --build projects/gta5-modern-overhaul/build --config Release --parallel 2
@@ -46,6 +49,7 @@ jobs:
           cmake -S projects/gta5-modern-overhaul
           -B projects/gta5-modern-overhaul/build-sanitized
           -DVOX_BUILD_TESTS=ON
+          -DVOX_BUILD_RUNTIME=OFF
           -DVOX_WARNINGS_AS_ERRORS=ON
           -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
 
@@ -54,3 +58,54 @@ jobs:
 
       - name: Test ASan + UBSan
         run: ctest --test-dir projects/gta5-modern-overhaul/build-sanitized --output-on-failure
+
+  runtime-package:
+    runs-on: windows-latest
+    needs: core-build-test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure runtime
+        run: cmake -S projects/gta5-modern-overhaul -B projects/gta5-modern-overhaul/build-runtime -DVOX_BUILD_TESTS=OFF -DVOX_BUILD_RUNTIME=ON -DVOX_WARNINGS_AS_ERRORS=ON
+
+      - name: Build runtime ASI
+        run: cmake --build projects/gta5-modern-overhaul/build-runtime --config Release --target vox_modern_overhaul_asi --parallel 2
+
+      - name: Package checkpoint
+        shell: pwsh
+        run: >-
+          ./projects/gta5-modern-overhaul/tools/PackageCheckpoint.ps1
+          -BuildDirectory ./projects/gta5-modern-overhaul/build-runtime
+          -OutputDirectory ./projects/gta5-modern-overhaul/dist
+          -Version 0.0.1-dev.8
+          -Commit $env:GITHUB_SHA
+
+      - name: Verify package contents
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem ./projects/gta5-modern-overhaul/dist -Filter "VOX-GTA5-Modern-Overhaul-*.zip" -File
+          if ($zip.Count -ne 1) { throw "Expected exactly one checkpoint ZIP, found $($zip.Count)." }
+          $extract = Join-Path $env:RUNNER_TEMP "vox-package-verify"
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $extract
+          $required = @(
+            "VOXModernOverhaul.asi",
+            "VOXModernOverhaul/config/core.cfg",
+            "README_FIRST_TEST.txt",
+            "BUILD_INFO.txt"
+          )
+          foreach ($relative in $required) {
+            $path = Join-Path $extract $relative
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Package missing required file: $relative"
+            }
+          }
+
+      - name: Upload GTA-ready checkpoint ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: VOX-GTA5-Modern-Overhaul-0.0.1-dev.8
+          path: projects/gta5-modern-overhaul/dist/VOX-GTA5-Modern-Overhaul-0.0.1-dev.8.zip
+          if-no-files-found: error
+          retention-days: 30
