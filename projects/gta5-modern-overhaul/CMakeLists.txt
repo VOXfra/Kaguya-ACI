@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.24)
 project(VOXGTA5ModernOverhaul VERSION 0.0.1 LANGUAGES CXX)
 
 option(VOX_BUILD_TESTS "Build standalone core tests" ON)
-option(VOX_BUILD_RUNTIME "Build the Windows GTA V Enhanced ASI bootstrap" ON)
+option(VOX_BUILD_RUNTIME "Build the Windows GTA V Enhanced ASI runtime checkpoint" ON)
 option(VOX_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 
 function(vox_apply_warnings target)
@@ -52,14 +52,10 @@ if(WIN32)
     vox_apply_warnings(vox_windows_platform)
 
     if(VOX_BUILD_RUNTIME)
+        # dev.9 isolation checkpoint: deliberately no dependency on vox_core,
+        # filesystem/config/logger, ScriptHookV, or any GTA-facing adapter.
         add_library(vox_modern_overhaul_asi SHARED
-            src/runtime/windows/Bootstrap.cpp
-        )
-
-        target_link_libraries(vox_modern_overhaul_asi
-            PRIVATE
-                vox_core
-                vox_windows_platform
+            src/runtime/windows/InertEntry.cpp
         )
         target_compile_features(vox_modern_overhaul_asi PRIVATE cxx_std_20)
         vox_apply_warnings(vox_modern_overhaul_asi)
@@ -71,7 +67,7 @@ if(WIN32)
         )
 
         add_executable(vox_runtime_smoke_host
-            tests/runtime/BootstrapSmokeHost.cpp
+            tests/runtime/InertSmokeHost.cpp
         )
         target_compile_features(vox_runtime_smoke_host PRIVATE cxx_std_20)
         vox_apply_warnings(vox_runtime_smoke_host)

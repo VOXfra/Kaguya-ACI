@@ -70,18 +70,15 @@ jobs:
       - name: Configure runtime x64
         run: cmake -S projects/gta5-modern-overhaul -B projects/gta5-modern-overhaul/build-runtime -A x64 -DVOX_BUILD_TESTS=OFF -DVOX_BUILD_RUNTIME=ON -DVOX_WARNINGS_AS_ERRORS=ON
 
-      - name: Build runtime ASI and smoke host
+      - name: Build inert runtime ASI and smoke host
         run: cmake --build projects/gta5-modern-overhaul/build-runtime --config Release --target vox_modern_overhaul_asi vox_runtime_smoke_host --parallel 2
 
-      - name: Run Windows ASI smoke checkpoint
+      - name: Run inert Windows ASI smoke checkpoint
         shell: pwsh
         run: |
           $runtime = Resolve-Path ./projects/gta5-modern-overhaul/build-runtime/Release
-          $configDir = Join-Path $runtime "VOXModernOverhaul/config"
-          New-Item -ItemType Directory -Path $configDir -Force | Out-Null
-          Copy-Item ./projects/gta5-modern-overhaul/packaging/config/core.cfg (Join-Path $configDir "core.cfg") -Force
           & (Join-Path $runtime "gta5_enhanced.exe")
-          if ($LASTEXITCODE -ne 0) { throw "Runtime smoke checkpoint failed with exit code $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { throw "Inert runtime smoke checkpoint failed with exit code $LASTEXITCODE" }
 
       - name: Package checkpoint
         shell: pwsh
@@ -89,7 +86,7 @@ jobs:
           ./projects/gta5-modern-overhaul/tools/PackageCheckpoint.ps1
           -BuildDirectory ./projects/gta5-modern-overhaul/build-runtime
           -OutputDirectory ./projects/gta5-modern-overhaul/dist
-          -Version 0.0.1-dev.8
+          -Version 0.0.1-dev.9
           -Commit $env:GITHUB_SHA
 
       - name: Verify package contents
@@ -116,7 +113,7 @@ jobs:
       - name: Upload GTA-ready checkpoint ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: VOX-GTA5-Modern-Overhaul-0.0.1-dev.8
-          path: projects/gta5-modern-overhaul/dist/VOX-GTA5-Modern-Overhaul-0.0.1-dev.8.zip
+          name: VOX-GTA5-Modern-Overhaul-0.0.1-dev.9
+          path: projects/gta5-modern-overhaul/dist/VOX-GTA5-Modern-Overhaul-0.0.1-dev.9.zip
           if-no-files-found: error
           retention-days: 30

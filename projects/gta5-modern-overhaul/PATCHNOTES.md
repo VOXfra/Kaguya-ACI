@@ -2,6 +2,28 @@
 
 All user-visible, architectural and tooling changes are recorded here.
 
+## [0.0.1-dev.9] — 2026-09-04
+
+### Crash isolation checkpoint
+- Real GTA V Enhanced test of `dev.8` proved that the ASI loader loaded `VOXModernOverhaul.asi` and the bootstrap reached `CHECKPOINT_OK` on Enhanced `1.0.1158.13`, but the game then crashed.
+- The real-game runtime is therefore **not** promoted to D4; `dev.8` is classified as a failed D4 stability attempt.
+- Added a deliberately inert isolation ASI whose `DllMain` immediately returns `TRUE` and performs no other work.
+- Removed `CreateThread`, logging, filesystem/config access, Enhanced probing, Windows version reads and all project-core dependencies from the test ASI target.
+- This isolates simple ASI load/residency from the previous asynchronous bootstrap logic.
+
+### Regression/isolation harness
+- Replaced the synthetic bootstrap smoke host with an inert load/residency/unload harness.
+- The harness loads the generated ASI, keeps it resident for two seconds and unloads it cleanly.
+- Packaging remains reproducible and root-mergeable.
+
+### Test interpretation
+- If `dev.9` remains stable in real GTA V Enhanced, the previous `CreateThread`/bootstrap path is rejected and the next runtime will use a proper ScriptHookV/game-thread lifecycle.
+- If `dev.9` still crashes, the investigation moves below bootstrap logic to ASI binary/load interaction or loader/toolchain compatibility rather than retrying the same architecture.
+
+### Pending
+- Windows/Linux/sanitizer CI and Windows inert-ASI smoke/package validation for this exact commit.
+- Real GTA V Enhanced stability result for `dev.9`.
+
 ## [0.0.1-dev.8] — 2026-09-04
 
 ### First GTA-ready checkpoint
@@ -43,9 +65,9 @@ All user-visible, architectural and tooling changes are recorded here.
 - ZIP required-file verification: PASS.
 - Artifact upload: PASS.
 
-### Still requires the user's real-game test
-- Loading inside an actual GTA V Enhanced process is intentionally **not** marked D4 until the user launches this checkpoint and returns `VOXModernOverhaul/logs/bootstrap.log` containing `CHECKPOINT_OK`.
-- No gameplay system is enabled in this checkpoint.
+### Real GTA result
+- User log confirms the ASI loaded in real GTA V Enhanced `1.0.1158.13` and reached `CHECKPOINT_OK`.
+- The game subsequently crashed, so real-game D4 stability **failed** and the bootstrap architecture is under isolation in `dev.9`.
 
 ## [0.0.1-dev.7] — 2026-09-04
 - Added explicit-root Enhanced install/PE/architecture probing and the Windows file-version reader.

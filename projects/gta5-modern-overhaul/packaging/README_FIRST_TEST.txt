@@ -1,40 +1,50 @@
-VOX GTA V MODERN OVERHAUL — CHECKPOINT 0 / DIAGNOSTIC BOOTSTRAP
-Version: 0.0.1-dev.8
+VOX GTA V MODERN OVERHAUL — CHECKPOINT 0B / INERT ASI ISOLATION
+Version: 0.0.1-dev.9
 
 PURPOSE
-This package validates the first real GTA V Enhanced integration checkpoint.
-It does NOT change gameplay, missions, memory, graphics or saves.
-It only loads as an ASI, verifies the Enhanced installation/process, reads the game file version, validates the packaged config and writes a diagnostic log.
+The previous diagnostic build reached CHECKPOINT_OK in the user's real GTA V Enhanced process, then the game crashed.
+This package isolates whether the crash is caused by the previous bootstrap/thread logic or by merely loading VOXModernOverhaul.asi.
+
+THIS BUILD IS INTENTIONALLY INERT
+VOXModernOverhaul.asi performs no work at all after Windows loads it:
+- no CreateThread;
+- no logging;
+- no filesystem/config access;
+- no ScriptHookV calls;
+- no GTA native calls;
+- no hooks;
+- no memory writes;
+- no save/world changes.
+DllMain immediately returns TRUE for every notification.
 
 INSTALL
 1. Close GTA V Enhanced.
-2. Open the GTA V Enhanced root folder — the folder containing gta5_enhanced.exe.
-3. Copy every file/folder from this ZIP into that root folder.
-4. ScriptHookV's ASI loader must already be installed. This package does not redistribute third-party binaries.
+2. Open the GTA V Enhanced root folder containing gta5_enhanced.exe.
+3. Replace the previous VOXModernOverhaul.asi with the one in this ZIP.
+4. Copy the remaining packaged files normally. They are inert in this checkpoint.
+5. Leave your existing ScriptHookV/ASI loader installation unchanged.
 
-FIRST TEST
+TEST
 1. Launch GTA V Enhanced normally.
-2. Enter Story Mode and remain in-game for about 10 seconds.
-3. Quit the game normally.
-4. Open:
-   VOXModernOverhaul\logs\bootstrap.log
-5. The expected final line is:
-   CHECKPOINT_OK: ASI loaded in GTA V Enhanced; no gameplay hooks or memory patches are active.
-6. Send the complete bootstrap.log back for the next integration step.
+2. Enter Story Mode if possible.
+3. Play/remain loaded for at least 2–5 minutes, preferably long enough to cover the point where dev.8 crashed.
+4. Report only whether GTA remained stable or crashed, and approximately when/where it happened.
 
-EXPECTED SAFETY BEHAVIOR
-- Wrong/non-Enhanced process: runtime disables itself.
-- Missing/invalid config: runtime disables gameplay systems and logs the exact reason.
-- This checkpoint never writes to GTA save data and never patches game memory.
+IMPORTANT
+No VOX bootstrap.log is expected from dev.9. Absence of a new log is correct because logging itself has been removed from this isolation build.
+
+INTERPRETATION
+- If dev.9 is stable: the previous asynchronous bootstrap path becomes the primary root-cause candidate and will be permanently replaced by a proper ScriptHookV/game-thread lifecycle.
+- If dev.9 still crashes: the issue is below the bootstrap logic (binary/load interaction, loader combination, runtime/toolchain compatibility, or another interaction) and the next isolation step will remove/alter that layer rather than reusing the failed path.
 
 ROLLBACK
 Delete:
 - VOXModernOverhaul.asi
 - VOXModernOverhaul\
 
-Do NOT delete ScriptHookV/dinput8 as part of this rollback; they are third-party dependencies and may be used by other mods.
+Do NOT delete ScriptHookV, dinput8, RageOpenV, TrainerV or ScriptHookVDotNet as part of this rollback; they are separate third-party components.
 
 KNOWN LIMITATIONS
-- No gameplay feature is active yet.
-- No ScriptHookV native API calls are made yet; only the ASI loading path is tested.
-- No mission compatibility claim is needed yet because this checkpoint does not alter world state.
+- This build intentionally proves no gameplay feature.
+- It intentionally produces no VOX log.
+- It exists only to isolate the real-game crash before further runtime work continues.
