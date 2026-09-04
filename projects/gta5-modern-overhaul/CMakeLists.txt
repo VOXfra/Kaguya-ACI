@@ -52,11 +52,14 @@ if(WIN32)
     vox_apply_warnings(vox_windows_platform)
 
     if(VOX_BUILD_RUNTIME)
-        # dev.11 checkpoint: keep the ASI itself CRT-free and use only Kernel32.
-        # ScriptHookV is resolved from the already-loaded module at DLL attach;
-        # no LoadLibrary is performed from the loader callback.
+        # The ASI stays CRT-free. It owns only loader/scheduler adaptation and loads
+        # VOXModernCore.dll from ScriptMain after ScriptHookV has resumed the script.
         add_library(vox_modern_overhaul_asi SHARED
             src/runtime/windows/ScriptHookRuntime.c
+        )
+        target_include_directories(vox_modern_overhaul_asi
+            PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/include
         )
 
         if(MSVC)
@@ -71,8 +74,25 @@ if(WIN32)
             SUFFIX ".asi"
         )
 
-        # Synthetic ScriptHookV with the same C++-decorated scriptRegister/scriptWait
-        # exports used by the current x64 SDK ABI. It is test-only and never packaged.
+        # Normal C++ runtime lives in a separate DLL that is loaded only from the
+        # already-scheduled ScriptHookV context. No C++ object or allocation crosses
+        # the plain-C ABI defined in CoreApi.h.
+        add_library(vox_modern_core SHARED
+            src/runtime/windows/RuntimeCore.cpp
+        )
+        target_include_directories(vox_modern_core
+            PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/include
+        )
+        target_link_libraries(vox_modern_core PRIVATE vox_core)
+        target_compile_features(vox_modern_core PRIVATE cxx_std_20)
+        vox_apply_warnings(vox_modern_core)
+        set_target_properties(vox_modern_core PROPERTIES
+            OUTPUT_NAME "VOXModernCore"
+            PREFIX ""
+        )
+
+        # Synthetic ScriptHookV is test-only and never packaged.
         add_library(vox_fake_scripthookv SHARED
             tests/runtime/FakeScriptHookV.cpp
         )
@@ -88,7 +108,12 @@ if(WIN32)
         )
         target_compile_features(vox_runtime_smoke_host PRIVATE cxx_std_20)
         vox_apply_warnings(vox_runtime_smoke_host)
-        add_dependencies(vox_runtime_smoke_host vox_fake_scripthookv vox_modern_overhaul_asi)
+        add_dependencies(
+            vox_runtime_smoke_host
+            vox_fake_scripthookv
+            vox_modern_overhaul_asi
+            vox_modern_core
+        )
         set_target_properties(vox_runtime_smoke_host PROPERTIES
             OUTPUT_NAME "gta5_enhanced"
         )
