@@ -1,105 +1,88 @@
-VOX GTA V MODERN OVERHAUL — CHECKPOINT 0I / FIRST VISIBLE ENHANCED ASSET OVERRIDE
-Version: 0.0.1-dev.15.1
+VOX GTA V MODERN OVERHAUL — CHECKPOINT 0I.2 / VISUAL CRASH ISOLATION
+Version: 0.0.1-dev.15.2
 
 PURPOSE
-The real dev.14 two-launch test is successful. GTA V Enhanced loads the VOX ScriptHookV runtime and isolated C++ core, creates world_state.v1 on the first launch, reloads the same persistent EntityId/high-water state on the second launch, and executes the bounded game-thread queue marker while remaining stable.
+Dev.14 remains the known-good runtime/persistence base. Dev.15.1 successfully fixed the Windows installer bootstrap and, on the user's real GTA V Enhanced installation, successfully:
+- created/reused the isolated Python environment;
+- installed FiveFury 0.4.21;
+- passed the Gen9 transformer self-test;
+- scanned the real Enhanced archives;
+- selected prop_roadcone02a;
+- extracted x64f.rpf/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr;
+- generated a 1.65x YDR;
+- installed it under newmods/platform/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr.
 
-Checkpoint dev.15.1 keeps that validated runtime foundation and contains the corrected first user-side Enhanced/Gen9 asset pipeline proof.
+However, the user's game then crashes immediately when entering Story Mode. The VOX runtime log reaches Core ready, game-thread queue dispatch and all five Core/ScriptHook ticks before the crash. ASI loader and ScriptHookV initialization also complete normally. Therefore dev.15.1 is NOT a successful visual D4 checkpoint.
 
-DEV.15 INSTALLER DEFECT FIXED BEFORE THIS PACKAGE
-The original dev.15 package created its Python virtual environment successfully on the user's machine, then failed while querying the venv version because the PowerShell command embedded backslash-escaped quotes inside a single-quoted argument. PowerShell passed those backslashes through and Python received malformed source.
+WHAT DEV.15.2 CHANGES
+Dev.15.2 does not guess at the cause. It adds a differential crash-isolation tool:
 
-Dev.15.1 removes that quoting pattern entirely. The exact environment-bootstrap path now has a dedicated CI mode that really creates a fresh Windows venv, queries the Python version using quote-free expressions, installs FiveFury 0.4.21 and executes the Gen9 self-test. A PowerShell parse-only check is no longer considered sufficient for this path.
+VOXModernOverhaul\tools\assets\04_ISOLATE_VISUAL_CRASH.cmd
 
-WHAT DEV.15.1 DOES
-The included one-click visual tool:
-- verifies it is inside a GTA V Enhanced root;
-- requires the already-installed RageOpenV.asi instead of editing Rockstar archives directly;
-- creates an isolated Python environment under VOXModernOverhaul\tools\.venv-assets;
-- verifies the venv is Python 3.11+ with actually executed Python commands;
-- installs the pinned public-domain FiveFury 0.4.21 tooling dependency locally from PyPI;
-- runs the Gen9 transformer self-test before scanning GTA;
-- indexes the user's own GTA V Enhanced installation;
-- selects one common BASE-GAME static YDR that is not already overridden by another loose mod;
-- extracts that asset locally from the user's installation;
-- rewrites its Gen9 render geometry at 1.65x scale;
-- rebuilds render bounds and LOD distances;
-- reopens and validates the generated YDR before installation;
-- mirrors only the generated file into RageOpenV's newmods/platform mount;
-- records exact source/generated hashes and paths in a manifest;
-- never redistributes or packages the original Rockstar asset.
+This tool requires the existing dev.15.1 visual_probe_manifest.json and extracted work/original YDR. It:
+- verifies the active generated override still matches its recorded SHA-256;
+- verifies the extracted original YDR still matches source_sha256;
+- preserves the transformed YDR hash in the manifest for diagnosis;
+- replaces ONLY the active loose override with a byte-for-byte copy of the extracted Rockstar original;
+- verifies the installed identity override SHA-256 equals the source SHA-256;
+- updates the manifest so normal hash-safe rollback remains valid;
+- does not modify any Rockstar RPF archive.
 
-THIS VISUAL CHANGE IS INTENTIONALLY UGLY
-The selected prop becomes obviously oversized. That is NOT the target art direction. It is a deliberately unmistakable D4 proof that this chain works in the real game:
+WHY THIS TEST IS DECISIVE
+The active path stays exactly the same:
+newmods/platform/levels/gta5/props/roadside/v_construction.rpf/prop_roadcone02a.ydr
 
-GTA Enhanced asset -> locate -> extract -> modify -> Gen9 rebuild -> validate -> non-destructive RageOpenV override -> visible in GTA.
+Only its bytes change from our FiveFury-rebuilt YDR to the exact extracted original bytes.
 
-Once this succeeds, the same pipeline is used for actual visual upgrades instead of exaggerated scaling.
+If Story Mode STILL crashes with the identity override:
+- the FiveFury geometry rewrite is exonerated for this crash;
+- RageOpenV/newmods path or mount behavior becomes the primary suspect.
 
-INSTALL DEV.15.1
+If Story Mode LOADS with the identity override:
+- RageOpenV/newmods can serve that exact source asset at that path;
+- the FiveFury-rebuilt retail YDR is the primary suspect even though FiveFury validation accepted it.
+
+INSTALL DEV.15.2
 1. Close GTA V Enhanced completely.
 2. Extract this ZIP into the GTA V Enhanced root containing GTA5_Enhanced.exe.
-3. Replace/merge the included VOXModernOverhaul.asi, VOXModernCore.dll and VOXModernOverhaul folder.
-4. Leave ScriptHookV.dll, dinput8.dll, RageOpenV.asi, ScriptHookVDotNet and TrainerV unchanged.
-5. Keep VOXModernOverhaul\state\world_state.v1 if present. If it was intentionally deleted before this package, the current early registry simply creates a fresh system state on the next launch; do not keep deleting it once persistent world data becomes meaningful.
+3. Replace/merge the included files.
+4. Do NOT delete VOXModernOverhaul\visual_probe or its work directory from the dev.15.1 attempt.
+5. Do NOT rerun 01_INSTALL_VISUAL_PROBE.cmd before the isolation test.
+6. Keep world_state.v1 if present.
 
-INSTALL THE FIRST VISUAL PROBE
+RUN THE CRASH ISOLATION
 Run:
-VOXModernOverhaul\tools\assets\01_INSTALL_VISUAL_PROBE.cmd
+VOXModernOverhaul\tools\assets\04_ISOLATE_VISUAL_CRASH.cmd
 
-The first run may take a while because the tool creates a private Python environment and indexes the local GTA archives. It does not require administrator rights and does not modify GTA archives in place.
+Expected success output includes:
+VOX DEV.15.2 IDENTITY OVERRIDE INSTALLED
 
-If the broken dev.15 run already created VOXModernOverhaul\tools\.venv-assets, dev.15.1 can safely reuse it. You do not need to delete it unless dev.15.1 explicitly reports that the environment is invalid or too old.
-
-When complete it writes:
+The report becomes:
 VOXModernOverhaul\visual_probe\visual_probe_report.txt
-VOXModernOverhaul\visual_probe\visual_probe_manifest.json
-
-The report tells you exactly which model was selected and which newmods/platform path was generated.
+status=IDENTITY_OVERRIDE_INSTALLED
+identity_bytes_equal_source=true
 
 REAL-GAME TEST
-1. After the installer says VOX DEV.15.1 VISUAL PROBE INSTALLED, launch GTA V Enhanced normally.
-2. Enter Story Mode and drive around Los Santos for a few minutes.
-3. Look for the selected model described in visual_probe_report.txt. Traffic lights/street lights are preferred because they are common; bins/cones/palms/trees are fallbacks.
-4. The chosen model should be visibly around 1.65x its normal size.
-5. Take a screenshot when you see it and send that plus visual_probe_report.txt.
+1. Launch GTA V Enhanced normally.
+2. Enter Story Mode once.
+3. Do NOT look for an oversized cone; the identity override is intentionally visually identical to vanilla.
+4. Report only whether Story Mode loads or crashes.
+5. If it crashes, return the fresh loader/ScriptHook/RageOpenV/VOX logs again. A WER/minidump capture may then be used if the mount layer still cannot be isolated from logs.
 
-SUCCESS CRITERIA
-- installer environment bootstrap completes without an error;
-- FiveFury/Gen9 self-test completes before any newmods install;
-- visual_probe_report.txt says status=INSTALLED;
-- manifest contains a base x64*.rpf source and a newmods/platform destination;
-- generated YDR has a different SHA-256 from the source and passes FiveFury validation;
-- GTA launches normally with the override installed;
-- at least one real instance of the selected model is visibly oversized.
-
-SAFE FAILURE BEHAVIOR
-- If Python 3.11+ is missing, setup stops before touching newmods.
-- If the isolated venv cannot execute or reports an old Python version, setup stops before touching newmods.
-- If FiveFury installation or the Gen9 self-test fails, setup stops before touching newmods.
-- If RageOpenV.asi is missing, setup stops before touching newmods.
-- If no supported base-game candidate is found, nothing is installed.
-- Existing loose overrides are never overwritten.
-- Update/DLC paths and traversal/drive paths are rejected by the first proof.
-- If rebuilding/validation/hash verification fails, no final override is installed.
-- The original Rockstar RPF is never modified.
-
-ROLLBACK THE VISUAL PROBE
+ROLLBACK AFTER THE TEST
 Run:
 VOXModernOverhaul\tools\assets\03_ROLLBACK_VISUAL_PROBE.cmd
 
-Rollback reads the manifest, resolves the generated file only inside newmods/platform, verifies its SHA-256 still matches what VOX generated, deletes only that file, removes only empty directories created below the mount, and refuses deletion if the file was changed by another tool/user.
+Because dev.15.2 updates generated_sha256 to the identity-copy hash, the existing rollback remains hash-safe and removes only the VOX-owned loose file.
 
-The runtime itself can still be rolled back by removing VOXModernOverhaul.asi and VOXModernCore.dll or restoring the previous known-good pair. No vanilla GTA save is touched.
+CI / REGRESSION EXPECTATIONS
+Before packaging dev.15.2, Windows CI must execute the isolation script against a synthetic manifest/work/override tree and prove:
+- transformed override hash is required before replacement;
+- extracted original hash is required;
+- installed identity file exactly equals source bytes;
+- probe_mode becomes IDENTITY_OVERRIDE;
+- transformed_sha256 is preserved;
+- generated_sha256 advances to the active source hash so rollback remains safe.
 
-DEPENDENCY / PROVENANCE
-- FiveFury 0.4.21: installed locally at test time, not bundled. License: The Unlicense/public domain.
-- RageOpenV: required from the user's existing installation, not redistributed by VOX.
-- No Rockstar asset is shipped in this package; all source extraction happens locally from the user's legally installed game.
-
-KNOWN LIMITATIONS OF THE PROOF
-- The full retail GTA archive scan cannot be executed in GitHub CI because CI does not contain the user's GTA installation. The exact environment/bootstrap and synthetic Gen9 rewrite paths are executed in CI; the retail scan/override remains the D4 user gate.
-- Render geometry and render bounds are scaled, but collision is intentionally NOT scaled.
-- The original YTYP archetype extents are not rewritten in this first proof, so extreme camera/culling cases may still use original world metadata.
-- This is one model-family override, not the graphical vertical slice yet.
-- After D4 visual confirmation, the exaggerated scale proof is removed and the pipeline moves directly to meaningful materials/foliage/road/lighting work.
+NO D4 CLAIM
+Dev.15.2 is a diagnosis checkpoint. The visual pipeline remains D4 FAILED/PENDING until GTA loads a real override and a visible modification can be proven without crashing.
