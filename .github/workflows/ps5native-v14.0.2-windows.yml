@@ -1,0 +1,50 @@
+name: PS5Native v14.0.2 Windows CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  full-five-stage:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct exact release ZIP
+        shell: pwsh
+        run: |
+          $parts = Get-ChildItem -LiteralPath "ci/ps5native-v14.0.2/chunks" -File | Sort-Object Name
+          if ($parts.Count -lt 1) { throw "No ZIP chunks found" }
+          $b64 = [System.Text.StringBuilder]::new()
+          foreach ($p in $parts) {
+            [void]$b64.Append((Get-Content -LiteralPath $p.FullName -Raw).Trim())
+          }
+          $bytes = [Convert]::FromBase64String($b64.ToString())
+          $zip = Join-Path $env:RUNNER_TEMP "PS5NativeCore-Dakar-v14.0.2.zip"
+          [IO.File]::WriteAllBytes($zip, $bytes)
+          $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+          if ($sha -ne "f38ebbedfc4856f7ef0ea504051752e4eb23ef457a428928e35ce5f63085e4a4") {
+            throw "Release ZIP SHA256 mismatch: $sha"
+          }
+          $root = Join-Path $env:RUNNER_TEMP "PS5NativeCore-Dakar-v14.0.2"
+          Expand-Archive -LiteralPath $zip -DestinationPath $root -Force
+          "PS5NATIVE_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "PS5NATIVE_ZIP=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Run exact five-stage Windows validation
+        shell: pwsh
+        run: |
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$env:PS5NATIVE_ROOT\tools\run-v14.0.2-focused.ps1"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload diagnostic and validated release ZIP
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PS5NativeCore-Dakar-v14.0.2-windows-ci
+          path: |
+            ${{ env.PS5NATIVE_ROOT }}/UPLOAD-ME-v14.0.2-*.zip
+            ${{ env.PS5NATIVE_ZIP }}
+          if-no-files-found: warn
