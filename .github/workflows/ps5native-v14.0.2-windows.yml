@@ -1,0 +1,74 @@
+name: PS5Native v14.0.2 Windows CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  bulk-windows:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct verified CI source archive
+        shell: pwsh
+        run: |
+          $parts = Get-ChildItem -LiteralPath "ci/ps5native-v14.0.2/chunks" -File -Filter "part-*" | Sort-Object Name
+          if ($parts.Count -ne 13) { throw "Expected 13 source chunks, got $($parts.Count)" }
+          $b64 = [System.Text.StringBuilder]::new()
+          foreach ($p in $parts) {
+            [void]$b64.Append((Get-Content -LiteralPath $p.FullName -Raw).Trim())
+          }
+          $bytes = [Convert]::FromBase64String($b64.ToString())
+          $zip = Join-Path $env:RUNNER_TEMP "v1402-minici.zip"
+          [IO.File]::WriteAllBytes($zip, $bytes)
+          $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+          if ($sha -ne "7271f11aba8ebd8f7e1e78bb70ad8e49d966352e685422b2fd090664a4877789") {
+            throw "CI source archive SHA256 mismatch: $sha"
+          }
+          $extract = Join-Path $env:RUNNER_TEMP "v1402-ci"
+          Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
+          $src = Join-Path $extract "v1402-minici"
+          if (-not (Test-Path -LiteralPath (Join-Path $src "CMakeLists.txt"))) { throw "Missing reconstructed CMakeLists.txt" }
+          "V1402_SRC=$src" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Configure and build with MSVC
+        shell: pwsh
+        run: |
+          $build = Join-Path $env:RUNNER_TEMP "v1402-build"
+          cmake -S "$env:V1402_SRC" -B "$build" -G "Visual Studio 17 2022" -A x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build "$build" --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "V1402_BUILD=$build" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Generate bulk fixtures
+        shell: pwsh
+        run: |
+          $fixtures = Join-Path $env:RUNNER_TEMP "v1402-fixtures"
+          python "$env:V1402_SRC\tools\make-bulk-boot-fixtures-v14.0.2.py" "$fixtures"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "V1402_FIXTURES=$fixtures" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Run complete bulk boot rehearsal
+        shell: pwsh
+        run: |
+          $exe = Join-Path $env:V1402_BUILD "Release\BulkBootProbe.exe"
+          if (-not (Test-Path -LiteralPath $exe)) { throw "Missing BulkBootProbe.exe: $exe" }
+          $out = & $exe "$env:V1402_FIXTURES" 2>&1
+          $rc = $LASTEXITCODE
+          $out | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP "bulk-boot-v14.0.2.log")
+          if ($rc -ne 0) { throw "BulkBootProbe failed with exit code $rc" }
+          if (($out -join "`n") -notmatch "V140_BULK_NATIVE_BOOT_REHEARSAL_OK") {
+            throw "Missing V140_BULK_NATIVE_BOOT_REHEARSAL_OK marker"
+          }
+
+      - name: Upload Windows bulk log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PS5Native-v14.0.2-windows-bulk-log
+          path: ${{ runner.temp }}/bulk-boot-v14.0.2.log
+          if-no-files-found: warn
