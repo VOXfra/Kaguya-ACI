@@ -1,0 +1,102 @@
+name: PS5Native v14.1 Threaded Runtime Windows CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  threaded-runtime-windows:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct verified v14.0.2 CI base
+        shell: pwsh
+        run: |
+          $parts = Get-ChildItem -LiteralPath "ci/ps5native-v14.0.2/chunks" -File -Filter "part-*" | Sort-Object Name
+          if ($parts.Count -ne 13) { throw "Expected 13 base chunks, got $($parts.Count)" }
+          $b64 = [System.Text.StringBuilder]::new()
+          foreach ($p in $parts) { [void]$b64.Append((Get-Content -LiteralPath $p.FullName -Raw).Trim()) }
+          $bytes = [Convert]::FromBase64String($b64.ToString())
+          $zip = Join-Path $env:RUNNER_TEMP "v1402-minici.zip"
+          [IO.File]::WriteAllBytes($zip, $bytes)
+          $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+          if ($sha -ne "7271f11aba8ebd8f7e1e78bb70ad8e49d966352e685422b2fd090664a4877789") {
+            throw "Base archive SHA256 mismatch: $sha"
+          }
+          $extract = Join-Path $env:RUNNER_TEMP "v141-ci"
+          Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
+          $src = Join-Path $extract "v1402-minici"
+          "V141_SRC=$src" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Verify and apply exact v14.1 patch
+        shell: pwsh
+        run: |
+          $gz = Resolve-Path "ci/ps5native-v14.1/v141.patch.gz"
+          $gzSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $gz).Hash.ToLowerInvariant()
+          if ($gzSha -ne "a207d3f2f8a0aed996e4bd70ec19aa58617e743a0e99217acf5bf7ca4c884d27") {
+            throw "v14.1 patch gzip SHA256 mismatch: $gzSha"
+          }
+          $patch = Join-Path $env:RUNNER_TEMP "v141.patch"
+          python -c "import gzip,pathlib; pathlib.Path(r'$patch').write_bytes(gzip.decompress(pathlib.Path(r'$gz').read_bytes()))"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $patchSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $patch).Hash.ToLowerInvariant()
+          if ($patchSha -ne "770be21c35774e06628cb288e9513fcfb34c40f4b18611aa8867bd11a90f60a9") {
+            throw "v14.1 patch SHA256 mismatch: $patchSha"
+          }
+          Push-Location "$env:V141_SRC"
+          git init
+          git config user.email "ci@example.invalid"
+          git config user.name "PS5Native CI"
+          git add .
+          git commit -m "v14.0.2 mini base"
+          git apply --check "$patch"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git apply "$patch"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+
+      - name: Configure and build changed core with MSVC
+        shell: pwsh
+        run: |
+          $build = Join-Path $env:RUNNER_TEMP "v141-build"
+          cmake -S "$env:V141_SRC" -B "$build" -G "Visual Studio 17 2022" -A x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build "$build" --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "V141_BUILD=$build" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Generate threaded dependency fixtures
+        shell: pwsh
+        run: |
+          $fixtures = Join-Path $env:RUNNER_TEMP "v141-fixtures"
+          python "$env:V141_SRC\tools\make-threaded-dependency-fixtures-v14.1.py" "$fixtures"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "V141_FIXTURES=$fixtures" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Run full threaded TLS fault-isolation matrix
+        shell: pwsh
+        run: |
+          $exe = Join-Path $env:V141_BUILD "Release\ThreadedDependencyProbe.exe"
+          if (-not (Test-Path -LiteralPath $exe)) { throw "Missing ThreadedDependencyProbe.exe: $exe" }
+          $log = Join-Path $env:RUNNER_TEMP "threaded-dependency-v14.1.log"
+          $out = & $exe "$env:V141_FIXTURES" 2>&1
+          $rc = $LASTEXITCODE
+          $out | Tee-Object -FilePath $log
+          $joined = $out -join "`n"
+          if ($rc -ne 0) { throw "ThreadedDependencyProbe failed with exit code $rc" }
+          if ($joined -notmatch "V141_THREADED_DEPENDENCY_RUNTIME_OK") { throw "Missing V141 final marker" }
+          if ($joined -notmatch "Eight independent worker TLS addresses: PASS") { throw "Missing 8-worker TLS isolation PASS" }
+          if ($joined -notmatch "Sibling workers survive one guest access violation: PASS") { throw "Missing fault-isolation PASS" }
+          if ($joined -notmatch "Threaded dependency-set rejects no-TLS gate: PASS") { throw "Missing no-TLS barrier PASS" }
+          if ($joined -notmatch "Root still executable after worker/fault matrix: PASS") { throw "Missing post-fault root PASS" }
+
+      - name: Upload validation log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PS5Native-v14.1-threaded-runtime-windows-log
+          path: ${{ runner.temp }}/threaded-dependency-v14.1.log
+          if-no-files-found: warn
