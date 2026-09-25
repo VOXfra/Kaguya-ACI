@@ -63,7 +63,12 @@ jobs:
       - name: Apply verified v14.2 integrated stress patch
         shell: pwsh
         run: |
-          $gz = Resolve-Path "ci/ps5native-v14.2/v142.patch.gz"
+          $parts = Get-ChildItem -LiteralPath "ci/ps5native-v14.2/chunks" -File -Filter "part-*" | Sort-Object Name
+          if ($parts.Count -ne 4) { throw "Expected 4 v14.2 patch chunks, got $($parts.Count)" }
+          $b64 = [System.Text.StringBuilder]::new()
+          foreach ($p in $parts) { [void]$b64.Append((Get-Content -LiteralPath $p.FullName -Raw).Trim()) }
+          $gz = Join-Path $env:RUNNER_TEMP "v142.patch.gz"
+          [IO.File]::WriteAllBytes($gz, [Convert]::FromBase64String($b64.ToString()))
           $gzSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $gz).Hash.ToLowerInvariant()
           if ($gzSha -ne "26232b7436873bd4f8a9f5adedd76184e94ac6dc27d266b6cebe790260e804d2") {
             throw "v14.2 patch gzip SHA256 mismatch: $gzSha"
