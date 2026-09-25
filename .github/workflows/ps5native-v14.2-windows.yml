@@ -65,14 +65,14 @@ jobs:
         run: |
           $gz = Resolve-Path "ci/ps5native-v14.2/v142.patch.gz"
           $gzSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $gz).Hash.ToLowerInvariant()
-          if ($gzSha -ne "e5ccd80f08e1bd764c4ea4ef5ab3a524e9b9b925ad51934e1d70bc37b708fdb3") {
+          if ($gzSha -ne "26232b7436873bd4f8a9f5adedd76184e94ac6dc27d266b6cebe790260e804d2") {
             throw "v14.2 patch gzip SHA256 mismatch: $gzSha"
           }
           $patch = Join-Path $env:RUNNER_TEMP "v142.patch"
           python -c "import gzip,pathlib; pathlib.Path(r'$patch').write_bytes(gzip.decompress(pathlib.Path(r'$gz').read_bytes()))"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $patchSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $patch).Hash.ToLowerInvariant()
-          if ($patchSha -ne "6fb56cb44717359c9a28baac6718ab5e26a767c914d86a42f089083b5a5d0ab1") {
+          if ($patchSha -ne "e0d8f4bc63b71153070aaaaf020b570ea2cdefa4f17a9cb85c0f9455d1fd6864") {
             throw "v14.2 patch SHA256 mismatch: $patchSha"
           }
           Push-Location "$env:V142_SRC"
