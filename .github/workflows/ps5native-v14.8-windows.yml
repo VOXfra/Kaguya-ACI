@@ -256,18 +256,18 @@ jobs:
           python "$env:V148_SRC\tools\make-ps5-structured-startup-fixture-v13.9.py" "$structured"
           if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
           $exe=Join-Path $env:V148_BUILD "Release\DakarNative.exe"
-          function Run-Check([string]$label,[string[]]$args,[string[]]$needles){
+          function Run-Check([string]$label,[string[]]$CliArgs,[string[]]$needles){
             Write-Host "--- $label ---"
-            $out=& $exe @args 2>&1
+            $out=& $exe @CliArgs 2>&1
             $rc=$LASTEXITCODE
             $out|ForEach-Object{Write-Host $_}
             $text=[string]::Join([Environment]::NewLine,@($out))
             if($rc-ne0){throw "$label failed exit=$rc"}
             foreach($needle in $needles){if($text-notlike("*$needle*")){throw "$label missing marker: $needle"}}
           }
-          Run-Check "inspect" @($structured,"--inspect-only") @("Non-executing PT_LOAD mapping: PASS","PASS: accessible PS5 ELF parse + dynamic inventory + non-executing mapping completed.")
-          Run-Check "preflight" @($structured,"--entry-preflight","--public-exact-host-bindings","--public-platform-bindings") @("Relocation issues: 0","Deferred IRELATIVE relocations: 0","Entry preflight executable entry: PASS","Entry preflight TLS FS-base gate: PASS","Entry preflight RELRO writable runs: 0","Entry preflight: PASS")
-          Run-Check "guarded" @($structured,"--guarded-startup","--public-exact-host-bindings","--public-platform-bindings") @("Guarded startup initializers called: 2","Guarded startup entry returned: 42","Guarded startup TLS sentinel after finalizers: 1234","Guarded startup callback address integrity: PASS","Guarded startup lifecycle: PASS")
+          Run-Check -label "inspect" -CliArgs @($structured,"--inspect-only") -needles @("Non-executing PT_LOAD mapping: PASS","PASS: accessible PS5 ELF parse + dynamic inventory + non-executing mapping completed.")
+          Run-Check -label "preflight" -CliArgs @($structured,"--entry-preflight","--public-exact-host-bindings","--public-platform-bindings") -needles @("Relocation issues: 0","Deferred IRELATIVE relocations: 0","Entry preflight executable entry: PASS","Entry preflight TLS FS-base gate: PASS","Entry preflight RELRO writable runs: 0","Entry preflight: PASS")
+          Run-Check -label "guarded" -CliArgs @($structured,"--guarded-startup","--public-exact-host-bindings","--public-platform-bindings") -needles @("Guarded startup initializers called: 2","Guarded startup entry returned: 42","Guarded startup TLS sentinel after finalizers: 1234","Guarded startup callback address integrity: PASS","Guarded startup lifecycle: PASS")
           Write-Host "V148_DAKARNATIVE_STRUCTURED_CONVERGENCE_OK"
 
       - name: Verify v14.8 production bootstrap gate
