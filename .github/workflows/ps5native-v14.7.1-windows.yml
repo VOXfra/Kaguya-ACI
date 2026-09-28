@@ -68,10 +68,36 @@ jobs:
           $hotfix=Resolve-Path "$env:GITHUB_WORKSPACE/ci/ps5native-v14.7.1/module-linker.patch"
           $hotfixSha=python -c "import hashlib,pathlib,sys; p=pathlib.Path(sys.argv[1]); b=p.read_text(encoding='utf-8').replace('\\r\\n','\\n').replace('\\r','\\n').encode(); print(hashlib.sha256(b).hexdigest())" "$hotfix"
           if($hotfixSha-ne"f63b3d394d1d53cb2c70b29ca3b688a4651fa722dcab4317808fb544ce86c649"){throw "v14.7.1 hotfix patch mismatch: $hotfixSha"}
-          git apply --check "$hotfix"
+          $moduleLinker=Join-Path $src "ps5_core/src/module_linker.cpp"
+          @'
+from pathlib import Path
+p = Path(r"__MODULE_LINKER__")
+text = p.read_text(encoding="utf-8")
+anchor = """ModuleLinker::acquire_activity(
+    const std::string& module_identity) {
+
+    error_.clear();
+"""
+replacement = """ModuleLinker::acquire_activity(
+    const std::string& module_identity) {
+
+    // Activity leases are part of guest execution, but acquisition still
+    // touches the linker's diagnostic string. Serialize this short setup
+    // section with ordinary linker mutations so concurrent guest batches do
+    // not race on error_. The lease itself remains lock-free after return.
+    std::lock_guard<std::recursive_mutex>
+        mutation_lock(
+            mutation_mutex_);
+
+    error_.clear();
+"""
+if text.count(anchor) != 1:
+    raise SystemExit(f"expected one acquire_activity anchor, got {text.count(anchor)}")
+p.write_text(text.replace(anchor, replacement), encoding="utf-8", newline="\n")
+'@.Replace("__MODULE_LINKER__",($moduleLinker -replace '\\','/')) | python -
           if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
-          git apply "$hotfix"
-          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $check=Get-Content -LiteralPath $moduleLinker -Raw
+          if($check-notmatch"Activity leases are part of guest execution" -or $check-notmatch"mutation_mutex_"){throw "v14.7.1 activity hotfix semantic injection missing"}
           Pop-Location
           "V1471_SRC=$src"|Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
