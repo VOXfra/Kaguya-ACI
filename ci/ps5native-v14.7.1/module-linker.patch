@@ -1,0 +1,17 @@
+--- a/ps5_core/src/module_linker.cpp
++++ b/ps5_core/src/module_linker.cpp
+@@ -920,6 +920,14 @@
+ ModuleLinker::acquire_activity(
+     const std::string& module_identity) {
+ 
++    // Activity leases are part of guest execution, but acquisition still
++    // touches the linker's diagnostic string. Serialize this short setup
++    // section with ordinary linker mutations so concurrent guest batches do
++    // not race on error_. The lease itself remains lock-free after return.
++    std::lock_guard<std::recursive_mutex>
++        mutation_lock(
++            mutation_mutex_);
++
+     error_.clear();
+ 
+     std::lock_guard<std::mutex>
