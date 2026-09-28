@@ -105,3 +105,11 @@ jobs:
           Write-Host "V146_WINDOWS_MSVC_BUILD_OK"
           Write-Host "Probe: $($exe.FullName)"
           Write-Host "Visible HWND / waitable DXGI / hardware-backed 48-frame execution intentionally deferred to the user's Windows GPU run."
+
+      - name: Upload exact validated v14.6 mini source
+        uses: actions/upload-artifact@v4
+        with:
+          name: PS5Native-v14.6-exact-source
+          path: ${{ env.V146_SRC }}
+          if-no-files-found: error
+          retention-days: 5
