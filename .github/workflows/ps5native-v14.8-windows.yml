@@ -119,9 +119,31 @@ jobs:
       - name: Compose v14.8 production-bootstrap CI source
         shell: pwsh
         run: |
-          Copy-Item -Recurse -Force "$env:V148_GFX_SRC\ps5_graphics" "$env:V148_SRC\ps5_graphics"
-          Copy-Item -Force "$env:V148_GFX_SRC\platform_win32\include\ps5native\win32_d3d12_graphics_backend.hpp" "$env:V148_SRC\platform_win32\include\ps5native\win32_d3d12_graphics_backend.hpp"
-          Copy-Item -Force "$env:V148_GFX_SRC\platform_win32\src\win32_d3d12_graphics_backend.cpp" "$env:V148_SRC\platform_win32\src\win32_d3d12_graphics_backend.cpp"
+          $parts=Get-ChildItem -LiteralPath "ci/ps5native-v14.8/prodsrc-chunks" -File -Filter "part-*"|Sort-Object Name
+          if($parts.Count-ne5){throw "Expected 5 v14.8 production source chunks, got $($parts.Count)"}
+          $b64=[System.Text.StringBuilder]::new()
+          foreach($p in $parts){[void]$b64.Append((Get-Content -LiteralPath $p.FullName -Raw).Trim())}
+          $zip=Join-Path $env:RUNNER_TEMP "v148-prodsrc.zip"
+          [IO.File]::WriteAllBytes($zip,[Convert]::FromBase64String($b64.ToString()))
+          $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+          if($sha-ne"443dd7cd64c335f982d6f009944411ce18a12a1fd093b4f59dd315dea3ad9972"){throw "v14.8 production source payload mismatch: $sha"}
+          $prod=Join-Path $env:RUNNER_TEMP "v148-prodsrc"
+          Expand-Archive -LiteralPath $zip -DestinationPath $prod -Force
+          New-Item -ItemType Directory -Force -Path "$env:V148_SRC\apps\dakar_native_bootstrap"|Out-Null
+          Copy-Item -Force "$prod\apps\dakar_native_bootstrap\main.cpp" "$env:V148_SRC\apps\dakar_native_bootstrap\main.cpp"
+          New-Item -ItemType Directory -Force -Path "$env:V148_SRC\adapters\dakar_ue4\src"|Out-Null
+          New-Item -ItemType Directory -Force -Path "$env:V148_SRC\adapters\dakar_ue4\include"|Out-Null
+          Copy-Item -Force "$prod\adapters\dakar_ue4\src\dakar_adapter.cpp" "$env:V148_SRC\adapters\dakar_ue4\src\dakar_adapter.cpp"
+          @'
+          #pragma once
+          #include <ps5native/import_resolver.hpp>
+          namespace dakar {
+          class Adapter {
+          public:
+              void register_engine_specific_imports(ps5native::ImportResolver& resolver);
+          };
+          }
+          '@ | Set-Content -LiteralPath "$env:V148_SRC\adapters\dakar_ue4\include\dakar_adapter.hpp" -Encoding UTF8
           @'
           cmake_minimum_required(VERSION 3.24)
           project(PS5NativeV148ProductionBootstrapCI LANGUAGES CXX)
@@ -129,10 +151,20 @@ jobs:
           set(CMAKE_CXX_STANDARD_REQUIRED ON)
           add_subdirectory(ps5_core)
           add_subdirectory(ps5_services)
-          add_subdirectory(ps5_graphics)
-          add_subdirectory(adapters/dakar_ue4)
-          add_subdirectory(platform_win32)
-          add_subdirectory(apps/dakar_native_bootstrap)
+          add_library(platform_win32_bootstrap STATIC
+            platform_win32/src/win32_platform.cpp
+            platform_win32/src/win64_abi_bridge.cpp
+            platform_win32/src/win64_guest_call_gate.cpp
+            platform_win32/src/win32_local_user_backend.cpp
+            platform_win32/src/win32_online_state_backend.cpp)
+          target_include_directories(platform_win32_bootstrap PUBLIC platform_win32/include)
+          target_compile_definitions(platform_win32_bootstrap PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+          target_link_libraries(platform_win32_bootstrap PUBLIC ps5_core ps5_services advapi32)
+          add_library(dakar_ue4_adapter STATIC adapters/dakar_ue4/src/dakar_adapter.cpp)
+          target_include_directories(dakar_ue4_adapter PUBLIC adapters/dakar_ue4/include)
+          target_link_libraries(dakar_ue4_adapter PUBLIC ps5_core)
+          add_executable(DakarNative apps/dakar_native_bootstrap/main.cpp)
+          target_link_libraries(DakarNative PRIVATE ps5_core ps5_services platform_win32_bootstrap dakar_ue4_adapter)
           '@ | Set-Content -LiteralPath "$env:V148_SRC\CMakeLists.txt" -Encoding UTF8
 
       - name: Configure and build DakarNative with VS2022
@@ -153,7 +185,7 @@ jobs:
           $elf=Join-Path $work "test-ps5like-x64.elf"
           python "$env:V148_SRC\tools\make-test-elf.py" "$elf"
           if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
-          $exe=Join-Path $env:V148_BUILD "apps\dakar_native_bootstrap\Release\DakarNative.exe"
+          $exe=Join-Path $env:V148_BUILD "Release\DakarNative.exe"
           if(-not(Test-Path -LiteralPath $exe)){throw "DakarNative.exe missing"}
           for($i=1;$i-le8;$i++){
             Write-Host "DakarNative production cycle $i/8"
@@ -175,7 +207,7 @@ jobs:
           $structured=Join-Path $work "structured-startup.elf"
           python "$env:V148_SRC\tools\make-ps5-structured-startup-fixture-v13.9.py" "$structured"
           if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
-          $exe=Join-Path $env:V148_BUILD "apps\dakar_native_bootstrap\Release\DakarNative.exe"
+          $exe=Join-Path $env:V148_BUILD "Release\DakarNative.exe"
           function Run-Check([string]$label,[string[]]$args,[string[]]$needles){
             Write-Host "--- $label ---"
             $out=& $exe @args 2>&1
@@ -193,7 +225,7 @@ jobs:
       - name: Verify v14.8 production bootstrap gate
         shell: pwsh
         run: |
-          $exe=Join-Path $env:V148_BUILD "apps\dakar_native_bootstrap\Release\DakarNative.exe"
+          $exe=Join-Path $env:V148_BUILD "Release\DakarNative.exe"
           if(-not(Test-Path -LiteralPath $exe)){throw "DakarNative.exe missing"}
           Write-Host "V148_WINDOWS_MSVC_PRODUCTION_BOOTSTRAP_OK"
           Write-Host "DakarNative: $exe"
