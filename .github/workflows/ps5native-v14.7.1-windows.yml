@@ -78,11 +78,11 @@ jobs:
           if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
           git apply "$diag"
           if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
-          $fsBoundary=Resolve-Path "$env:GITHUB_WORKSPACE/ci/ps5native-v14.7.1/gate-fs-boundary.patch"
-          git apply --check "$fsBoundary"
+          $gate=Join-Path $src "platform_win32/src/win64_guest_call_gate.cpp"
+          python "$env:GITHUB_WORKSPACE/ci/ps5native-v14.7.1/apply_fs_rebind_v1471.py" "$gate"
           if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
-          git apply "$fsBoundary"
-          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $gateCheck=Get-Content -LiteralPath $gate -Raw
+          if($gateCheck-notmatch"try_rebind_guest_fs_after_preemption" -or $gateCheck-notmatch"fs_rebinds="){throw "v14.7.1 FS preemption recovery transform missing"}
           Pop-Location
           "V1471_SRC=$src"|Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
