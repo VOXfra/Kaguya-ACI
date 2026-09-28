@@ -31,8 +31,7 @@
 +                "No Dakar retail AGC/window/backbuffer/runtime semantics claimed without capture evidence");
 +
 +    if (ok) {
-+        std::cout << "V146_VISIBLE_NATIVE_APP_LOOP_OK
-";
++        std::cout << "V146_VISIBLE_NATIVE_APP_LOOP_OK\n";
 +        return 0;
 +    }
 +    return 3;
@@ -88,4 +87,4 @@ diff -ruN v145-min2/platform_win32/src/win32_d3d12_graphics_backend.cpp v146-min
      for (HWND hwnd : presentation_windows) {
          if (IsWindow(hwnd)) {
              DestroyWindow(hwnd);
-@@ -1747,7 +1755,9 @
+@@ -1747,7 +1755,9 @@
