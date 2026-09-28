@@ -72,6 +72,7 @@ jobs:
           got = hashlib.sha256(manifest).hexdigest()
           expected = "20ab792aa904324b3362f59b79646815fc7ab04b829cbb49bd6555fa77c274a9"
           print(f"files={len(rows)}")
+          print("".join(rows), end="")
           print(f"manifest_sha256={got}")
           if len(rows) != 28 or got != expected:
               raise SystemExit(f"v14.6 source manifest mismatch: files={len(rows)} sha={got}")
