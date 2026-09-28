@@ -159,6 +159,18 @@ jobs:
           New-Item -ItemType Directory -Force -Path "$env:V148_SRC\adapters\dakar_ue4\src"|Out-Null
           New-Item -ItemType Directory -Force -Path "$env:V148_SRC\adapters\dakar_ue4\include"|Out-Null
           Copy-Item -Force "$prod\adapters\dakar_ue4\src\dakar_adapter.cpp" "$env:V148_SRC\adapters\dakar_ue4\src\dakar_adapter.cpp"
+          $fixtureNames=@("part-00","part-01")
+          $fixtureB64=[System.Text.StringBuilder]::new()
+          foreach($name in $fixtureNames){
+            $path=Join-Path "ci/ps5native-v14.8/fixture-tool-chunks" $name
+            if(-not(Test-Path -LiteralPath $path)){throw "Missing v14.8 fixture chunk: $name"}
+            [void]$fixtureB64.Append((Get-Content -LiteralPath $path -Raw).Trim())
+          }
+          $fixtureZip=Join-Path $env:RUNNER_TEMP "v148-fixture-tools.zip"
+          [IO.File]::WriteAllBytes($fixtureZip,[Convert]::FromBase64String($fixtureB64.ToString()))
+          $fixtureSha=(Get-FileHash -Algorithm SHA256 -LiteralPath $fixtureZip).Hash.ToLowerInvariant()
+          if($fixtureSha-ne"7527beb351128a7e3dd7734271502065603e1e6714a0ae24a8670f33463de692"){throw "v14.8 fixture tools payload mismatch: $fixtureSha"}
+          Expand-Archive -LiteralPath $fixtureZip -DestinationPath $env:V148_SRC -Force
           Copy-Item -Force "ci\ps5native-v14.8\platform\win32_local_user_backend.hpp" "$env:V148_SRC\platform_win32\include\ps5native\win32_local_user_backend.hpp"
           Copy-Item -Force "ci\ps5native-v14.8\platform\win32_online_state_backend.hpp" "$env:V148_SRC\platform_win32\include\ps5native\win32_online_state_backend.hpp"
           Copy-Item -Force "ci\ps5native-v14.8\platform\win32_local_user_backend.cpp" "$env:V148_SRC\platform_win32\src\win32_local_user_backend.cpp"
