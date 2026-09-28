@@ -1,0 +1,42 @@
+@@ -1,5 +1,6 @@
+ #pragma once
+ 
++#include <array>
+ #include <cstddef>
+ #include <cstdint>
+ #include <memory>
+@@ -19,6 +20,8 @@
+     std::uint32_t buffer_count{2};
+     GraphicsTextureFormat format{GraphicsTextureFormat::Rgba8Unorm};
+     bool visible{true};
++    bool frame_latency_waitable{false};
++    std::uint32_t max_frame_latency{1};
+     std::string title{"PS5NativeCore Graphics"};
+ };
+ 
+@@ -26,6 +29,14 @@
+     GraphicsPresentationDesc desc;
+     std::uint32_t current_back_buffer{};
+     std::uint64_t present_count{};
++    bool window_exists{};
++    bool window_visible{};
++    std::uint32_t client_width{};
++    std::uint32_t client_height{};
++    bool frame_latency_waitable{};
++    std::uint64_t waited_frame_count{};
++    bool last_presented_center_valid{};
++    std::array<std::uint8_t, 4> last_presented_center_rgba{};
+ };
+ 
+ class GraphicsPresentationBackend {
+diff -ruN v145-min2/ps5_graphics/src/graphics_presentation.cpp v146-min/ps5_graphics/src/graphics_presentation.cpp
+--- v145-min2/ps5_graphics/src/graphics_presentation.cpp	2026-09-26 16:57:22.000000000 +0000
++++ v146-min/ps5_graphics/src/graphics_presentation.cpp	2026-09-28 10:00:10.615966887 +0000
+@@ -109,6 +109,7 @@
+     if (desc.width == 0 || desc.height == 0 ||
+         desc.width > 16384 || desc.height > 16384 ||
+         desc.buffer_count < 2 || desc.buffer_count > 4 ||
++        desc.max_frame_latency == 0 || desc.max_frame_latency > 16 ||
+         desc.title.size() > 512) {
+         return false;
+     }
