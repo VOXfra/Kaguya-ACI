@@ -1,0 +1,75 @@
+f (!color_attachment || !depth_attachment || !pass) return 2;
++
++    GraphicsPresentationDesc present_desc{};
++    present_desc.width = 640;
++    present_desc.height = 360;
++    present_desc.buffer_count = 3;
++    present_desc.visible = true;
++    present_desc.frame_latency_waitable = true;
++    present_desc.max_frame_latency = 1;
++    present_desc.title = "PS5NativeCore v14.6 Visible Native Runtime";
++    const auto surface = presentation.create(present_desc, &error);
++    auto window_info = surface ? presentation.info(*surface, &error) : std::nullopt;
++    ok &= check(surface && error == GraphicsError::None && window_info &&
++                window_info->window_exists && window_info->window_visible &&
++                window_info->frame_latency_waitable &&
++                window_info->client_width == 640u && window_info->client_height == 360u,
++                "AGC visible runtime real visible Win32 triple-buffer swapchain + latency gate create");
++    if (!surface) return 2;
++
++    AgcCommandDecoder decoder;
++    ok &= check(
++        decoder.register_rule(make_rule("SYNTH_V146_BARRIER", 0xE1000001u, 3u,
++            AgcSemanticKind::ResourceBarrier,
++            {{"resource_id",1u,0xffffffffu,0u},{"target_state",2u,0xffffffffu,0u}})) == AgcDecoderError::None &&
++        decoder.register_rule(make_rule("SYNTH_V146_DRAW", 0xE2000002u, 3u,
++            AgcSemanticKind::DrawIndexed,
++            {{"draw_id",1u,0xffffffffu,0u},{"index_count",2u,0xffffffffu,0u}})) == AgcDecoderError::None &&
++        decoder.register_rule(make_rule("SYNTH_V146_DISPATCH", 0xE3000003u, 3u,
++            AgcSemanticKind::Dispatch,
++            {{"dispatch_id",1u,0xffffffffu,0u},{"element_count",2u,0xffffffffu,0u}})) == AgcDecoderError::None,
++        "AGC visible runtime synthetic fixture rules register");
++
++    GraphicsIndexedDrawDesc draw{};
++    draw.width = 64; draw.height = 64;
++    draw.vertices = {{-0.8f,-0.8f,1,1,1,1},{0,0.8f,1,1,1,1},{0.8f,-0.8f,1,1,1,1}};
++    draw.indices = {0,1,2};
++    GraphicsDescriptorDispatchDesc dispatch{};
++    dispatch.input.resize(130u);
++    for (std::size_t i=0;i<dispatch.input.size();++i) dispatch.input[i]=static_cast<std::uint32_t>(i*5u+2u);
++
++    AgcGraphicsBridgeBindings bindings{};
++    bindings.buffer_handles.emplace(1u,*buffer);
++    bindings.draw_descriptors.emplace(7u,draw);
++    bindings.dispatch_descriptors.emplace(9u,dispatch);
++    const std::vector<AgcCapturedPacket> packets{
++        {0x000u,{0xE1000001u,1u,static_cast<std::uint32_t>(GraphicsResourceState::CopyDest)}},
++        {0x020u,{0xE2000002u,7u,3u}},
++        {0x040u,{0xE3000003u,9u,130u}},
++        {0x060u,{0xE1000001u,1u,static_cast<std::uint32_t>(GraphicsResourceState::CopySource)}}};
++    const auto batch=decoder.decode_batch(packets);
++    ok &= check(batch.decoded_count==4u && batch.unknown_count==0u && batch.malformed_count==0u,
++                "AGC visible runtime packet stream decodes to neutral IR");
++
++    AgcFrameGraphPipeline external_only(foundation,draw_dispatch,presentation,shaders,renderpass,
++                                        AgcGraphicsExecutionPolicy::ExternalEvidenceOnly);
++    const auto policy_block=external_only.execute_frame(batch,bindings,*surface,*gpso,*cpso,*pass,5000);
++    auto info=presentation.info(*surface,&error);
++    ok &= check(policy_block.error==AgcFrameGraphError::BridgePreflightRejected &&
++                policy_block.bridge_preflight.error==AgcGraphicsBridgeError::SyntheticRuleBlocked &&
++                info && info->present_count==0u && renderpass.submission_count()==0u,
++                "AGC visible runtime fail-closed policy rejects before shader/fence/present");
++
++    AgcFrameGraphPipeline graph(foundation,draw_dispatch,presentation,shaders,renderpass,
++                                AgcGraphicsExecutionPolicy::AllowSyntheticFixture);
++    auto missing=bindings;
++    missing.dispatch_descriptors.erase(9u);
++    const auto missing_result=graph.execute_frame(batch,missing,*surface,*gpso,*cpso,*pass,5000);
++    info=presentation.info(*surface,&error);
++    ok &= check(missing_result.error==AgcFrameGraphError::BridgePreflightRejected &&
++                info && info->present_count==0u && renderpass.submission_count()==0u,
++                "AGC visible runtime missing binding rejects before any frame-graph GPU work");
++
++    const auto wrong_pipeline=graph.execute_frame(batch,bindings,*surface,*gpso,*gpso,*pass,5000);
++    info=presentation.info(*surface,&error);
++    ok &= c
