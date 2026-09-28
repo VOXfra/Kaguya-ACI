@@ -1,0 +1,72 @@
+heck(wrong_pipeline.error==AgcFrameGraphError::InvalidArgument &&
++                info && info->present_count==0u && renderpass.submission_count()==0u,
++                "AGC visible runtime wrong PSO kind rejects transactionally");
++
++    std::set<std::uint64_t> frame_hashes;
++    std::uint64_t last_fence=0;
++    std::uint32_t verified_swapchain_pixels=0;
++    std::set<std::uint32_t> back_buffer_indices;
++    for (std::uint32_t frame=0; frame<48; ++frame) {
++        if (frame==16) {
++            ok &= presentation.resize(*surface,800u,450u,5000)==GraphicsError::None;
++        } else if (frame==32) {
++            ok &= presentation.resize(*surface,960u,540u,5000)==GraphicsError::None;
++        }
++        auto fb=bindings;
++        fb.draw_descriptors.at(7u).tint={
++            0.10f+0.01f*frame, 0.20f+0.005f*frame, 0.80f-0.01f*frame, 1.0f};
++        fb.dispatch_descriptors.at(9u).multiplier=5u+frame;
++        const auto r=graph.execute_frame(batch,fb,*surface,*gpso,*cpso,*pass,5000);
++        auto frame_info=presentation.info(*surface,&error);
++        bool swapchain_pixel_matches=false;
++        if (r.success() && frame_info && frame_info->last_presented_center_valid &&
++            !r.frame.bridge.draws.empty()) {
++            const auto& expected=r.frame.bridge.draws.back().center_rgba;
++            const auto& actual=frame_info->last_presented_center_rgba;
++            swapchain_pixel_matches=
++                near_byte(actual[0],expected[0],1) &&
++                near_byte(actual[1],expected[1],1) &&
++                near_byte(actual[2],expected[2],1) &&
++                near_byte(actual[3],expected[3],1);
++            if (swapchain_pixel_matches) ++verified_swapchain_pixels;
++        }
++        ok &= r.success() && frame_info &&
++              r.frame.present_count_after==static_cast<std::uint64_t>(frame+1u) &&
++              frame_info->present_count==static_cast<std::uint64_t>(frame+1u) &&
++              frame_info->waited_frame_count==static_cast<std::uint64_t>(frame+1u) &&
++              frame_info->window_exists && frame_info->window_visible &&
++              frame_info->frame_latency_waitable && swapchain_pixel_matches &&
++              r.render_submission.fence_value>last_fence && r.compute_value_hash!=0u &&
++              near_byte(r.shader_center_rgba[0],32) && near_byte(r.shader_center_rgba[1],128) &&
++              near_byte(r.shader_center_rgba[2],223) && near_byte(r.render_submission.center_rgba[0],51) &&
++              near_byte(r.render_submission.center_rgba[1],102) && near_byte(r.render_submission.center_rgba[2],204);
++        last_fence=r.render_submission.fence_value;
++        frame_hashes.insert(r.frame.content_hash);
++        if (frame_info) back_buffer_indices.insert(frame_info->current_back_buffer);
++    }
++    info=presentation.info(*surface,&error);
++    ok &= check(ok && info && info->present_count==48u && info->waited_frame_count==48u &&
++                info->desc.width==960u && info->desc.height==540u &&
++                info->client_width==960u && info->client_height==540u &&
++                info->window_exists && info->window_visible && info->frame_latency_waitable &&
++                frame_hashes.size()==48u && verified_swapchain_pixels==48u &&
++                back_buffer_indices.size()>=2u && last_fence!=0u,
++                "AGC visible runtime 48-frame visible/paced frame graph + backbuffer readback across two window resizes");
++
++    const auto before_reject=info?info->present_count:0u;
++    const auto before_waited=info?info->waited_frame_count:0u;
++    const auto before_pixel=info?info->last_presented_center_rgba:std::array<std::uint8_t,4>{};
++    auto late_missing=bindings;
++    late_missing.draw_descriptors.erase(7u);
++    const auto rejected=graph.execute_frame(batch,late_missing,*surface,*gpso,*cpso,*pass,5000);
++    info=presentation.info(*surface,&error);
++    ok &= check(rejected.error==AgcFrameGraphError::BridgePreflightRejected &&
++                info && info->present_count==before_reject &&
++                info->waited_frame_count==before_waited &&
++                info->last_presented_center_rgba==before_pixel &&
++                renderpass.submission_count()==0u,
++                "AGC visible runtime rejected frame leaves fence/present/waitable/readback progression unchanged");
++
++    const auto stale_surface=*surface;
++    ok &= presentation.destroy(*surface)==GraphicsError::None;
++    const auto stale_result=graph.execute_frame(batch,bindings,stale_surface

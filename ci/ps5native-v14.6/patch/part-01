@@ -1,0 +1,83 @@
+r_desc.width = 16;
++    color_desc.height = 16;
++    color_desc.format = GraphicsTextureFormat::Rgba8Unorm;
++    color_desc.usage = GraphicsTextureUsage::ShaderResource | GraphicsTextureUsage::RenderTarget;
++    const auto texture = resources.create_texture_2d(color_desc, &error);
++    const auto heap = resources.create_descriptor_heap(
++        {GraphicsDescriptorHeapKind::CbvSrvUav, 2u, true}, &error);
++    const auto sampler_heap = resources.create_descriptor_heap(
++        {GraphicsDescriptorHeapKind::Sampler, 1u, true}, &error);
++    ok &= check(texture && heap && sampler_heap,
++                "AGC visible runtime persistent texture/descriptor heaps create");
++    if (!texture || !heap || !sampler_heap) return 2;
++
++    const auto srv = resources.create_texture_view(
++        *heap, 0u, *texture, GraphicsTextureViewKind::ShaderResource, &error);
++    const auto sampler = resources.create_sampler(
++        *sampler_heap, 0u,
++        {GraphicsSamplerFilter::Linear,
++         GraphicsSamplerAddressMode::Clamp,
++         GraphicsSamplerAddressMode::Clamp,
++         GraphicsSamplerAddressMode::Clamp,
++         0.0f, 8.0f}, &error);
++    ok &= check(srv && sampler,
++                "AGC visible runtime persistent SRV/sampler bindings create");
++    if (!srv || !sampler) return 2;
++
++    std::vector<std::uint8_t> upload(16u * 16u * 4u);
++    for (std::size_t i = 0; i < upload.size(); ++i) {
++        upload[i] = static_cast<std::uint8_t>((i * 29u + 17u) & 0xffu);
++    }
++    std::vector<std::uint8_t> readback(upload.size());
++    ok &= check(
++        resources.texture_round_trip(*texture, upload.data(), upload.size(),
++                                     readback.data(), readback.size(), 5000) == GraphicsError::None &&
++        readback == upload,
++        "AGC visible runtime D3D12 texture upload/readback integrity");
++
++    const std::string vertex_source = R"HLSL(
++float4 main(uint id : SV_VertexID) : SV_Position {
++    if (id == 0) return float4(-1.0, -1.0, 0.0, 1.0);
++    if (id == 1) return float4(-1.0,  3.0, 0.0, 1.0);
++    return float4(3.0, -1.0, 0.0, 1.0);
++})HLSL";
++    const std::string pixel_source = R"HLSL(
++float4 main() : SV_Target { return float4(0.125, 0.5, 0.875, 1.0); }
++)HLSL";
++    const std::string compute_source = R"HLSL(
++RWByteAddressBuffer outData : register(u0);
++[numthreads(16, 1, 1)]
++void main(uint3 tid : SV_DispatchThreadID) { outData.Store(tid.x * 4, tid.x * 7 + 3); }
++)HLSL";
++
++    const auto vs = shaders.create_shader({GraphicsShaderStage::Vertex, vertex_source, "main"}, &error);
++    const auto ps = shaders.create_shader({GraphicsShaderStage::Pixel, pixel_source, "main"}, &error);
++    const auto cs = shaders.create_shader({GraphicsShaderStage::Compute, compute_source, "main"}, &error);
++    const auto gpso = (vs && ps) ? shaders.create_graphics_pipeline(*vs, *ps, &error) : std::nullopt;
++    const auto cpso = cs ? shaders.create_compute_pipeline(*cs, &error) : std::nullopt;
++    ok &= check(vs && ps && cs && gpso && cpso,
++                "AGC visible runtime persistent HLSL shaders and graphics/compute PSOs create");
++    if (!vs || !ps || !cs || !gpso || !cpso) return 2;
++
++    GraphicsRenderAttachmentDesc color_attachment_desc{};
++    color_attachment_desc.kind = GraphicsAttachmentKind::Color;
++    color_attachment_desc.width = 64;
++    color_attachment_desc.height = 64;
++    color_attachment_desc.format = GraphicsTextureFormat::Rgba8Unorm;
++    color_attachment_desc.clear_color = {0.20f, 0.40f, 0.80f, 1.0f};
++    GraphicsRenderAttachmentDesc depth_attachment_desc{};
++    depth_attachment_desc.kind = GraphicsAttachmentKind::Depth;
++    depth_attachment_desc.width = 64;
++    depth_attachment_desc.height = 64;
++    depth_attachment_desc.format = GraphicsTextureFormat::D32Float;
++    depth_attachment_desc.clear_depth = 0.5f;
++    const auto color_attachment = renderpass.create_attachment(color_attachment_desc, &error);
++    const auto depth_attachment = renderpass.create_attachment(depth_attachment_desc, &error);
++    GraphicsRenderPassDesc pass_desc{};
++    if (color_attachment) pass_desc.color_attachment = *color_attachment;
++    if (depth_attachment) pass_desc.depth_attachment = *depth_attachment;
++    const auto pass = (color_attachment && depth_attachment)
++        ? renderpass.create_pass(pass_desc, &error) : std::nullopt;
++    ok &= check(color_attachment && depth_attachment && pass,
++                "AGC visible runtime persistent color/depth render-pass create");
++    i

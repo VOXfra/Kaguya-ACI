@@ -1,0 +1,126 @@
+@
+     swap_desc.Scaling = DXGI_SCALING_STRETCH;
+     swap_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+     swap_desc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
+-    swap_desc.Flags = 0;
++    swap_desc.Flags = desc.frame_latency_waitable
++        ? DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT
++        : 0u;
+ 
+     Microsoft::WRL::ComPtr<IDXGISwapChain1> swap_chain1;
+     HRESULT result = factory_->CreateSwapChainForHwnd(
+@@ -1768,6 +1778,7 @@
+     PresentationRecord record{};
+     record.hwnd = hwnd;
+     record.desc = desc;
++    record.swapchain_flags = swap_desc.Flags;
+     result = swap_chain1.As(&record.swap_chain);
+     if (FAILED(result) || !record.swap_chain) {
+         DestroyWindow(hwnd);
+@@ -1826,6 +1837,60 @@
+         return std::nullopt;
+     }
+ 
++    D3D12_HEAP_PROPERTIES readback_heap{};
++    readback_heap.Type = D3D12_HEAP_TYPE_READBACK;
++    readback_heap.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
++    readback_heap.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
++    readback_heap.CreationNodeMask = 1;
++    readback_heap.VisibleNodeMask = 1;
++    D3D12_RESOURCE_DESC readback_desc{};
++    readback_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
++    readback_desc.Alignment = 0;
++    readback_desc.Width = 256;
++    readback_desc.Height = 1;
++    readback_desc.DepthOrArraySize = 1;
++    readback_desc.MipLevels = 1;
++    readback_desc.Format = DXGI_FORMAT_UNKNOWN;
++    readback_desc.SampleDesc.Count = 1;
++    readback_desc.SampleDesc.Quality = 0;
++    readback_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
++    readback_desc.Flags = D3D12_RESOURCE_FLAG_NONE;
++    result = device_->CreateCommittedResource(
++        &readback_heap,
++        D3D12_HEAP_FLAG_NONE,
++        &readback_desc,
++        D3D12_RESOURCE_STATE_COPY_DEST,
++        nullptr,
++        IID_PPV_ARGS(&record.center_readback));
++    if (FAILED(result) || !record.center_readback) {
++        DestroyWindow(hwnd);
++        error = translate_hresult(result);
++        return std::nullopt;
++    }
++
++    if (desc.frame_latency_waitable) {
++        Microsoft::WRL::ComPtr<IDXGISwapChain2> swap_chain2;
++        result = record.swap_chain.As(&swap_chain2);
++        if (FAILED(result) || !swap_chain2) {
++            DestroyWindow(hwnd);
++            error = translate_hresult(result);
++            return std::nullopt;
++        }
++        result = swap_chain2->SetMaximumFrameLatency(desc.max_frame_latency);
++        if (FAILED(result)) {
++            DestroyWindow(hwnd);
++            error = translate_hresult(result);
++            return std::nullopt;
++        }
++        record.frame_latency_waitable_object =
++            swap_chain2->GetFrameLatencyWaitableObject();
++        if (!record.frame_latency_waitable_object) {
++            DestroyWindow(hwnd);
++            error = GraphicsError::NotSupported;
++            return std::nullopt;
++        }
++    }
++
+     std::lock_guard lock(mutex_);
+     const auto id = next_presentation_id_++;
+     presentations_.emplace(id, std::move(record));
+@@ -1836,6 +1901,7 @@
+ GraphicsError Win32D3D12GraphicsBackend::destroy_presentation(
+     std::uint64_t presentation) {
+     HWND hwnd{};
++    HANDLE latency_handle{};
+     {
+         std::lock_guard lock(mutex_);
+         const auto it = presentations_.find(presentation);
+@@ -1848,8 +1914,13 @@
+             return wait_error;
+         }
+         hwnd = it->second.hwnd;
++        latency_handle = it->second.frame_latency_waitable_object;
++        it->second.frame_latency_waitable_object = nullptr;
+         presentations_.erase(it);
+     }
++    if (latency_handle) {
++        CloseHandle(latency_handle);
++    }
+     if (hwnd && IsWindow(hwnd)) {
+         DestroyWindow(hwnd);
+     }
+@@ -1881,7 +1952,7 @@
+         width,
+         height,
+         presentation_format(record.desc.format),
+-        0);
++        record.swapchain_flags);
+     if (FAILED(result)) {
+         return translate_hresult(result);
+     }
+@@ -1917,10 +1988,24 @@
+     }
+     auto& record = it->second;
+     if (!record.swap_chain || record.back_buffers.empty() ||
+-        !record.allocator || !record.list) {
++        !record.allocator || !record.list || !record.center_readback) {
+         return GraphicsError::InvalidState;
+     }
+ 
++    if (record.frame_latency_waitable_object) {
++        const DWORD wait_ms = timeout_ms == GraphicsFoundation::InfiniteTimeout
++            ? INFINITE
++            : timeout_ms;
++        const DWORD wait_result = WaitForSingleObject(
++            record.frame_laten
