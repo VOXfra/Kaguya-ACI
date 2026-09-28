@@ -1,0 +1,110 @@
+name: PS5Native v14.6.1 Windows Hotfix CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  presentation-compat-windows-build:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct exact v14.5 mini baseline
+        shell: pwsh
+        run: |
+          $parts = Get-ChildItem -LiteralPath "ci/ps5native-v14.5/chunks" -File -Filter "part-*" | Sort-Object Name
+          if ($parts.Count -ne 23) { throw "Expected 23 v14.5 baseline chunks, got $($parts.Count)" }
+          $b64 = [System.Text.StringBuilder]::new()
+          foreach ($p in $parts) { [void]$b64.Append((Get-Content -LiteralPath $p.FullName -Raw).Trim()) }
+          $bytes = [Convert]::FromBase64String($b64.ToString())
+          $zip = Join-Path $env:RUNNER_TEMP "v145-min2.zip"
+          [IO.File]::WriteAllBytes($zip, $bytes)
+          $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+          if ($sha -ne "f2491eea05363624805819eb16842ff157a179f8815c298b1776ac29a6df0ae7") {
+            throw "v14.5 baseline SHA256 mismatch: $sha"
+          }
+          $extract = Join-Path $env:RUNNER_TEMP "v1461-src"
+          Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
+          $src = Join-Path $extract "v145-min2"
+          "V1461_SRC=$src" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Apply exact validated v14.6 delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          PATCH_FILE="$RUNNER_TEMP/v146.patch"
+          python - <<'PY'
+          from pathlib import Path
+          import os
+          parts = sorted(Path("ci/ps5native-v14.6/patch").glob("part-*"))
+          text = "".join(p.read_text(encoding="utf-8").replace("\r\n","\n").replace("\r","\n") for p in parts)
+          Path(os.environ["RUNNER_TEMP"], "v146.patch").write_text(text, encoding="utf-8", newline="\n")
+          PY
+          got="$(python -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$PATCH_FILE")"
+          test "$got" = "4f3429a8178fcf052e926386bf967b9cae3dd264176dedac4ad67485bdfbd04e"
+          patch --batch --forward -p1 -d "$V1461_SRC" < "$PATCH_FILE"
+
+      - name: Verify exact v14.6 source manifest
+        shell: pwsh
+        run: |
+          $script = @'
+          import hashlib, os
+          from pathlib import Path
+          root=Path(os.environ["V1461_SRC"])
+          files=sorted((p for p in root.rglob("*") if p.is_file()), key=lambda p:p.relative_to(root).as_posix())
+          rows=[]
+          for p in files:
+              rel=p.relative_to(root).as_posix()
+              data=p.read_bytes().replace(b"\r\n",b"\n").replace(b"\r",b"\n")
+              rows.append(f"{hashlib.sha256(data).hexdigest()}  {rel}\n")
+          got=hashlib.sha256("".join(rows).encode()).hexdigest()
+          print(f"files={len(rows)} manifest_sha256={got}")
+          if len(rows)!=28 or got!="20ab792aa904324b3362f59b79646815fc7ab04b829cbb49bd6555fa77c274a9":
+              raise SystemExit("v14.6 exact source manifest mismatch")
+          '@
+          $script | python -
+
+      - name: Inject exact v14.6.1 legacy presentation hotfix
+        shell: pwsh
+        run: |
+          $dst = Join-Path $env:V1461_SRC "apps\graphics_presentation_probe"
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+          Copy-Item -LiteralPath "ci\ps5native-v14.6.1\graphics_presentation_probe\main.cpp" -Destination (Join-Path $dst "main.cpp") -Force
+          $probe = Join-Path $dst "main.cpp"
+          $sha = python -c "import hashlib,sys,pathlib; b=pathlib.Path(sys.argv[1]).read_bytes().replace(bytes([13,10]),bytes([10])).replace(bytes([13]),bytes([10])); print(hashlib.sha256(b).hexdigest())" "$probe"
+          if ($sha.Trim() -ne "9200a5f860f4b700fd5fec49ffa98f3886505ea0e79e1dc779fbb0e6a926d607") {
+            throw "v14.6.1 fixed GraphicsPresentationProbe normalized source mismatch: $sha"
+          }
+          Add-Content -LiteralPath (Join-Path $env:V1461_SRC "CMakeLists.txt") -Value @'
+
+          add_executable(GraphicsPresentationProbe apps/graphics_presentation_probe/main.cpp)
+          target_link_libraries(GraphicsPresentationProbe PRIVATE ps5_graphics platform_graphics_win32)
+          '@
+
+      - name: Configure exact hotfix source with VS2022
+        shell: pwsh
+        run: |
+          $build = Join-Path $env:RUNNER_TEMP "v1461-build"
+          cmake -S "$env:V1461_SRC" -B "$build" -G "Visual Studio 17 2022" -A x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "V1461_BUILD=$build" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build v14.6 runtime plus legacy presentation regression with MSVC
+        shell: pwsh
+        run: |
+          cmake --build "$env:V1461_BUILD" --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify both affected binaries
+        shell: pwsh
+        run: |
+          $visible = Get-ChildItem -LiteralPath "$env:V1461_BUILD" -Filter "AgcVisibleRuntimeProbe.exe" -Recurse -File | Select-Object -First 1
+          $legacy = Get-ChildItem -LiteralPath "$env:V1461_BUILD" -Filter "GraphicsPresentationProbe.exe" -Recurse -File | Select-Object -First 1
+          if ($null -eq $visible) { throw "AgcVisibleRuntimeProbe.exe missing" }
+          if ($null -eq $legacy) { throw "GraphicsPresentationProbe.exe missing" }
+          Write-Host "V1461_WINDOWS_MSVC_GLOBAL_PRESENTATION_COMPAT_OK"
+          Write-Host "Visible probe: $($visible.FullName)"
+          Write-Host "Legacy presentation probe: $($legacy.FullName)"
