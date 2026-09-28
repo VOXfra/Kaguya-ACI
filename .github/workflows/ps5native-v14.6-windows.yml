@@ -41,7 +41,13 @@ jobs:
         run: |
           set -euo pipefail
           PATCH_FILE="$RUNNER_TEMP/v146.patch"
-          cat ci/ps5native-v14.6/patch/part-* > "$PATCH_FILE"
+          python - <<'PY'
+          from pathlib import Path
+          import os
+          parts = sorted(Path("ci/ps5native-v14.6/patch").glob("part-*"))
+          text = "".join(p.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n") for p in parts)
+          Path(os.environ["RUNNER_TEMP"], "v146.patch").write_text(text, encoding="utf-8", newline="\n")
+          PY
           got="$(sha256sum "$PATCH_FILE" | awk '{print $1}')"
           expected="4f3429a8178fcf052e926386bf967b9cae3dd264176dedac4ad67485bdfbd04e"
           test "$got" = "$expected" || { echo "v14.6 patch SHA mismatch: $got"; exit 1; }
