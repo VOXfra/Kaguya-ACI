@@ -1,0 +1,60 @@
+name: PS5Native v14.5 Windows Compile CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  frame-graph-windows-build:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct exact v14.5 mini source
+        shell: pwsh
+        run: |
+          $parts = Get-ChildItem -LiteralPath "ci/ps5native-v14.5/chunks" -File -Filter "part-*" | Sort-Object Name
+          if ($parts.Count -ne 23) { throw "Expected 23 source chunks, got $($parts.Count)" }
+          $b64 = [System.Text.StringBuilder]::new()
+          foreach ($p in $parts) {
+            [void]$b64.Append((Get-Content -LiteralPath $p.FullName -Raw).Trim())
+          }
+          $bytes = [Convert]::FromBase64String($b64.ToString())
+          $zip = Join-Path $env:RUNNER_TEMP "v145-min2.zip"
+          [IO.File]::WriteAllBytes($zip, $bytes)
+          $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+          if ($sha -ne "f2491eea05363624805819eb16842ff157a179f8815c298b1776ac29a6df0ae7") {
+            throw "v14.5 mini source SHA256 mismatch: $sha"
+          }
+          $extract = Join-Path $env:RUNNER_TEMP "v145-ci"
+          Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
+          $src = Join-Path $extract "v145-min2"
+          if (-not (Test-Path -LiteralPath (Join-Path $src "CMakeLists.txt"))) {
+            throw "Missing reconstructed CMakeLists.txt"
+          }
+          "V145_SRC=$src" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Configure exact v14.5 source with VS2022
+        shell: pwsh
+        run: |
+          $build = Join-Path $env:RUNNER_TEMP "v145-build"
+          cmake -S "$env:V145_SRC" -B "$build" -G "Visual Studio 17 2022" -A x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "V145_BUILD=$build" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build integrated frame graph with MSVC
+        shell: pwsh
+        run: |
+          cmake --build "$env:V145_BUILD" --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify probe binary
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -LiteralPath "$env:V145_BUILD" -Filter "AgcFrameGraphProbe.exe" -Recurse -File | Select-Object -First 1
+          if ($null -eq $exe) { throw "AgcFrameGraphProbe.exe was not produced" }
+          Write-Host "V145_WINDOWS_MSVC_BUILD_OK"
+          Write-Host "Probe: $($exe.FullName)"
+          Write-Host "GPU execution intentionally deferred to the user's hardware-backed Windows run."
