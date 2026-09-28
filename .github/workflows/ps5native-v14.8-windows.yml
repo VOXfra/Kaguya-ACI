@@ -130,10 +130,14 @@ jobs:
           $prod=Join-Path $env:RUNNER_TEMP "v148-prodsrc"
           Expand-Archive -LiteralPath $zip -DestinationPath $prod -Force
 
-          $svcParts=Get-ChildItem -LiteralPath "ci/ps5native-v14.8/service-chunks" -File -Filter "part-*"|Sort-Object Name
-          if($svcParts.Count-ne5){throw "Expected 5 v14.8 service chunks, got $($svcParts.Count)"}
+          $svcRoot="ci/ps5native-v14.8/service-chunks"
+          $svcNames=@("part-00","part-01","part-02","part-03-0","part-03-1","part-03-2","part-03-3","part-04")
           $svcB64=[System.Text.StringBuilder]::new()
-          foreach($p in $svcParts){[void]$svcB64.Append((Get-Content -LiteralPath $p.FullName -Raw).Trim())}
+          foreach($name in $svcNames){
+            $path=Join-Path $svcRoot $name
+            if(-not(Test-Path -LiteralPath $path)){throw "Missing v14.8 service chunk: $name"}
+            [void]$svcB64.Append((Get-Content -LiteralPath $path -Raw).Trim())
+          }
           $svcZip=Join-Path $env:RUNNER_TEMP "v148-services.zip"
           [IO.File]::WriteAllBytes($svcZip,[Convert]::FromBase64String($svcB64.ToString()))
           $svcSha=(Get-FileHash -Algorithm SHA256 -LiteralPath $svcZip).Hash.ToLowerInvariant()
