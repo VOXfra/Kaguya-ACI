@@ -1,0 +1,144 @@
+--- a/apps/runtime_stress_probe/main.cpp
++++ b/apps/runtime_stress_probe/main.cpp
+@@ -22,6 +22,7 @@
+ #include <iostream>
+ #include <mutex>
+ #include <set>
++#include <sstream>
+ #include <string>
+ #include <thread>
+ #include <vector>
+@@ -258,6 +259,7 @@
+     std::array<bool,kCoordinatorCount> coordinator_ok{};
+     std::array<bool,kCoordinatorCount> key_ok{};
+     std::array<bool,kCoordinatorCount> start_ok{};
++    std::array<std::string,kCoordinatorCount> coordinator_errors{};
+     std::vector<std::thread> coordinators;
+     coordinators.reserve(kCoordinatorCount);
+ 
+@@ -275,6 +277,9 @@
+                 keys.get_specific(*coordinator_key) &&
+                 *keys.get_specific(*coordinator_key) == key_value;
+             local_ok = local_ok && key_ok[coordinator];
++            if (!key_ok[coordinator]) {
++                coordinator_errors[coordinator] = "thread-key setup/round-trip failed";
++            }
+ 
+             {
+                 std::lock_guard lock(ready_mutex);
+@@ -285,6 +290,9 @@
+             start_ok[coordinator] = address_wait.wait_u32(
+                 start_epoch, 0, std::chrono::seconds(5));
+             local_ok = local_ok && start_ok[coordinator];
++            if (!start_ok[coordinator] && coordinator_errors[coordinator].empty()) {
++                coordinator_errors[coordinator] = "coordinator start wait failed";
++            }
+ 
+             for (std::size_t round=0; round<kRoundsPerCoordinator && local_ok; ++round) {
+                 const std::uint64_t base_arg =
+@@ -314,16 +322,40 @@
+                     if (result.tls_address) tls_addresses.insert(result.tls_address);
+                 }
+                 batch_ok = batch_ok && tls_addresses.size() == specs.size();
++                if (!batch_ok && coordinator_errors[coordinator].empty()) {
++                    std::ostringstream detail;
++                    detail << "normal batch failed coordinator=" << coordinator
++                           << " round=" << round
++                           << " report_size=" << report.threads.size()
++                           << " tls_distinct=" << tls_addresses.size();
++                    for (std::size_t module=0; module<report.threads.size(); ++module) {
++                        const auto& result = report.threads[module];
++                        const auto expected = tls0[module] + base_arg + module;
++                        detail << " | m" << module
++                               << " success=" << result.success
++                               << " ret=" << result.return_value
++                               << " expected=" << expected
++                               << " tls=0x" << std::hex << result.tls_address << std::dec;
++                        if (!result.error.empty()) detail << " error=" << result.error;
++                    }
++                    coordinator_errors[coordinator] = detail.str();
++                }
+                 local_ok = local_ok && batch_ok;
+ 
+                 if (mutexes.lock(aggregate_mutex) != ps5native::GuestMutexStatus::Ok) {
+                     ++aggregate.mutex_failures;
++                    if (coordinator_errors[coordinator].empty()) {
++                        coordinator_errors[coordinator] = "aggregate mutex lock failed after normal batch";
++                    }
+                     local_ok = false;
+                 } else {
+                     ++aggregate.batches;
+                     aggregate.guest_calls += report.threads.size();
+                     if (mutexes.unlock(aggregate_mutex) != ps5native::GuestMutexStatus::Ok) {
+                         ++aggregate.mutex_failures;
++                        if (coordinator_errors[coordinator].empty()) {
++                            coordinator_errors[coordinator] = "aggregate mutex unlock failed after normal batch";
++                        }
+                         local_ok = false;
+                     }
+                 }
+@@ -341,10 +373,28 @@
+                         mixed.threads[1].error.find("0xC0000005") != std::string::npos &&
+                         mixed.threads[2].success && mixed.threads[2].return_value==30 &&
+                         set.state() == ps5native::DependencySetState::Started;
++                    if (!fault_ok && coordinator_errors[coordinator].empty()) {
++                        std::ostringstream detail;
++                        detail << "fault batch failed coordinator=" << coordinator
++                               << " round=" << round
++                               << " report_size=" << mixed.threads.size();
++                        for (std::size_t i=0; i<mixed.threads.size(); ++i) {
++                            const auto& result = mixed.threads[i];
++                            detail << " | t" << i
++                                   << " success=" << result.success
++                                   << " ret=" << result.return_value
++                                   << " tls=0x" << std::hex << result.tls_address << std::dec;
++                            if (!result.error.empty()) detail << " error=" << result.error;
++                        }
++                        coordinator_errors[coordinator] = detail.str();
++                    }
+                     local_ok = local_ok && fault_ok;
+ 
+                     if (mutexes.lock(aggregate_mutex) != ps5native::GuestMutexStatus::Ok) {
+                         ++aggregate.mutex_failures;
++                        if (coordinator_errors[coordinator].empty()) {
++                            coordinator_errors[coordinator] = "aggregate mutex lock failed after fault batch";
++                        }
+                         local_ok = false;
+                     } else {
+                         ++aggregate.fault_batches;
+@@ -354,13 +404,20 @@
+                         }
+                         if (mutexes.unlock(aggregate_mutex) != ps5native::GuestMutexStatus::Ok) {
+                             ++aggregate.mutex_failures;
++                            if (coordinator_errors[coordinator].empty()) {
++                                coordinator_errors[coordinator] = "aggregate mutex unlock failed after fault batch";
++                            }
+                             local_ok = false;
+                         }
+                     }
+                 }
+ 
+                 const auto current_key = keys.get_specific(*coordinator_key);
+-                local_ok = local_ok && current_key && *current_key == key_value;
++                const bool current_key_ok = current_key && *current_key == key_value;
++                if (!current_key_ok && coordinator_errors[coordinator].empty()) {
++                    coordinator_errors[coordinator] = "thread-key value changed during guest workload";
++                }
++                local_ok = local_ok && current_key_ok;
+                 scratch[coordinator] = round + 1;
+             }
+ 
+@@ -414,6 +471,13 @@
+         scratch_ok = scratch_ok && scratch[i] == kRoundsPerCoordinator;
+     }
+ 
++    for (std::size_t i=0; i<coordinator_errors.size(); ++i) {
++        if (!coordinator_errors[i].empty()) {
++            std::cout << "Runtime stress coordinator " << i
++                      << " failure: " << coordinator_errors[i] << "\n";
++        }
++    }
++
+     std::cout << "Runtime stress coordinator barrier/wake: "
+               << (barrier_ok ? "PASS" : "FAIL") << "\n";
+     std::cout << "Runtime stress 64 batches / 256 guest calls: "
