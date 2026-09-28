@@ -129,6 +129,27 @@ jobs:
           if($sha-ne"443dd7cd64c335f982d6f009944411ce18a12a1fd093b4f59dd315dea3ad9972"){throw "v14.8 production source payload mismatch: $sha"}
           $prod=Join-Path $env:RUNNER_TEMP "v148-prodsrc"
           Expand-Archive -LiteralPath $zip -DestinationPath $prod -Force
+
+          $svcParts=Get-ChildItem -LiteralPath "ci/ps5native-v14.8/service-chunks" -File -Filter "part-*"|Sort-Object Name
+          if($svcParts.Count-ne5){throw "Expected 5 v14.8 service chunks, got $($svcParts.Count)"}
+          $svcB64=[System.Text.StringBuilder]::new()
+          foreach($p in $svcParts){[void]$svcB64.Append((Get-Content -LiteralPath $p.FullName -Raw).Trim())}
+          $svcZip=Join-Path $env:RUNNER_TEMP "v148-services.zip"
+          [IO.File]::WriteAllBytes($svcZip,[Convert]::FromBase64String($svcB64.ToString()))
+          $svcSha=(Get-FileHash -Algorithm SHA256 -LiteralPath $svcZip).Hash.ToLowerInvariant()
+          if($svcSha-ne"cb6170aede77380b67c8a00f54b3eb724834da5110cb41dee6680b2db5c1ec39"){throw "v14.8 service payload mismatch: $svcSha"}
+          $svc=Join-Path $env:RUNNER_TEMP "v148-services"
+          Expand-Archive -LiteralPath $svcZip -DestinationPath $svc -Force
+          Copy-Item -Force "$svc\ps5_services\include\ps5native\account_user_service.hpp" "$env:V148_SRC\ps5_services\include\ps5native\account_user_service.hpp"
+          Copy-Item -Force "$svc\ps5_services\include\ps5native\online_state_service.hpp" "$env:V148_SRC\ps5_services\include\ps5native\online_state_service.hpp"
+          Copy-Item -Force "$svc\ps5_services\include\ps5native\ps5_exact_host_bindings.hpp" "$env:V148_SRC\ps5_services\include\ps5native\ps5_exact_host_bindings.hpp"
+          Copy-Item -Force "$svc\ps5_services\include\ps5native\ps5_exact_platform_bindings.hpp" "$env:V148_SRC\ps5_services\include\ps5native\ps5_exact_platform_bindings.hpp"
+          Copy-Item -Force "$svc\ps5_services\include\ps5native\ps5_nid.hpp" "$env:V148_SRC\ps5_services\include\ps5native\ps5_nid.hpp"
+          Copy-Item -Force "$svc\ps5_services\src\account_user_service.cpp" "$env:V148_SRC\ps5_services\src\account_user_service.cpp"
+          Copy-Item -Force "$svc\ps5_services\src\online_state_service.cpp" "$env:V148_SRC\ps5_services\src\online_state_service.cpp"
+          Copy-Item -Force "$svc\ps5_services\src\ps5_exact_host_bindings.cpp" "$env:V148_SRC\ps5_services\src\ps5_exact_host_bindings.cpp"
+          Copy-Item -Force "$svc\ps5_services\src\ps5_exact_platform_bindings.cpp" "$env:V148_SRC\ps5_services\src\ps5_exact_platform_bindings.cpp"
+          Copy-Item -Force "$svc\ps5_services\src\ps5_nid.cpp" "$env:V148_SRC\ps5_services\src\ps5_nid.cpp"
           New-Item -ItemType Directory -Force -Path "$env:V148_SRC\apps\dakar_native_bootstrap"|Out-Null
           Copy-Item -Force "$prod\apps\dakar_native_bootstrap\main.cpp" "$env:V148_SRC\apps\dakar_native_bootstrap\main.cpp"
           New-Item -ItemType Directory -Force -Path "$env:V148_SRC\adapters\dakar_ue4\src"|Out-Null
@@ -154,7 +175,14 @@ jobs:
           set(CMAKE_CXX_STANDARD 20)
           set(CMAKE_CXX_STANDARD_REQUIRED ON)
           add_subdirectory(ps5_core)
-          add_subdirectory(ps5_services)
+          add_library(ps5_services_bootstrap STATIC
+            ps5_services/src/account_user_service.cpp
+            ps5_services/src/online_state_service.cpp
+            ps5_services/src/ps5_nid.cpp
+            ps5_services/src/ps5_exact_host_bindings.cpp
+            ps5_services/src/ps5_exact_platform_bindings.cpp)
+          target_include_directories(ps5_services_bootstrap PUBLIC ps5_services/include)
+          target_link_libraries(ps5_services_bootstrap PUBLIC ps5_core)
           add_library(platform_win32_bootstrap STATIC
             platform_win32/src/win32_platform.cpp
             platform_win32/src/win64_abi_bridge.cpp
@@ -163,12 +191,12 @@ jobs:
             platform_win32/src/win32_online_state_backend.cpp)
           target_include_directories(platform_win32_bootstrap PUBLIC platform_win32/include)
           target_compile_definitions(platform_win32_bootstrap PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
-          target_link_libraries(platform_win32_bootstrap PUBLIC ps5_core ps5_services advapi32)
+          target_link_libraries(platform_win32_bootstrap PUBLIC ps5_core ps5_services_bootstrap advapi32)
           add_library(dakar_ue4_adapter STATIC adapters/dakar_ue4/src/dakar_adapter.cpp)
           target_include_directories(dakar_ue4_adapter PUBLIC adapters/dakar_ue4/include)
           target_link_libraries(dakar_ue4_adapter PUBLIC ps5_core)
           add_executable(DakarNative apps/dakar_native_bootstrap/main.cpp)
-          target_link_libraries(DakarNative PRIVATE ps5_core ps5_services platform_win32_bootstrap dakar_ue4_adapter)
+          target_link_libraries(DakarNative PRIVATE ps5_core ps5_services_bootstrap platform_win32_bootstrap dakar_ue4_adapter)
           '@ | Set-Content -LiteralPath "$env:V148_SRC\CMakeLists.txt" -Encoding UTF8
 
       - name: Configure and build DakarNative with VS2022
