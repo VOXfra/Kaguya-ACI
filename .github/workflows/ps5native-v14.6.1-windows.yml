@@ -74,7 +74,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $dst | Out-Null
           Copy-Item -LiteralPath "ci\ps5native-v14.6.1\graphics_presentation_probe\main.cpp" -Destination (Join-Path $dst "main.cpp") -Force
           $probe = Join-Path $dst "main.cpp"
-          $sha = python -c "import hashlib,sys,pathlib; b=pathlib.Path(sys.argv[1]).read_bytes().replace(b'\\r\\n',b'\\n').replace(b'\\r',b'\\n'); print(hashlib.sha256(b).hexdigest())" "$probe"
+          $sha = python -c "import hashlib,sys,pathlib; b=pathlib.Path(sys.argv[1]).read_bytes().replace(bytes([13,10]),bytes([10])).replace(bytes([13]),bytes([10])); print(hashlib.sha256(b).hexdigest())" "$probe"
           if ($sha.Trim() -ne "9200a5f860f4b700fd5fec49ffa98f3886505ea0e79e1dc779fbb0e6a926d607") {
             throw "v14.6.1 fixed GraphicsPresentationProbe normalized source mismatch: $sha"
           }
