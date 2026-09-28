@@ -73,6 +73,11 @@ jobs:
           if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
           $check=Get-Content -LiteralPath $moduleLinker -Raw
           if($check-notmatch"Activity leases are part of guest execution" -or $check-notmatch"mutation_mutex_"){throw "v14.7.1 activity hotfix semantic injection missing"}
+          $diag=Resolve-Path "$env:GITHUB_WORKSPACE/ci/ps5native-v14.7.1/runtime-stress-diagnostics.patch"
+          git apply --check "$diag"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          git apply "$diag"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
           Pop-Location
           "V1471_SRC=$src"|Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
