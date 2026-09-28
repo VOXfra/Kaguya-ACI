@@ -1,0 +1,91 @@
+,*gpso,*cpso,*pass,5000);
++    ok &= check(stale_result.error==AgcFrameGraphError::InvalidArgument,
++                "AGC visible runtime stale presentation handle rejected before GPU work");
++
++    ok &= renderpass.destroy_pass(*pass)==GraphicsError::None;
++    ok &= renderpass.destroy_attachment(*depth_attachment)==GraphicsError::None;
++    ok &= renderpass.destroy_attachment(*color_attachment)==GraphicsError::None;
++    ok &= shaders.destroy_pipeline(*gpso)==GraphicsError::None;
++    ok &= shaders.destroy_pipeline(*cpso)==GraphicsError::None;
++    ok &= shaders.destroy_shader(*vs)==GraphicsError::None;
++    ok &= shaders.destroy_shader(*ps)==GraphicsError::None;
++    ok &= shaders.destroy_shader(*cs)==GraphicsError::None;
++    ok &= resources.destroy_texture_view(*srv)==GraphicsError::None;
++    ok &= resources.destroy_sampler(*sampler)==GraphicsError::None;
++    ok &= resources.destroy_texture(*texture)==GraphicsError::None;
++    ok &= resources.destroy_descriptor_heap(*heap)==GraphicsError::None;
++    ok &= resources.destroy_descriptor_heap(*sampler_heap)==GraphicsError::None;
++    ok &= foundation.destroy_buffer(*buffer)==GraphicsError::None;
++
++    ok &= check(presentation.count()==0u && renderpass.attachment_count()==0u &&
++                renderpass.pass_count()==0u && renderpass.submission_count()==0u &&
++                shaders.shader_count()==0u && shaders.pipeline_count()==0u &&
++                resources.texture_count()==0u && resources.descriptor_heap_count()==0u &&
++                resources.texture_view_count()==0u && resources.sampler_count()==0u &&
++                foundation.buffer_count()==0u,
++                "AGC visible runtime complete persistent resource lifecycle cleanup");
++
++    ok &= check(decoder.external_evidence_rule_count()==0u,
++                "AGC visible runtime fixture does not fabricate Dakar retail evidence");
++    ok &= check(true,
++                "No Dakar retail AGC/window/backbuffer/runtime semantics claimed without capture evidence");
++
++    if (ok) {
++        std::cout << "V146_VISIBLE_NATIVE_APP_LOOP_OK
+";
++        return 0;
++    }
++    return 3;
++#endif
++}
+diff -ruN v145-min2/platform_win32/include/ps5native/win32_d3d12_graphics_backend.hpp v146-min/platform_win32/include/ps5native/win32_d3d12_graphics_backend.hpp
+--- v145-min2/platform_win32/include/ps5native/win32_d3d12_graphics_backend.hpp	2026-09-26 16:57:22.000000000 +0000
++++ v146-min/platform_win32/include/ps5native/win32_d3d12_graphics_backend.hpp	2026-09-28 10:00:10.616856642 +0000
+@@ -346,9 +346,15 @@
+         std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> back_buffers;
+         Microsoft::WRL::ComPtr<ID3D12CommandAllocator> allocator;
+         Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> list;
++        Microsoft::WRL::ComPtr<ID3D12Resource> center_readback;
+         GraphicsPresentationDesc desc;
+         UINT rtv_increment{};
++        UINT swapchain_flags{};
++        HANDLE frame_latency_waitable_object{};
+         std::uint64_t present_count{};
++        std::uint64_t waited_frame_count{};
++        bool last_presented_center_valid{};
++        std::array<std::uint8_t, 4> last_presented_center_rgba{};
+     };
+ 
+     struct ShaderRecord {
+diff -ruN v145-min2/platform_win32/src/win32_d3d12_graphics_backend.cpp v146-min/platform_win32/src/win32_d3d12_graphics_backend.cpp
+--- v145-min2/platform_win32/src/win32_d3d12_graphics_backend.cpp	2026-09-26 16:57:22.000000000 +0000
++++ v146-min/platform_win32/src/win32_d3d12_graphics_backend.cpp	2026-09-28 10:00:10.617836304 +0000
+@@ -135,12 +135,17 @@
+ 
+ Win32D3D12GraphicsBackend::~Win32D3D12GraphicsBackend() {
+     std::vector<HWND> presentation_windows;
++    std::vector<HANDLE> presentation_latency_handles;
+     {
+         std::lock_guard lock(mutex_);
+         for (auto& item : presentations_) {
+             if (item.second.hwnd) {
+                 presentation_windows.push_back(item.second.hwnd);
+             }
++            if (item.second.frame_latency_waitable_object) {
++                presentation_latency_handles.push_back(
++                    item.second.frame_latency_waitable_object);
++            }
+         }
+         presentations_.clear();
+         pipelines_.clear();
+@@ -156,6 +161,9 @@
+         textures_.clear();
+     }
+ 
++    for (HANDLE handle : presentation_latency_handles) {
++        CloseHandle(handle);
++    }
+     for (HWND hwnd : presentation_windows) {
+         if (IsWindow(hwnd)) {
+             DestroyWindow(hwnd);
+@@ -1747,7 +1755,9 @
