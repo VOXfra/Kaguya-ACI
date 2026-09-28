@@ -1,0 +1,191 @@
+name: PS5Native v14.7.1 Concurrent Activity Hotfix Windows CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  concurrent-activity-hotfix-windows:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Fetch validated historical CI source inputs
+        shell: pwsh
+        run: |
+          git fetch origin refs/heads/ci/ps5native-v14.2-20260925:refs/remotes/origin/v142
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git checkout refs/remotes/origin/v142 -- ci/ps5native-v14.0.2 ci/ps5native-v14.1 ci/ps5native-v14.2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Reconstruct exact validated v14.2 runtime source
+        shell: pwsh
+        run: |
+          $parts = Get-ChildItem -LiteralPath "ci/ps5native-v14.0.2/chunks" -File -Filter "part-*" | Sort-Object Name
+          if ($parts.Count -ne 13) { throw "Expected 13 v14.0.2 base chunks, got $($parts.Count)" }
+          $b64 = [System.Text.StringBuilder]::new()
+          foreach ($p in $parts) { [void]$b64.Append((Get-Content -LiteralPath $p.FullName -Raw).Trim()) }
+          $zip = Join-Path $env:RUNNER_TEMP "v1402-minici.zip"
+          [IO.File]::WriteAllBytes($zip,[Convert]::FromBase64String($b64.ToString()))
+          $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+          if($sha-ne"7271f11aba8ebd8f7e1e78bb70ad8e49d966352e685422b2fd090664a4877789"){throw "v14.0.2 base mismatch: $sha"}
+          $extract=Join-Path $env:RUNNER_TEMP "v1471-runtime"
+          Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
+          $src=Join-Path $extract "v1402-minici"
+          $gz=Resolve-Path "ci/ps5native-v14.1/v141.patch.gz"
+          if((Get-FileHash -Algorithm SHA256 -LiteralPath $gz).Hash.ToLowerInvariant()-ne"a207d3f2f8a0aed996e4bd70ec19aa58617e743a0e99217acf5bf7ca4c884d27"){throw "v14.1 patch gzip mismatch"}
+          $p141=Join-Path $env:RUNNER_TEMP "v141.patch"
+          python -c "import gzip,pathlib; pathlib.Path(r'$p141').write_bytes(gzip.decompress(pathlib.Path(r'$gz').read_bytes()))"
+          Push-Location $src
+          git init | Out-Null
+          git config user.email "ci@example.invalid"
+          git config user.name "PS5Native CI"
+          git add .
+          git commit -m base | Out-Null
+          git apply --check "$p141"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          git apply "$p141"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          Pop-Location
+          $parts=Get-ChildItem -LiteralPath "ci/ps5native-v14.2/chunks" -File -Filter "part-*"|Sort-Object Name
+          if($parts.Count-ne4){throw "Expected 4 v14.2 patch chunks, got $($parts.Count)"}
+          $b64=[System.Text.StringBuilder]::new()
+          foreach($p in $parts){[void]$b64.Append((Get-Content -LiteralPath $p.FullName -Raw).Trim())}
+          $gz142=Join-Path $env:RUNNER_TEMP "v142.patch.gz"
+          [IO.File]::WriteAllBytes($gz142,[Convert]::FromBase64String($b64.ToString()))
+          if((Get-FileHash -Algorithm SHA256 -LiteralPath $gz142).Hash.ToLowerInvariant()-ne"26232b7436873bd4f8a9f5adedd76184e94ac6dc27d266b6cebe790260e804d2"){throw "v14.2 patch gzip mismatch"}
+          $p142=Join-Path $env:RUNNER_TEMP "v142.patch"
+          python -c "import gzip,pathlib; pathlib.Path(r'$p142').write_bytes(gzip.decompress(pathlib.Path(r'$gz142').read_bytes()))"
+          Push-Location $src
+          git apply --check "$p142"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          git apply "$p142"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $hotfix=Resolve-Path "$env:GITHUB_WORKSPACE/ci/ps5native-v14.7.1/module-linker.patch"
+          $hotfixSha=python -c "import hashlib,pathlib,sys; p=pathlib.Path(sys.argv[1]); b=p.read_text(encoding='utf-8').replace('\\r\\n','\\n').replace('\\r','\\n').encode(); print(hashlib.sha256(b).hexdigest())" "$hotfix"
+          if($hotfixSha-ne"f63b3d394d1d53cb2c70b29ca3b688a4651fa722dcab4317808fb544ce86c649"){throw "v14.7.1 hotfix patch mismatch: $hotfixSha"}
+          git apply --check "$hotfix"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          git apply "$hotfix"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          Pop-Location
+          "V1471_SRC=$src"|Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Reconstruct exact validated v14.6 graphics source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import base64, hashlib, zipfile, os
+          parts=sorted(Path("ci/ps5native-v14.5/chunks").glob("part-*"))
+          if len(parts)!=23: raise SystemExit(f"expected 23 v14.5 chunks, got {len(parts)}")
+          data=base64.b64decode("".join(p.read_text().strip() for p in parts))
+          if hashlib.sha256(data).hexdigest()!="f2491eea05363624805819eb16842ff157a179f8815c298b1776ac29a6df0ae7":
+              raise SystemExit("v14.5 mini sha mismatch")
+          zp=Path(os.environ["RUNNER_TEMP"])/"v145-min2.zip"; zp.write_bytes(data)
+          out=Path(os.environ["RUNNER_TEMP"])/"v1471-graphics"; out.mkdir(exist_ok=True)
+          with zipfile.ZipFile(zp) as z: z.extractall(out)
+          PY
+          GFX_SRC="$RUNNER_TEMP/v1471-graphics/v145-min2"
+          PATCH_FILE="$RUNNER_TEMP/v146.patch"
+          python - <<'PY'
+          from pathlib import Path
+          import os
+          parts=sorted(Path("ci/ps5native-v14.6/patch").glob("part-*"))
+          text="".join(p.read_text(encoding="utf-8").replace("\r\n","\n").replace("\r","\n") for p in parts)
+          Path(os.environ["RUNNER_TEMP"],"v146.patch").write_text(text,encoding="utf-8",newline="\n")
+          PY
+          got="$(python -c 'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$PATCH_FILE")"
+          test "$got" = "4f3429a8178fcf052e926386bf967b9cae3dd264176dedac4ad67485bdfbd04e"
+          patch --batch --forward -p1 -d "$GFX_SRC" < "$PATCH_FILE"
+          echo "V1471_GFX_SRC=$GFX_SRC" >> "$GITHUB_ENV"
+
+      - name: Compose exact v14.7.1 CI source
+        shell: pwsh
+        run: |
+          Copy-Item -Recurse -Force "$env:V1471_GFX_SRC\ps5_graphics" "$env:V1471_SRC\ps5_graphics"
+          Copy-Item -Force "$env:V1471_GFX_SRC\platform_win32\include\ps5native\win32_d3d12_graphics_backend.hpp" "$env:V1471_SRC\platform_win32\include\ps5native\win32_d3d12_graphics_backend.hpp"
+          Copy-Item -Force "$env:V1471_GFX_SRC\platform_win32\src\win32_d3d12_graphics_backend.cpp" "$env:V1471_SRC\platform_win32\src\win32_d3d12_graphics_backend.cpp"
+          New-Item -ItemType Directory -Force -Path "$env:V1471_SRC\apps\native_session_probe"|Out-Null
+          Copy-Item -Force "ci\ps5native-v14.7.1\native_session_probe\main.cpp" "$env:V1471_SRC\apps\native_session_probe\main.cpp"
+          $probeSha=python -c "import hashlib,pathlib,sys; p=pathlib.Path(sys.argv[1]); b=p.read_text(encoding='utf-8').replace('\\r\\n','\\n').replace('\\r','\\n').encode(); print(hashlib.sha256(b).hexdigest())" "$env:V1471_SRC\apps\native_session_probe\main.cpp"
+          if($probeSha-ne"e4ba4ebe1b0fc8955af9ed83539ce579bbc135f1119fa33470cab20be13712b2"){throw "v14.7.1 native-session probe mismatch: $probeSha"}
+          New-Item -ItemType Directory -Force -Path "$env:V1471_SRC\apps\graphics_presentation_probe"|Out-Null
+          Copy-Item -Force "ci\ps5native-v14.6.1\graphics_presentation_probe\main.cpp" "$env:V1471_SRC\apps\graphics_presentation_probe\main.cpp"
+          @'
+          cmake_minimum_required(VERSION 3.24)
+          project(PS5NativeV1471HotfixCI LANGUAGES CXX)
+          set(CMAKE_CXX_STANDARD 20)
+          set(CMAKE_CXX_STANDARD_REQUIRED ON)
+          add_subdirectory(ps5_core)
+          add_subdirectory(ps5_services)
+          add_library(platform_win32_min STATIC
+            platform_win32/src/win32_platform.cpp
+            platform_win32/src/win64_abi_bridge.cpp
+            platform_win32/src/win64_guest_call_gate.cpp)
+          target_include_directories(platform_win32_min PUBLIC platform_win32/include)
+          target_link_libraries(platform_win32_min PUBLIC ps5_core)
+          target_compile_definitions(platform_win32_min PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+          add_library(ps5_graphics STATIC
+            ps5_graphics/src/graphics_foundation.cpp
+            ps5_graphics/src/graphics_resource_descriptor.cpp
+            ps5_graphics/src/graphics_presentation.cpp
+            ps5_graphics/src/graphics_shader_pipeline.cpp
+            ps5_graphics/src/graphics_draw_dispatch.cpp
+            ps5_graphics/src/graphics_renderpass_resource_lifetime.cpp)
+          target_include_directories(ps5_graphics PUBLIC ps5_graphics/include)
+          add_library(platform_graphics_win32 STATIC platform_win32/src/win32_d3d12_graphics_backend.cpp)
+          target_include_directories(platform_graphics_win32 PUBLIC platform_win32/include)
+          target_compile_definitions(platform_graphics_win32 PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+          target_link_libraries(platform_graphics_win32 PUBLIC ps5_graphics d3d12 dxgi d3dcompiler user32)
+          add_executable(RuntimeStressProbe apps/runtime_stress_probe/main.cpp)
+          target_link_libraries(RuntimeStressProbe PRIVATE ps5_core ps5_services_min platform_win32_min)
+          add_executable(NativeSessionProbe apps/native_session_probe/main.cpp)
+          target_link_libraries(NativeSessionProbe PRIVATE ps5_core ps5_services_min ps5_graphics platform_win32_min platform_graphics_win32)
+          add_executable(GraphicsPresentationProbe apps/graphics_presentation_probe/main.cpp)
+          target_link_libraries(GraphicsPresentationProbe PRIVATE ps5_graphics platform_graphics_win32)
+          '@ | Set-Content -LiteralPath "$env:V1471_SRC\CMakeLists.txt" -Encoding UTF8
+
+      - name: Configure and build hotfixed source with VS2022
+        shell: pwsh
+        run: |
+          $build=Join-Path $env:RUNNER_TEMP "v1471-build"
+          cmake -S "$env:V1471_SRC" -B "$build" -G "Visual Studio 17 2022" -A x64
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          cmake --build "$build" --config Release --parallel
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          "V1471_BUILD=$build"|Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Stress concurrent guest activity lease path 12x
+        shell: pwsh
+        run: |
+          $fixtures=Join-Path $env:RUNNER_TEMP "v1471-fixtures"
+          python "$env:V1471_SRC\tools\make-runtime-stress-fixtures-v14.2.py" "$fixtures"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $exe=Join-Path $env:V1471_BUILD "Release\RuntimeStressProbe.exe"
+          for($i=1;$i-le12;$i++){
+            Write-Host "Concurrent runtime stress iteration $i/12"
+            $out=& $exe $fixtures 2>&1
+            $rc=$LASTEXITCODE
+            $out|ForEach-Object{Write-Host $_}
+            $joined=[string]::Join([Environment]::NewLine,@($out))
+            if($rc-ne0 -or $joined-notmatch"V142_INTEGRATED_RUNTIME_STRESS_OK"){throw "RuntimeStressProbe iteration $i failed"}
+          }
+          Write-Host "V1471_CONCURRENT_ACTIVITY_STRESS_12X_OK"
+
+      - name: Verify v14.7.1 target binaries and hardware gate
+        shell: pwsh
+        run: |
+          $session=Join-Path $env:V1471_BUILD "Release\NativeSessionProbe.exe"
+          $legacy=Join-Path $env:V1471_BUILD "Release\GraphicsPresentationProbe.exe"
+          if(-not(Test-Path -LiteralPath $session)){throw "NativeSessionProbe.exe missing"}
+          if(-not(Test-Path -LiteralPath $legacy)){throw "GraphicsPresentationProbe.exe missing"}
+          Write-Host "V1471_WINDOWS_MSVC_HOTFIX_BUILD_OK"
+          Write-Host "NativeSessionProbe: $session"
+          Write-Host "GraphicsPresentationProbe: $legacy"
+          Write-Host "Target-PC visible D3D12 48/192/6 session remains the frozen 76 -> 80 roadmap gate."
