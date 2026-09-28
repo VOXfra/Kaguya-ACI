@@ -134,6 +134,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path "$env:V148_SRC\adapters\dakar_ue4\src"|Out-Null
           New-Item -ItemType Directory -Force -Path "$env:V148_SRC\adapters\dakar_ue4\include"|Out-Null
           Copy-Item -Force "$prod\adapters\dakar_ue4\src\dakar_adapter.cpp" "$env:V148_SRC\adapters\dakar_ue4\src\dakar_adapter.cpp"
+          Copy-Item -Force "ci\ps5native-v14.8\platform\win32_local_user_backend.hpp" "$env:V148_SRC\platform_win32\include\ps5native\win32_local_user_backend.hpp"
+          Copy-Item -Force "ci\ps5native-v14.8\platform\win32_online_state_backend.hpp" "$env:V148_SRC\platform_win32\include\ps5native\win32_online_state_backend.hpp"
+          Copy-Item -Force "ci\ps5native-v14.8\platform\win32_local_user_backend.cpp" "$env:V148_SRC\platform_win32\src\win32_local_user_backend.cpp"
+          Copy-Item -Force "ci\ps5native-v14.8\platform\win32_online_state_backend.cpp" "$env:V148_SRC\platform_win32\src\win32_online_state_backend.cpp"
           @'
           #pragma once
           #include <ps5native/import_resolver.hpp>
