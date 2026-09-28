@@ -45,8 +45,7 @@ diff -ruN v145-min2/apps/agc_visible_runtime_probe/main.cpp v146-min/apps/agc_vi
 +#ifdef _WIN32
 +namespace {
 +bool check(bool condition, const char* label) {
-+    std::cout << label << ": " << (condition ? "PASS" : "FAIL") << '
-';
++    std::cout << label << ": " << (condition ? "PASS" : "FAIL") << '\n';
 +    return condition;
 +}
 +
@@ -76,8 +75,7 @@ diff -ruN v145-min2/apps/agc_visible_runtime_probe/main.cpp v146-min/apps/agc_vi
 +
 +int main() {
 +#ifndef _WIN32
-+    std::cout << "AgcVisibleRuntimeProbe requires Windows/D3D12/DXGI.
-";
++    std::cout << "AgcVisibleRuntimeProbe requires Windows/D3D12/DXGI.\n";
 +    return 77;
 +#else
 +    using namespace ps5native;
