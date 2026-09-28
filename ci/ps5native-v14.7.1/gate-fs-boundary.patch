@@ -1,0 +1,77 @@
+--- a/platform_win32/src/win64_guest_call_gate.cpp
++++ b/platform_win32/src/win64_guest_call_gate.cpp
+@@ -2138,6 +2138,11 @@
+         return false;
+     }
+ 
++    // Do all host TLS bookkeeping before FS is rebound to the guest TLS
++    // image. Once WRFSBASE succeeds, the path to the dispatcher must stay as
++    // small as possible and must not touch host thread-local state.
++    g_last_guest_fault_registers = {};
++
+     if (!write_fs_base_checked(
+             static_cast<std::uint64_t>(
+                 tls_base))) {
+@@ -2148,11 +2153,32 @@
+         return false;
+     }
+ 
++    std::uint64_t bound_fs{};
++    const bool bound_fs_valid =
++        probe_fs_base_intrinsics(
++            &bound_fs);
++
++    if (!bound_fs_valid ||
++        bound_fs != static_cast<std::uint64_t>(tls_base)) {
++
++        const bool restored_after_bind_check =
++            write_fs_base_checked(
++                original_fs);
++
++        std::ostringstream out;
++        out << "guest FS-base bind verification failed: expected=0x"
++            << std::hex << std::uppercase
++            << static_cast<std::uint64_t>(tls_base)
++            << " observed=0x" << bound_fs
++            << " read_ok=" << std::boolalpha << bound_fs_valid
++            << " restore_ok=" << restored_after_bind_check;
++        error = out.str();
++        return false;
++    }
++
+     DWORD fault_code{};
+     void* exception_address{};
+ 
+-    g_last_guest_fault_registers = {};
+-
+     const bool ok =
+         context_recovery_enabled_
+             ? invoke_dispatcher_context_recovery(
+@@ -2172,6 +2198,11 @@
+                   &fault_code,
+                   &exception_address);
+ 
++    std::uint64_t observed_fs_after_call{};
++    const bool observed_fs_valid =
++        probe_fs_base_intrinsics(
++            &observed_fs_after_call);
++
+     const bool restored =
+         write_fs_base_checked(
+             original_fs);
+@@ -2199,7 +2230,14 @@
+             << fault_code
+             << " at host address 0x"
+             << reinterpret_cast<std::uintptr_t>(
+-                exception_address);
++                exception_address)
++            << " expected_fs=0x"
++            << static_cast<std::uint64_t>(tls_base)
++            << " observed_fs=0x"
++            << observed_fs_after_call
++            << " observed_fs_valid="
++            << std::boolalpha
++            << observed_fs_valid;
+ 
+         error =
+             out.str();
