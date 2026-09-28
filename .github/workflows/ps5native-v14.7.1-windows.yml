@@ -78,6 +78,11 @@ jobs:
           if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
           git apply "$diag"
           if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $fsBoundary=Resolve-Path "$env:GITHUB_WORKSPACE/ci/ps5native-v14.7.1/gate-fs-boundary.patch"
+          git apply --check "$fsBoundary"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          git apply "$fsBoundary"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
           Pop-Location
           "V1471_SRC=$src"|Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
