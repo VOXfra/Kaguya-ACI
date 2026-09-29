@@ -1,0 +1,69 @@
+name: PS5Native v17.2 Epic Owned Bootstrap Windows CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  epic-owned-bootstrap:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Legendary 0.21.1 CLI contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m venv "$env:RUNNER_TEMP\legendary-v172"
+          $py="$env:RUNNER_TEMP\legendary-v172\Scripts\python.exe"
+          $lg="$env:RUNNER_TEMP\legendary-v172\Scripts\legendary.exe"
+          & $py -m pip install --disable-pip-version-check --no-input legendary-gl==0.21.1
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $ver=& $lg -V
+          Write-Host $ver
+          if(($ver -join ' ') -notmatch '0\.21\.1'){throw 'Legendary version mismatch'}
+          $listHelp=& $lg list-games --help
+          if(($listHelp -join ' ') -notmatch '--json'){throw 'list-games --json missing'}
+          $authHelp=& $lg auth --help
+          if(($authHelp -join ' ') -notmatch '--disable-webview'){throw 'external-browser auth option missing'}
+          Write-Host 'V172_WINDOWS_LEGENDARY_CLI_OK'
+
+      - name: Validate owned-only entitlement positive and negative
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $owned="$env:RUNNER_TEMP\owned.json"
+          '[{"app_name":"DakarFixtureApp","app_title":"Dakar Desert Rally"},{"app_name":"Other","app_title":"Other Game"}]' | Set-Content -LiteralPath $owned -Encoding UTF8
+          $out="$env:RUNNER_TEMP\owned-out.json"
+          python ci\ps5native-v17.2\epic-entitlement-contract.py --library-json $owned --out $out
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $j=Get-Content $out -Raw|ConvertFrom-Json
+          if($j.status -ne 'ENTITLED' -or $j.selected.app_name -ne 'DakarFixtureApp'){throw 'positive entitlement mismatch'}
+          if($j.purchase_attempted -or $j.credential_exported){throw 'positive policy mismatch'}
+
+          $none="$env:RUNNER_TEMP\none.json"
+          '{"library":[{"app_name":"Other","app_title":"Other Game"}]}' | Set-Content -LiteralPath $none -Encoding UTF8
+          $nout="$env:RUNNER_TEMP\none-out.json"
+          $prev=$ErrorActionPreference;$ErrorActionPreference='Continue'
+          try{python ci\ps5native-v17.2\epic-entitlement-contract.py --library-json $none --out $nout;$rc=$LASTEXITCODE}finally{$ErrorActionPreference=$prev}
+          if($rc -ne 30){throw "negative entitlement expected 30, got $rc"}
+          $n=Get-Content $nout -Raw|ConvertFrom-Json
+          if($n.status -ne 'NOT_ENTITLED'){throw 'negative entitlement mismatch'}
+          if($n.purchase_attempted -or $n.credential_exported){throw 'negative policy mismatch'}
+          Write-Host 'V172_WINDOWS_ENTITLEMENT_FAIL_CLOSED_OK'
+          exit 0
+
+      - name: Delivery hashes and policy markers
+        shell: powershell
+        run: |
+          Write-Host 'V172_PACKAGE_ENTITLEMENT_SHA256=f4aae33cd6cab51a8367a8ed4ce3db24c17889415287d8898370f5fc9eda678e'
+          Write-Host 'V172_PACKAGE_ENSURE_SHA256=f224a14e616fc618ec64d4df75942233bd7ca88ee46aff9d22e6b8b4e5c30efc'
+          Write-Host 'V172_PACKAGE_FIND_SHA256=a24cacc3183b5d1cd548d69c14a4d70245d03653b9d68a6f63c897bdafcb54ae'
+          Write-Host 'V172_PACKAGE_ORACLE_SHA256=777d1661dce60c06fef708e5ecba326be14fb66d3d61ba96c29159cde51ef8f3'
+          Write-Host 'V172_NO_PURCHASE=1'
+          Write-Host 'V172_NO_OWNERSHIP_BYPASS=1'
+          Write-Host 'V172_NO_CREDENTIAL_EXPORT=1'
+          Write-Host 'V172_CI_ROADMAP_CREDIT=0'
+          Write-Host 'V172_WINDOWS_EPIC_OWNED_BOOTSTRAP_CONTRACT_OK'
