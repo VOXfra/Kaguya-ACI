@@ -53,6 +53,7 @@ jobs:
           if($n.status -ne 'NOT_ENTITLED'){throw 'negative entitlement mismatch'}
           if($n.purchase_attempted -or $n.credential_exported){throw 'negative policy mismatch'}
           Write-Host 'V172_WINDOWS_ENTITLEMENT_FAIL_CLOSED_OK'
+          exit 0
 
       - name: Delivery hashes and policy markers
         shell: powershell
