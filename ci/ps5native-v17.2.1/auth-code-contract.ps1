@@ -1,5 +1,5 @@
 param(
-  [Parameter(Mandatory=$true)][string]$InputValue
+  [Parameter(Mandatory=$true)][AllowEmptyString()][string]$InputValue
 )
 $ErrorActionPreference='Stop'
 $code=$null
