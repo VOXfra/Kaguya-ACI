@@ -1,0 +1,29 @@
+name: PS5Native v16.0.1 Intel Recovery Hotfix CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  recovery-wiring-windows:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Compile and run recovery wiring contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          cl /nologo /std:c++20 /EHsc /W4 /WX ci\ps5native-v16.0.1\recovery-wiring-contract.cpp /Fe:v1601-recovery.exe
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          .\v1601-recovery.exe
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+      - name: Marker
+        shell: powershell
+        run: |
+          Write-Host 'V1601_WINDOWS_RECOVERY_HOTFIX_OK'
+          Write-Host 'CI awards 0 roadmap points.'
