@@ -1,0 +1,64 @@
+name: PS5Native v16.0 Final Integration Windows CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  v16-final-integration-contract:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Compile and run Windows CONTEXT/XMM SSE4a semantic contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          cl /nologo /std:c++20 /EHsc /W4 /WX ci\ps5native-v16.0\sse4a-context-contract.cpp /Fe:v16-sse4a.exe
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          .\v16-sse4a.exe
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+
+      - name: Generate minimal executable ELF fixture
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          @'
+          import struct
+          from pathlib import Path
+          b=bytearray(0x200)
+          b[:16]=bytes([0x7f,0x45,0x4c,0x46,2,1,1,0])+bytes(8)
+          struct.pack_into('<HHIQQQIHHHHHH',b,16,2,62,1,0x400000,64,0,0,64,56,1,64,0,0)
+          code=bytes.fromhex('660f78c00808')+bytes.fromhex('f20f78c10808')+b'\xc3'
+          off=0x100
+          struct.pack_into('<IIQQQQQQ',b,64,1,5,off,0x400000,0x400000,len(code),len(code),0x1000)
+          b[off:off+len(code)]=code
+          Path('v16-fixture.elf').write_bytes(b)
+          '@ | python -
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+
+      - name: Run exact v16 CPU and unwind intake scanners
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          python ci\ps5native-v16.0\cpu-compat-scan-v16.0.py v16-fixture.elf --out cpu.json
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $cpu=Get-Content cpu.json -Raw|ConvertFrom-Json
+          if($cpu.known_sse4a_bitfield_hits-ne2){throw "Expected 2 known SSE4a sites, got $($cpu.known_sse4a_bitfield_hits)"}
+          python ci\ps5native-v16.0\cxx-unwind-preflight-v16.0.py v16-fixture.elf --out unwind.json
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $uw=Get-Content unwind.json -Raw|ConvertFrom-Json
+          if($uw.schema-ne'ps5native.cxx-unwind-preflight.v16.0'){throw 'Bad unwind schema'}
+          Write-Host 'V160_WINDOWS_STATIC_PREFLIGHT_OK'
+
+      - name: Final v16 CI contract marker
+        shell: powershell
+        run: |
+          Write-Host 'V160_WINDOWS_FINAL_INTEGRATION_CONTRACT_OK'
+          Write-Host 'CI awards 0 roadmap points; target retail menu + gameplay is required for 100%.'
