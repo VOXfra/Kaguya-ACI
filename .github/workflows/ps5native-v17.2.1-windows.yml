@@ -46,6 +46,8 @@ jobs:
           }finally{$ErrorActionPreference=$prev}
           if($rc -ne 31){throw "invalid-short authorizationCode expected 31, got $rc"}
           Write-Host 'V1721_WINDOWS_AUTH_CODE_PARSER_OK'
+          $global:LASTEXITCODE=0
+          exit 0
 
       - name: Delivery hashes and policy markers
         shell: powershell
