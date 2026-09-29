@@ -1,0 +1,43 @@
+name: PS5Native v17.0 Exact PowerShell Parse CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  parse-exact-delivery-scripts:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse and normalize-hash exact v17 PowerShell delivery scripts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $self='ci\ps5native-v17.0\exact-selftest-pc-only-unlock-v17.0.ps1'
+          $retail='ci\ps5native-v17.0\exact-dakar-final-retail-attempt-v17.0.ps1'
+          foreach($p in @($self,$retail)){
+            $tokens=$null
+            $errs=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $p),[ref]$tokens,[ref]$errs)|Out-Null
+            if($errs.Count -ne 0){
+              $errs|ForEach-Object{Write-Host $_}
+              throw "PowerShell parse failed: $p"
+            }
+          }
+          function Get-NormalizedSha256([string]$p){
+            $t=[IO.File]::ReadAllText((Resolve-Path $p))
+            $t=$t.Replace([string][char]13,'')
+            $bytes=New-Object Text.UTF8Encoding($false)
+            $raw=$bytes.GetBytes($t)
+            $sha=[Security.Cryptography.SHA256]::Create()
+            try{return ([BitConverter]::ToString($sha.ComputeHash($raw))).Replace('-','').ToLowerInvariant()}finally{$sha.Dispose()}
+          }
+          $h1=Get-NormalizedSha256 $self
+          $h2=Get-NormalizedSha256 $retail
+          if($h1 -ne '3d592b2735351e9bd2148835c641293d332875f88e4a50ea785b8a82550e3021'){throw "Selftest normalized hash mismatch: $h1"}
+          if($h2 -ne 'aab7d13436c95b5ef7b4f7006456e03f1b99ceb9c3ab600d8271f44767bef016'){throw "Retail stage normalized hash mismatch: $h2"}
+          Write-Host 'V170_EXACT_POWERSHELL_PARSE_OK'
+          Write-Host ('V170_EXACT_SELFTEST_SHA256='+$h1)
+          Write-Host ('V170_EXACT_RETAIL_STAGE_SHA256='+$h2)
