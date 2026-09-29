@@ -1,0 +1,36 @@
+name: PS5Native v14.9.1 PowerShell 5.1 Harness Hotfix CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  powershell51-native-stderr-regression:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Verify exact v14.9 handoff consumer
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          if($PSVersionTable.PSVersion.Major-ne5){throw "Expected Windows PowerShell 5.1, got $($PSVersionTable.PSVersion)"}
+          $tool=Resolve-Path "ci/ps5native-v14.9/dakar-retail-handoff-v14.9.py"
+          $sha=python -c "import hashlib,pathlib,sys; p=pathlib.Path(sys.argv[1]); b=p.read_text(encoding='utf-8').replace('\\r\\n','\\n').replace('\\r','\\n').encode(); print(hashlib.sha256(b).hexdigest())" "$tool"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          if($sha-ne"9990da1e3c87c663547c3d3874d47bf04195272faa3baf09c7978d56670da8c9"){throw "v14.9 handoff consumer mismatch: $sha"}
+          Write-Host "Windows PowerShell version: $($PSVersionTable.PSVersion)"
+          Write-Host "V1491_PS51_EXACT_CONSUMER_OK"
+
+      - name: Run expected-stderr negative gates under Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $tool=(Resolve-Path "ci/ps5native-v14.9/dakar-retail-handoff-v14.9.py").Path
+          & ".\ci\ps5native-v14.9.1\powershell51-negative-gate-regression.ps1" -Tool $tool
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          Write-Host "V1491_WINDOWS_POWERSHELL51_HARNESS_OK"
