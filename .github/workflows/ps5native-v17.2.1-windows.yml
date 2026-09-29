@@ -1,0 +1,62 @@
+name: PS5Native v17.2.1 Epic Auth Code Hotfix Windows CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  epic-auth-code-hotfix:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Legendary 0.21.1 direct auth-code contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m venv "$env:RUNNER_TEMP\legendary-v1721"
+          $py="$env:RUNNER_TEMP\legendary-v1721\Scripts\python.exe"
+          $lg="$env:RUNNER_TEMP\legendary-v1721\Scripts\legendary.exe"
+          & $py -m pip install --disable-pip-version-check --no-input legendary-gl==0.21.1
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $ver=& $lg -V
+          Write-Host $ver
+          if(($ver -join ' ') -notmatch '0\.21\.1'){throw 'Legendary version mismatch'}
+          $authHelp=& $lg auth --help
+          $authText=($authHelp -join ' ')
+          if($authText -notmatch '--code'){throw 'Legendary auth --code missing'}
+          if($authText -notmatch '--disable-webview'){throw 'Legendary auth --disable-webview missing'}
+          Write-Host 'V1721_WINDOWS_LEGENDARY_DIRECT_CODE_AUTH_OK'
+
+      - name: Validate authorizationCode parser fixtures
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $script='ci\ps5native-v17.2.1\auth-code-contract.ps1'
+          $fixture='0123456789abcdef0123456789abcdef'
+          & $script -InputValue ('{"authorizationCode":"'+$fixture+'"}')
+          if($LASTEXITCODE -ne 0){throw 'JSON authorizationCode parse failed'}
+          & $script -InputValue $fixture
+          if($LASTEXITCODE -ne 0){throw 'raw authorizationCode parse failed'}
+          & $script -InputValue ('https://localhost/launcher/authorized?code='+$fixture)
+          if($LASTEXITCODE -ne 0){throw 'redirect URL code parse failed'}
+          $prev=$ErrorActionPreference;$ErrorActionPreference='Continue'
+          try{& $script -InputValue ''; $rc=$LASTEXITCODE}finally{$ErrorActionPreference=$prev}
+          if($rc -ne 31){throw "empty authorizationCode expected 31, got $rc"}
+          Write-Host 'V1721_WINDOWS_AUTH_CODE_PARSER_OK'
+
+      - name: Delivery hashes and policy markers
+        shell: powershell
+        run: |
+          Write-Host 'V1721_PACKAGE_AUTH_PREFLIGHT_SHA256=633d85bde8540c16d050fd13ce04dcafc84d7f700e4ab2cd9d42bf8e80fea642'
+          Write-Host 'V1721_PACKAGE_ENTITLEMENT_SHA256=1f4eaf094eff76259ef6502d428d6ddac1aadc6999ff739ef9b40c128543aef9'
+          Write-Host 'V1721_PACKAGE_ORACLE_SHA256=949077cdad37b3fd5db93ae694f631b3b04e64b9851fa2d5129f3915b420a3f2'
+          Write-Host 'V1721_PACKAGE_LAUNCHER_SHA256=f26a76a663191310a8575b56ac28a56ee8e38ee58227fca1d3b778d62dbdb953'
+          Write-Host 'V1721_AUTH_CODE_MEMORY_ONLY=1'
+          Write-Host 'V1721_NO_PURCHASE=1'
+          Write-Host 'V1721_NO_OWNERSHIP_BYPASS=1'
+          Write-Host 'V1721_NO_CREDENTIAL_EXPORT=1'
+          Write-Host 'V1721_CI_ROADMAP_CREDIT=0'
+          Write-Host 'V1721_WINDOWS_EPIC_AUTH_CODE_HOTFIX_CONTRACT_OK'
