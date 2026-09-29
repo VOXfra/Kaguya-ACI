@@ -348,6 +348,7 @@ jobs:
           $retail=Write-Variant "negative-retail-unvalidated" {param($o) $o.source_kind="retail_post_ekpfs"; $o.security.ekpfs_validated=$false}
           Expect-Reject "retail-unvalidated" $retail 22 "requires independently validated EKPFS"
           Write-Host "V149_RETAIL_HANDOFF_NEGATIVE_GATES_OK"
+          exit 0
 
       - name: Verify v14.9 retail handoff gate
         shell: pwsh
