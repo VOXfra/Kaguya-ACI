@@ -1,0 +1,61 @@
+name: PS5Native v17.2.2 Static Oracle Provenance Windows CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  static-oracle-provenance:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate static PC oracle contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $f="$env:RUNNER_TEMP\v1722-fixture"
+          python ci\ps5native-v17.2.2\make-fixture.py --out $f
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $o="$env:RUNNER_TEMP\v1722-oracle.json"
+          python ci\ps5native-v17.2.2\static-oracle-contract.py --root $f --out $o
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $j=Get-Content $o -Raw|ConvertFrom-Json
+          if($j.status -ne 'READY'){throw 'oracle not READY'}
+          if(-not $j.shipping_exe.pe.x64 -or -not $j.shipping_exe.pe.pe32_plus){throw 'PE contract mismatch'}
+          if([int]$j.pak_count -ne 2 -or [int64]$j.pak_total_bytes -ne 3072){throw 'PAK contract mismatch'}
+          if($j.launch_attempted -or $j.process_started -or $j.pc_payload_copied_into_project){throw 'static-only boundary violated'}
+          if(@($j.shipping_exe.markers|Where-Object{$_ -match 'UE4'}).Count -lt 1){throw 'UE4 marker missing'}
+          Write-Host 'V1722_WINDOWS_STATIC_ORACLE_OK'
+
+      - name: Validate provenance gate positive and fail-closed
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $r="$env:RUNNER_TEMP\v1722-runtime"
+          New-Item -ItemType Directory -Force -Path "$r\ps5_core"|Out-Null
+          'int generic_runtime = 1;'|Set-Content "$r\ps5_core\ok.cpp" -Encoding UTF8
+          $o="$env:RUNNER_TEMP\v1722-prov-ok.json"
+          python ci\ps5native-v17.2.2\provenance-contract.py --root $r --out $o
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $j=Get-Content $o -Raw|ConvertFrom-Json
+          if($j.status -ne 'PASS' -or [int]$j.runtime_files_scanned -lt 1){throw 'positive provenance mismatch'}
+          'const char* forbidden=\"Dakar PC Oracle\";'|Set-Content "$r\ps5_core\bad.cpp" -Encoding UTF8
+          $prev=$ErrorActionPreference;$ErrorActionPreference='Continue'
+          try{python ci\ps5native-v17.2.2\provenance-contract.py --root $r --out "$env:RUNNER_TEMP\v1722-prov-bad.json";$rc=$LASTEXITCODE}finally{$ErrorActionPreference=$prev}
+          if($rc -eq 0){throw 'negative provenance unexpectedly passed'}
+          Remove-Item "$r\ps5_core\bad.cpp" -Force
+          $global:LASTEXITCODE=0
+          Write-Host 'V1722_WINDOWS_PROVENANCE_FAIL_CLOSED_OK'
+          exit 0
+
+      - name: Policy markers
+        shell: powershell
+        run: |
+          Write-Host 'V1722_PC_EXECUTION_ALLOWED=0'
+          Write-Host 'V1722_PC_PAYLOAD_COPY_ALLOWED=0'
+          Write-Host 'V1722_PC_RUNTIME_DEPENDENCY_ALLOWED=0'
+          Write-Host 'V1722_PS5_REHOST_CREDIT=0'
+          Write-Host 'V1722_WINDOWS_STATIC_ORACLE_PROVENANCE_CONTRACT_OK'
