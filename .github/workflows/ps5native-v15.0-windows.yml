@@ -1,0 +1,173 @@
+name: PS5Native v15.0 Retail Module-Set Closure Windows CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  module-set-contract-windows:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Verify exact v15.0 module-set consumer
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $tool=Resolve-Path "ci/ps5native-v15.0/dakar-module-set-v15.0.py"
+          $sha=python -c "import hashlib,pathlib,sys; p=pathlib.Path(sys.argv[1]); b=p.read_text(encoding='utf-8').replace('\\r\\n','\\n').replace('\\r','\\n').encode(); print(hashlib.sha256(b).hexdigest())" "$tool"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          if($sha-ne"4dd6ba530dae55ed45e5833a3bc21ab956e3bfdb4c430fd48119c966752e8fcd"){throw "v15.0 module-set consumer mismatch: $sha"}
+          Write-Host "V150_EXACT_CONSUMER_OK"
+
+      - name: Exercise READY closure and fail-closed gates
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $work=Join-Path $env:RUNNER_TEMP "v150-module-set"
+          $art=Join-Path $work "artifacts"
+          New-Item -ItemType Directory -Force -Path $art|Out-Null
+          @'
+          import json
+          from pathlib import Path
+          def parse_module(path,catalog):
+              o=json.loads(Path(path).read_text(encoding="utf-8-sig"))
+              return {
+                  "file_name":Path(path).name,
+                  "soname":o["soname"],
+                  "needed_files":o.get("needed",[]),
+                  "container_kind":"MOCK_ELF64",
+                  "structured_import_count":0,
+                  "relocation_count":0,
+              }
+          '@|Set-Content -LiteralPath (Join-Path $work "mock_inventory.py") -Encoding UTF8
+          '{"records":[],"source":{}}'|Set-Content -LiteralPath (Join-Path $work "catalog.json") -Encoding UTF8
+          '{"soname":"libCommon.so","needed":[]}'|Set-Content -LiteralPath (Join-Path $art "libCommon.elf") -Encoding UTF8
+          '{"soname":"libA.so","needed":["libCommon.so"]}'|Set-Content -LiteralPath (Join-Path $art "libA.elf") -Encoding UTF8
+          '{"soname":"libB.so","needed":["libCommon.so"]}'|Set-Content -LiteralPath (Join-Path $art "libB.elf") -Encoding UTF8
+          '{"soname":"app.so","needed":["libA.so","libB.so"]}'|Set-Content -LiteralPath (Join-Path $art "app.elf") -Encoding UTF8
+          $root=Join-Path $art "app.elf"
+          $hash=(Get-FileHash -LiteralPath $root -Algorithm SHA256).Hash.ToLowerInvariant()
+          $size=(Get-Item -LiteralPath $root).Length
+          $handoff=Join-Path $work "handoff.json"
+          @{
+            schema="ps5native.dakar-retail-handoff.v14.9"
+            status="READY"
+            source_kind="integration_fixture"
+            security=@{ekpfs_supplied=$false;ekpfs_validated=$false;network_access=$false;key_search_performed=$false;bruteforce_performed=$false}
+            artifact=@{relative_path="app.elf";size=$size;sha256=$hash;module_parse_ok=$true}
+            runtime_gate=@{startup_authorized=$false;required_modes=@("inspect-only","entry-preflight")}
+            pending_reason=$null
+          }|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $handoff -Encoding UTF8
+          $tool=(Resolve-Path "ci/ps5native-v15.0/dakar-module-set-v15.0.py").Path
+          $manifest=Join-Path $work "module-set.json"
+          python "$tool" emit --handoff "$handoff" --artifact-root "$art" --catalog (Join-Path $work "catalog.json") --inventory-tool (Join-Path $work "mock_inventory.py") --out "$manifest" --integration-fixture
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          python "$tool" validate --manifest "$manifest" --artifact-root "$art"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $m=Get-Content -LiteralPath $manifest -Raw|ConvertFrom-Json
+          $order=[string]::Join(" ",@($m.startup_order))
+          if($order-ne"libCommon.so libA.so libB.so app.so"){throw "unexpected startup order: $order"}
+          if(-not$m.closure_complete -or $m.module_count-ne4){throw "closure completeness mismatch"}
+          Write-Host "V150_READY_CLOSURE_OK"
+
+          function Expect-Reject([string]$Name,[object]$Obj,[int]$Expected,[string]$Needle){
+            $p=Join-Path $work ("negative-"+$Name+".json")
+            $Obj|ConvertTo-Json -Depth 12|Set-Content -LiteralPath $p -Encoding UTF8
+            $prev=$ErrorActionPreference
+            try{
+              $ErrorActionPreference='Continue'
+              $o=& python "$tool" validate --manifest "$p" --artifact-root "$art" 2>&1
+              $rc=$LASTEXITCODE
+            }finally{$ErrorActionPreference=$prev}
+            $t=[string]::Join([Environment]::NewLine,@($o|ForEach-Object{$_.ToString()}))
+            $o|ForEach-Object{Write-Host "[$Name] $_"}
+            if($rc-ne$Expected){throw "$Name expected exit $Expected got $rc"}
+            if($t-notlike("*$Needle*")){throw "$Name missing marker: $Needle"}
+          }
+
+          $bad=Get-Content $manifest -Raw|ConvertFrom-Json
+          $bad.modules[0].sha256=("0"*64)
+          Expect-Reject "hash" $bad 36 "SHA-256 mismatch"
+
+          $bad=Get-Content $manifest -Raw|ConvertFrom-Json
+          $bad.modules[0].relative_path="../escape.elf"
+          Expect-Reject "traversal" $bad 37 "safe relative path"
+
+          $bad=Get-Content $manifest -Raw|ConvertFrom-Json
+          $bad.modules=@($bad.modules|Where-Object{$_.identity-ne"libCommon.so"})
+          $bad.module_count=$bad.modules.Count
+          Expect-Reject "missing" $bad 34 "missing dependency"
+
+          $bad=Get-Content $manifest -Raw|ConvertFrom-Json
+          $copy=$bad.modules[0].PSObject.Copy()
+          $copy.relative_path=$bad.modules[1].relative_path
+          $copy.size=$bad.modules[1].size
+          $copy.sha256=$bad.modules[1].sha256
+          $bad.modules=@($bad.modules)+@($copy)
+          Expect-Reject "duplicate" $bad 33 "duplicate/empty identity"
+
+          Write-Host "V150_FAIL_CLOSED_NEGATIVES_OK"
+          exit 0
+
+
+      - name: Verify v15.0 pipeline to handoff compatibility
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $tool=Resolve-Path "ci/ps5native-v15.0/dakar-retail-handoff-v15.0.py"
+          $sha=python -c "import hashlib,pathlib,sys; p=pathlib.Path(sys.argv[1]); b=p.read_text(encoding='utf-8').replace('\\r\\n','\\n').replace('\\r','\\n').encode(); print(hashlib.sha256(b).hexdigest())" "$tool"
+          if($sha-ne"0bff00ee0935d6ed5988cd5a5ccda0f17181f32bf1709196da57865b7b42d569"){throw "v15.0 handoff bridge mismatch: $sha"}
+          $work=Join-Path $env:RUNNER_TEMP "v150-handoff-smoke"
+          $art=Join-Path $work "artifacts"
+          New-Item -ItemType Directory -Force -Path $art|Out-Null
+          $report=Join-Path $work "pipeline.json"
+          @{
+            schema="ps5native.dakar-post-ekpfs-pipeline.v15.0"
+            state="WAITING_FOR_SUPPLIED_EKPFS"
+            ekpfs_supplied=$false
+            ekpfs_validated=$false
+            network_access=$false
+            key_search_performed=$false
+            bruteforce_performed=$false
+            direct_dakar_executable_plaintext_access=$false
+            eboot=@{candidate_extracted=$false;module_parse_ok=$false}
+            startup_gate=@{entry_abi_evidenced=$false}
+          }|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $report -Encoding UTF8
+          $handoff=Join-Path $work "handoff.json"
+          python "$tool" emit --pipeline-report "$report" --artifact-root "$art" --out "$handoff"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $h=Get-Content -LiteralPath $handoff -Raw|ConvertFrom-Json
+          if($h.status-ne"PENDING" -or $h.pending_reason-ne"WAITING_FOR_VALIDATED_EKPFS"){throw "v15 pipeline handoff compatibility mismatch"}
+          Write-Host "V150_HANDOFF_V15_PIPELINE_COMPAT_OK"
+
+      - name: Verify PENDING retail propagation
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $work=Join-Path $env:RUNNER_TEMP "v150-pending"
+          New-Item -ItemType Directory -Force -Path $work|Out-Null
+          $handoff=Join-Path $work "handoff.json"
+          @{
+            schema="ps5native.dakar-retail-handoff.v14.9"
+            status="PENDING"
+            source_kind="retail_post_ekpfs"
+            security=@{ekpfs_supplied=$false;ekpfs_validated=$false;network_access=$false;key_search_performed=$false;bruteforce_performed=$false}
+            artifact=$null
+            runtime_gate=@{startup_authorized=$false;required_modes=@()}
+            pending_reason="WAITING_FOR_VALIDATED_EKPFS"
+          }|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $handoff -Encoding UTF8
+          '{"records":[],"source":{}}'|Set-Content -LiteralPath (Join-Path $work "catalog.json") -Encoding UTF8
+          'def parse_module(path,catalog): raise RuntimeError("must not parse while pending")'|Set-Content -LiteralPath (Join-Path $work "inventory.py") -Encoding UTF8
+          $tool=(Resolve-Path "ci/ps5native-v15.0/dakar-module-set-v15.0.py").Path
+          $manifest=Join-Path $work "module-set.json"
+          python "$tool" emit --handoff "$handoff" --artifact-root "$work" --catalog (Join-Path $work "catalog.json") --inventory-tool (Join-Path $work "inventory.py") --out "$manifest"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $m=Get-Content -LiteralPath $manifest -Raw|ConvertFrom-Json
+          if($m.status-ne"PENDING" -or $m.pending_reason-ne"WAITING_FOR_VALIDATED_EKPFS"){throw "pending propagation mismatch"}
+          Write-Host "V150_PENDING_RETAIL_PROPAGATION_OK"
+          Write-Host "V150_WINDOWS_MODULE_SET_CONTRACT_OK"

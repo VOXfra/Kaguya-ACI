@@ -1,0 +1,280 @@
+name: PS5Native v14.8 DakarNative Production Bootstrap Windows CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  dakarnative-production-bootstrap-windows:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Fetch validated historical CI source inputs
+        shell: pwsh
+        run: |
+          git fetch origin refs/heads/ci/ps5native-v14.2-20260925:refs/remotes/origin/v142
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git checkout refs/remotes/origin/v142 -- ci/ps5native-v14.0.2 ci/ps5native-v14.1 ci/ps5native-v14.2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Reconstruct exact validated v14.2 runtime source
+        shell: pwsh
+        run: |
+          $parts = Get-ChildItem -LiteralPath "ci/ps5native-v14.0.2/chunks" -File -Filter "part-*" | Sort-Object Name
+          if ($parts.Count -ne 13) { throw "Expected 13 v14.0.2 base chunks, got $($parts.Count)" }
+          $b64 = [System.Text.StringBuilder]::new()
+          foreach ($p in $parts) { [void]$b64.Append((Get-Content -LiteralPath $p.FullName -Raw).Trim()) }
+          $zip = Join-Path $env:RUNNER_TEMP "v1402-minici.zip"
+          [IO.File]::WriteAllBytes($zip,[Convert]::FromBase64String($b64.ToString()))
+          $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+          if($sha-ne"7271f11aba8ebd8f7e1e78bb70ad8e49d966352e685422b2fd090664a4877789"){throw "v14.0.2 base mismatch: $sha"}
+          $extract=Join-Path $env:RUNNER_TEMP "v148-runtime"
+          Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
+          $src=Join-Path $extract "v1402-minici"
+          $gz=Resolve-Path "ci/ps5native-v14.1/v141.patch.gz"
+          if((Get-FileHash -Algorithm SHA256 -LiteralPath $gz).Hash.ToLowerInvariant()-ne"a207d3f2f8a0aed996e4bd70ec19aa58617e743a0e99217acf5bf7ca4c884d27"){throw "v14.1 patch gzip mismatch"}
+          $p141=Join-Path $env:RUNNER_TEMP "v141.patch"
+          python -c "import gzip,pathlib; pathlib.Path(r'$p141').write_bytes(gzip.decompress(pathlib.Path(r'$gz').read_bytes()))"
+          Push-Location $src
+          git init | Out-Null
+          git config user.email "ci@example.invalid"
+          git config user.name "PS5Native CI"
+          git add .
+          git commit -m base | Out-Null
+          git apply --check "$p141"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          git apply "$p141"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          Pop-Location
+          $parts=Get-ChildItem -LiteralPath "ci/ps5native-v14.2/chunks" -File -Filter "part-*"|Sort-Object Name
+          if($parts.Count-ne4){throw "Expected 4 v14.2 patch chunks, got $($parts.Count)"}
+          $b64=[System.Text.StringBuilder]::new()
+          foreach($p in $parts){[void]$b64.Append((Get-Content -LiteralPath $p.FullName -Raw).Trim())}
+          $gz142=Join-Path $env:RUNNER_TEMP "v142.patch.gz"
+          [IO.File]::WriteAllBytes($gz142,[Convert]::FromBase64String($b64.ToString()))
+          if((Get-FileHash -Algorithm SHA256 -LiteralPath $gz142).Hash.ToLowerInvariant()-ne"26232b7436873bd4f8a9f5adedd76184e94ac6dc27d266b6cebe790260e804d2"){throw "v14.2 patch gzip mismatch"}
+          $p142=Join-Path $env:RUNNER_TEMP "v142.patch"
+          python -c "import gzip,pathlib; pathlib.Path(r'$p142').write_bytes(gzip.decompress(pathlib.Path(r'$gz142').read_bytes()))"
+          Push-Location $src
+          git apply --check "$p142"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          git apply "$p142"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $hotfix=Resolve-Path "$env:GITHUB_WORKSPACE/ci/ps5native-v14.7.1/module-linker.patch"
+          $hotfixSha=python -c "import hashlib,pathlib,sys; p=pathlib.Path(sys.argv[1]); b=p.read_text(encoding='utf-8').replace('\\r\\n','\\n').replace('\\r','\\n').encode(); print(hashlib.sha256(b).hexdigest())" "$hotfix"
+          if($hotfixSha-ne"f63b3d394d1d53cb2c70b29ca3b688a4651fa722dcab4317808fb544ce86c649"){throw "v14.7.1 hotfix patch mismatch: $hotfixSha"}
+          $moduleLinker=Join-Path $src "ps5_core/src/module_linker.cpp"
+          python "$env:GITHUB_WORKSPACE/ci/ps5native-v14.7.1/apply_hotfix_v1471.py" "$moduleLinker"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $check=Get-Content -LiteralPath $moduleLinker -Raw
+          if($check-notmatch"Activity leases are part of guest execution" -or $check-notmatch"mutation_mutex_"){throw "v14.7.1 activity hotfix semantic injection missing"}
+          $diag=Resolve-Path "$env:GITHUB_WORKSPACE/ci/ps5native-v14.7.1/runtime-stress-diagnostics.patch"
+          git apply --check "$diag"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          git apply "$diag"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $gate=Join-Path $src "platform_win32/src/win64_guest_call_gate.cpp"
+          python "$env:GITHUB_WORKSPACE/ci/ps5native-v14.7.1/apply_fs_rebind_v1471.py" "$gate"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $gateCheck=Get-Content -LiteralPath $gate -Raw
+          if($gateCheck-notmatch"try_rebind_guest_fs_after_preemption" -or $gateCheck-notmatch"fs_rebinds="){throw "v14.7.1 FS preemption recovery transform missing"}
+          Pop-Location
+          "V148_SRC=$src"|Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Reconstruct exact validated v14.6 graphics source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import base64, hashlib, zipfile, os
+          parts=sorted(Path("ci/ps5native-v14.5/chunks").glob("part-*"))
+          if len(parts)!=23: raise SystemExit(f"expected 23 v14.5 chunks, got {len(parts)}")
+          data=base64.b64decode("".join(p.read_text().strip() for p in parts))
+          if hashlib.sha256(data).hexdigest()!="f2491eea05363624805819eb16842ff157a179f8815c298b1776ac29a6df0ae7":
+              raise SystemExit("v14.5 mini sha mismatch")
+          zp=Path(os.environ["RUNNER_TEMP"])/"v145-min2.zip"; zp.write_bytes(data)
+          out=Path(os.environ["RUNNER_TEMP"])/"v148-graphics"; out.mkdir(exist_ok=True)
+          with zipfile.ZipFile(zp) as z: z.extractall(out)
+          PY
+          GFX_SRC="$RUNNER_TEMP/v148-graphics/v145-min2"
+          PATCH_FILE="$RUNNER_TEMP/v146.patch"
+          python - <<'PY'
+          from pathlib import Path
+          import os
+          parts=sorted(Path("ci/ps5native-v14.6/patch").glob("part-*"))
+          text="".join(p.read_text(encoding="utf-8").replace("\r\n","\n").replace("\r","\n") for p in parts)
+          Path(os.environ["RUNNER_TEMP"],"v146.patch").write_text(text,encoding="utf-8",newline="\n")
+          PY
+          got="$(python -c 'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$PATCH_FILE")"
+          test "$got" = "4f3429a8178fcf052e926386bf967b9cae3dd264176dedac4ad67485bdfbd04e"
+          patch --batch --forward -p1 -d "$GFX_SRC" < "$PATCH_FILE"
+          echo "V148_GFX_SRC=$GFX_SRC" >> "$GITHUB_ENV"
+
+      - name: Compose v14.8 production-bootstrap CI source
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem -LiteralPath "ci/ps5native-v14.8/prodsrc-chunks" -File -Filter "part-*"|Sort-Object Name
+          if($parts.Count-ne5){throw "Expected 5 v14.8 production source chunks, got $($parts.Count)"}
+          $b64=[System.Text.StringBuilder]::new()
+          foreach($p in $parts){[void]$b64.Append((Get-Content -LiteralPath $p.FullName -Raw).Trim())}
+          $zip=Join-Path $env:RUNNER_TEMP "v148-prodsrc.zip"
+          [IO.File]::WriteAllBytes($zip,[Convert]::FromBase64String($b64.ToString()))
+          $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+          if($sha-ne"443dd7cd64c335f982d6f009944411ce18a12a1fd093b4f59dd315dea3ad9972"){throw "v14.8 production source payload mismatch: $sha"}
+          $prod=Join-Path $env:RUNNER_TEMP "v148-prodsrc"
+          Expand-Archive -LiteralPath $zip -DestinationPath $prod -Force
+
+          $svcRoot="ci/ps5native-v14.8/service-chunks"
+          $svcNames=@("part-00","part-01","part-02","part-03-0","part-03-1","part-03-2","part-03-3","part-04")
+          $svcB64=[System.Text.StringBuilder]::new()
+          foreach($name in $svcNames){
+            $path=Join-Path $svcRoot $name
+            if(-not(Test-Path -LiteralPath $path)){throw "Missing v14.8 service chunk: $name"}
+            [void]$svcB64.Append((Get-Content -LiteralPath $path -Raw).Trim())
+          }
+          $svcZip=Join-Path $env:RUNNER_TEMP "v148-services.zip"
+          [IO.File]::WriteAllBytes($svcZip,[Convert]::FromBase64String($svcB64.ToString()))
+          $svcSha=(Get-FileHash -Algorithm SHA256 -LiteralPath $svcZip).Hash.ToLowerInvariant()
+          if($svcSha-ne"cb6170aede77380b67c8a00f54b3eb724834da5110cb41dee6680b2db5c1ec39"){throw "v14.8 service payload mismatch: $svcSha"}
+          $svc=Join-Path $env:RUNNER_TEMP "v148-services"
+          Expand-Archive -LiteralPath $svcZip -DestinationPath $svc -Force
+          Copy-Item -Force "$svc\ps5_services\include\ps5native\account_user_service.hpp" "$env:V148_SRC\ps5_services\include\ps5native\account_user_service.hpp"
+          Copy-Item -Force "$svc\ps5_services\include\ps5native\online_state_service.hpp" "$env:V148_SRC\ps5_services\include\ps5native\online_state_service.hpp"
+          Copy-Item -Force "$svc\ps5_services\include\ps5native\ps5_exact_host_bindings.hpp" "$env:V148_SRC\ps5_services\include\ps5native\ps5_exact_host_bindings.hpp"
+          Copy-Item -Force "$svc\ps5_services\include\ps5native\ps5_exact_platform_bindings.hpp" "$env:V148_SRC\ps5_services\include\ps5native\ps5_exact_platform_bindings.hpp"
+          Copy-Item -Force "$svc\ps5_services\include\ps5native\ps5_nid.hpp" "$env:V148_SRC\ps5_services\include\ps5native\ps5_nid.hpp"
+          Copy-Item -Force "$svc\ps5_services\src\account_user_service.cpp" "$env:V148_SRC\ps5_services\src\account_user_service.cpp"
+          Copy-Item -Force "$svc\ps5_services\src\online_state_service.cpp" "$env:V148_SRC\ps5_services\src\online_state_service.cpp"
+          Copy-Item -Force "$svc\ps5_services\src\ps5_exact_host_bindings.cpp" "$env:V148_SRC\ps5_services\src\ps5_exact_host_bindings.cpp"
+          Copy-Item -Force "$svc\ps5_services\src\ps5_exact_platform_bindings.cpp" "$env:V148_SRC\ps5_services\src\ps5_exact_platform_bindings.cpp"
+          Copy-Item -Force "$svc\ps5_services\src\ps5_nid.cpp" "$env:V148_SRC\ps5_services\src\ps5_nid.cpp"
+          New-Item -ItemType Directory -Force -Path "$env:V148_SRC\apps\dakar_native_bootstrap"|Out-Null
+          Copy-Item -Force "$prod\apps\dakar_native_bootstrap\main.cpp" "$env:V148_SRC\apps\dakar_native_bootstrap\main.cpp"
+          New-Item -ItemType Directory -Force -Path "$env:V148_SRC\adapters\dakar_ue4\src"|Out-Null
+          New-Item -ItemType Directory -Force -Path "$env:V148_SRC\adapters\dakar_ue4\include"|Out-Null
+          Copy-Item -Force "$prod\adapters\dakar_ue4\src\dakar_adapter.cpp" "$env:V148_SRC\adapters\dakar_ue4\src\dakar_adapter.cpp"
+          $fixtureNames=@("part-00","part-01")
+          $fixtureB64=[System.Text.StringBuilder]::new()
+          foreach($name in $fixtureNames){
+            $path=Join-Path "ci/ps5native-v14.8/fixture-tool-chunks" $name
+            if(-not(Test-Path -LiteralPath $path)){throw "Missing v14.8 fixture chunk: $name"}
+            [void]$fixtureB64.Append((Get-Content -LiteralPath $path -Raw).Trim())
+          }
+          $fixtureZip=Join-Path $env:RUNNER_TEMP "v148-fixture-tools.zip"
+          [IO.File]::WriteAllBytes($fixtureZip,[Convert]::FromBase64String($fixtureB64.ToString()))
+          $fixtureSha=(Get-FileHash -Algorithm SHA256 -LiteralPath $fixtureZip).Hash.ToLowerInvariant()
+          if($fixtureSha-ne"7527beb351128a7e3dd7734271502065603e1e6714a0ae24a8670f33463de692"){throw "v14.8 fixture tools payload mismatch: $fixtureSha"}
+          Expand-Archive -LiteralPath $fixtureZip -DestinationPath $env:V148_SRC -Force
+          Copy-Item -Force "ci\ps5native-v14.8\platform\win32_local_user_backend.hpp" "$env:V148_SRC\platform_win32\include\ps5native\win32_local_user_backend.hpp"
+          Copy-Item -Force "ci\ps5native-v14.8\platform\win32_online_state_backend.hpp" "$env:V148_SRC\platform_win32\include\ps5native\win32_online_state_backend.hpp"
+          Copy-Item -Force "ci\ps5native-v14.8\platform\win32_local_user_backend.cpp" "$env:V148_SRC\platform_win32\src\win32_local_user_backend.cpp"
+          Copy-Item -Force "ci\ps5native-v14.8\platform\win32_online_state_backend.cpp" "$env:V148_SRC\platform_win32\src\win32_online_state_backend.cpp"
+          @'
+          #pragma once
+          #include <ps5native/import_resolver.hpp>
+          namespace dakar {
+          class Adapter {
+          public:
+              void register_engine_specific_imports(ps5native::ImportResolver& resolver);
+          };
+          }
+          '@ | Set-Content -LiteralPath "$env:V148_SRC\adapters\dakar_ue4\include\dakar_adapter.hpp" -Encoding UTF8
+          @'
+          cmake_minimum_required(VERSION 3.24)
+          project(PS5NativeV148ProductionBootstrapCI LANGUAGES CXX)
+          set(CMAKE_CXX_STANDARD 20)
+          set(CMAKE_CXX_STANDARD_REQUIRED ON)
+          add_subdirectory(ps5_core)
+          add_library(ps5_services_bootstrap STATIC
+            ps5_services/src/account_user_service.cpp
+            ps5_services/src/online_state_service.cpp
+            ps5_services/src/ps5_nid.cpp
+            ps5_services/src/ps5_exact_host_bindings.cpp
+            ps5_services/src/ps5_exact_platform_bindings.cpp)
+          target_include_directories(ps5_services_bootstrap PUBLIC ps5_services/include)
+          target_link_libraries(ps5_services_bootstrap PUBLIC ps5_core)
+          add_library(platform_win32_bootstrap STATIC
+            platform_win32/src/win32_platform.cpp
+            platform_win32/src/win64_abi_bridge.cpp
+            platform_win32/src/win64_guest_call_gate.cpp
+            platform_win32/src/win32_local_user_backend.cpp
+            platform_win32/src/win32_online_state_backend.cpp)
+          target_include_directories(platform_win32_bootstrap PUBLIC platform_win32/include)
+          target_compile_definitions(platform_win32_bootstrap PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+          target_link_libraries(platform_win32_bootstrap PUBLIC ps5_core ps5_services_bootstrap advapi32)
+          add_library(dakar_ue4_adapter STATIC adapters/dakar_ue4/src/dakar_adapter.cpp)
+          target_include_directories(dakar_ue4_adapter PUBLIC adapters/dakar_ue4/include)
+          target_link_libraries(dakar_ue4_adapter PUBLIC ps5_core)
+          add_executable(DakarNative apps/dakar_native_bootstrap/main.cpp)
+          target_link_libraries(DakarNative PRIVATE ps5_core ps5_services_bootstrap platform_win32_bootstrap dakar_ue4_adapter)
+          '@ | Set-Content -LiteralPath "$env:V148_SRC\CMakeLists.txt" -Encoding UTF8
+
+      - name: Configure and build DakarNative with VS2022
+        shell: pwsh
+        run: |
+          $build=Join-Path $env:RUNNER_TEMP "v148-build"
+          cmake -S "$env:V148_SRC" -B "$build" -G "Visual Studio 17 2022" -A x64
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          cmake --build "$build" --config Release --parallel
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          "V148_BUILD=$build"|Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Run DakarNative production lifecycle 8x
+        shell: pwsh
+        run: |
+          $work=Join-Path $env:RUNNER_TEMP "v148-bootstrap"
+          New-Item -ItemType Directory -Force -Path $work|Out-Null
+          $elf=Join-Path $work "test-ps5like-x64.elf"
+          python "$env:V148_SRC\tools\make-test-elf.py" "$elf"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $exe=Join-Path $env:V148_BUILD "Release\DakarNative.exe"
+          if(-not(Test-Path -LiteralPath $exe)){throw "DakarNative.exe missing"}
+          for($i=1;$i-le8;$i++){
+            Write-Host "DakarNative production cycle $i/8"
+            $out=& $exe $elf --synthetic-bindings --execute-entry 2>&1
+            $rc=$LASTEXITCODE
+            $out|ForEach-Object{Write-Host $_}
+            $text=[string]::Join([Environment]::NewLine,@($out))
+            foreach($needle in @("Guest thread entry/join: PASS","Guest thread TLS binding: PASS","Guest mutex lock/unlock: PASS","Guest mutex try-lock contention: PASS","Guest mutex stale-handle rejection: PASS","PASS: ABI + TLS + threads + mutex synchronization + ELF lifecycle completed.")){
+              if($text-notlike("*$needle*")){throw "production cycle $i missing marker: $needle"}
+            }
+            if($rc-ne0){throw "DakarNative production cycle $i failed exit=$rc"}
+          }
+          Write-Host "V148_DAKARNATIVE_PRODUCTION_8X_OK"
+
+      - name: Run structured inspect preflight guarded-startup convergence
+        shell: pwsh
+        run: |
+          $work=Join-Path $env:RUNNER_TEMP "v148-bootstrap"
+          $structured=Join-Path $work "structured-startup.elf"
+          python "$env:V148_SRC\tools\make-ps5-structured-startup-fixture-v13.9.py" "$structured"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $exe=Join-Path $env:V148_BUILD "Release\DakarNative.exe"
+          function Run-Check([string]$label,[string[]]$CliArgs,[string[]]$needles){
+            Write-Host "--- $label ---"
+            $out=& $exe @CliArgs 2>&1
+            $rc=$LASTEXITCODE
+            $out|ForEach-Object{Write-Host $_}
+            $text=[string]::Join([Environment]::NewLine,@($out))
+            if($rc-ne0){throw "$label failed exit=$rc"}
+            foreach($needle in $needles){if($text-notlike("*$needle*")){throw "$label missing marker: $needle"}}
+          }
+          Run-Check -label "inspect" -CliArgs @($structured,"--inspect-only") -needles @("Non-executing PT_LOAD mapping: PASS","PASS: accessible PS5 ELF parse + dynamic inventory + non-executing mapping completed.")
+          Run-Check -label "preflight" -CliArgs @($structured,"--entry-preflight","--public-exact-host-bindings","--public-platform-bindings") -needles @("Relocation issues: 0","Deferred IRELATIVE relocations: 0","Entry preflight executable entry: PASS","Entry preflight TLS FS-base gate: PASS","Entry preflight RELRO writable runs: 0","Entry preflight: PASS")
+          Run-Check -label "guarded" -CliArgs @($structured,"--guarded-startup","--public-exact-host-bindings","--public-platform-bindings") -needles @("Guarded startup initializers called: 2","Guarded startup entry returned: 42","Guarded startup TLS sentinel after finalizers: 1234","Guarded startup callback address integrity: PASS","Guarded startup lifecycle: PASS")
+          Write-Host "V148_DAKARNATIVE_STRUCTURED_CONVERGENCE_OK"
+
+      - name: Verify v14.8 production bootstrap gate
+        shell: pwsh
+        run: |
+          $exe=Join-Path $env:V148_BUILD "Release\DakarNative.exe"
+          if(-not(Test-Path -LiteralPath $exe)){throw "DakarNative.exe missing"}
+          Write-Host "V148_WINDOWS_MSVC_PRODUCTION_BOOTSTRAP_OK"
+          Write-Host "DakarNative: $exe"
+          Write-Host "Roadmap remains 80 until the target-PC five-stage v14.8 run closes the frozen 80 -> 83 gate."
