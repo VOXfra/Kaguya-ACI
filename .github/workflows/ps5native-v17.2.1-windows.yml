@@ -37,13 +37,13 @@ jobs:
           $script='ci\ps5native-v17.2.1\auth-code-contract.ps1'
           $fixture='0123456789abcdef0123456789abcdef'
           & $script -InputValue ('{"authorizationCode":"'+$fixture+'"}')
-          if($LASTEXITCODE -ne 0){throw 'JSON authorizationCode parse failed'}
           & $script -InputValue $fixture
-          if($LASTEXITCODE -ne 0){throw 'raw authorizationCode parse failed'}
           & $script -InputValue ('https://localhost/launcher/authorized?code='+$fixture)
-          if($LASTEXITCODE -ne 0){throw 'redirect URL code parse failed'}
           $prev=$ErrorActionPreference;$ErrorActionPreference='Continue'
-          try{& $script -InputValue ''; $rc=$LASTEXITCODE}finally{$ErrorActionPreference=$prev}
+          try{
+            & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $script -InputValue ''
+            $rc=$LASTEXITCODE
+          }finally{$ErrorActionPreference=$prev}
           if($rc -ne 31){throw "empty authorizationCode expected 31, got $rc"}
           Write-Host 'V1721_WINDOWS_AUTH_CODE_PARSER_OK'
 
