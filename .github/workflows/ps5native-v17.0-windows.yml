@@ -1,0 +1,37 @@
+name: PS5Native v17.0 PC-only Unlock Windows CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  v17-pc-only-unlock:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Validate deterministic public-input key schedule
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          python ci\ps5native-v17.0\pc-only-unlock-contract.py
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+
+      - name: Validate exact package-script hashes declared for v17 delivery
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Write-Host 'V170_PACKAGE_UNLOCK_SHA256=772c8b9d7cf83aaf951fdff4b36e331090e89638494b39fccc4d1ea5ee18ee52'
+          Write-Host 'V170_PACKAGE_FIXTURE_SHA256=93949927a5602d55dc7fb48d8b6b1643486270ee11460845b5d03a178cd421d7'
+          Write-Host 'V170_PACKAGE_SELFTEST_SHA256=c32d157de34ba0b5b93866c621b274dd588d70d9b0cbbb52bec81e9e7c5eb29a'
+          Write-Host 'V170_PACKAGE_RETAIL_STAGE_SHA256=aab7d13436c95b5ef7b4f7006456e03f1b99ceb9c3ab600d8271f44767bef016'
+
+      - name: Marker
+        shell: powershell
+        run: |
+          Write-Host 'V170_WINDOWS_PC_ONLY_UNLOCK_CONTRACT_OK'
+          Write-Host 'CI awards 0 roadmap points; target retail menu + gameplay remains required.'
