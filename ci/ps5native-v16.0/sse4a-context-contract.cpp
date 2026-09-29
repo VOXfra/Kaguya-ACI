@@ -44,6 +44,6 @@ int main(){
     if(!emulate(c,in,sizeof in)||c.Xmm0.Low!=0x112233445566AA88ull)return 11;
     c={};c.Xmm8.Low=0x123456789ABCDEF0ull;
     const std::uint8_t ex8[]={0x66,0x41,0x0F,0x78,0xC0,0x10,0x08};
-    if(!emulate(c,ex8,sizeof ex8)||c.Xmm8.Low!=0xDEull)return 12;
+    if(!emulate(c,ex8,sizeof ex8)||c.Xmm8.Low!=0xBCDEull)return 12;
     std::cout<<"V160_WINDOWS_CONTEXT_SSE4A_OK\n"; return 0;
 }
