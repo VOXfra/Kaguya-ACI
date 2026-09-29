@@ -41,10 +41,10 @@ jobs:
           & $script -InputValue ('https://localhost/launcher/authorized?code='+$fixture)
           $prev=$ErrorActionPreference;$ErrorActionPreference='Continue'
           try{
-            & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $script -InputValue ''
+            & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $script -InputValue x
             $rc=$LASTEXITCODE
           }finally{$ErrorActionPreference=$prev}
-          if($rc -ne 31){throw "empty authorizationCode expected 31, got $rc"}
+          if($rc -ne 31){throw "invalid-short authorizationCode expected 31, got $rc"}
           Write-Host 'V1721_WINDOWS_AUTH_CODE_PARSER_OK'
 
       - name: Delivery hashes and policy markers
