@@ -1,0 +1,110 @@
+diff -ruN v145-min2/CMakeLists.txt v146-min/CMakeLists.txt
+--- v145-min2/CMakeLists.txt	2026-09-26 16:57:22.000000000 +0000
++++ v146-min/CMakeLists.txt	2026-09-28 10:00:11.098586988 +0000
+@@ -1,5 +1,5 @@
+ cmake_minimum_required(VERSION 3.24)
+-project(PS5NativeV145Mini LANGUAGES CXX)
++project(PS5NativeV146Mini LANGUAGES CXX)
+ set(CMAKE_CXX_STANDARD 20)
+ set(CMAKE_CXX_STANDARD_REQUIRED ON)
+ add_library(ps5_graphics STATIC
+@@ -21,5 +21,5 @@
+ target_include_directories(platform_graphics_win32 PUBLIC platform_win32/include)
+ target_compile_definitions(platform_graphics_win32 PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+ target_link_libraries(platform_graphics_win32 PUBLIC ps5_graphics d3d12 dxgi d3dcompiler user32)
+-add_executable(AgcFrameGraphProbe apps/agc_frame_graph_probe/main.cpp)
+-target_link_libraries(AgcFrameGraphProbe PRIVATE ps5_agc ps5_graphics platform_graphics_win32)
++add_executable(AgcVisibleRuntimeProbe apps/agc_visible_runtime_probe/main.cpp)
++target_link_libraries(AgcVisibleRuntimeProbe PRIVATE ps5_agc ps5_graphics platform_graphics_win32)
+diff -ruN v145-min2/apps/agc_visible_runtime_probe/main.cpp v146-min/apps/agc_visible_runtime_probe/main.cpp
+--- v145-min2/apps/agc_visible_runtime_probe/main.cpp	1970-01-01 00:00:00.000000000 +0000
++++ v146-min/apps/agc_visible_runtime_probe/main.cpp	2026-09-28 10:00:10.619530491 +0000
+@@ -0,0 +1,353 @@
++#include <ps5native/agc_command_decoder.hpp>
++#include <ps5native/agc_frame_graph_pipeline.hpp>
++#include <ps5native/graphics_draw_dispatch.hpp>
++#include <ps5native/graphics_foundation.hpp>
++#include <ps5native/graphics_presentation.hpp>
++#include <ps5native/graphics_renderpass_resource_lifetime.hpp>
++#include <ps5native/graphics_resource_descriptor.hpp>
++#include <ps5native/graphics_shader_pipeline.hpp>
++
++#ifdef _WIN32
++#include <ps5native/win32_d3d12_graphics_backend.hpp>
++#endif
++
++#include <array>
++#include <cmath>
++#include <cstdint>
++#include <iostream>
++#include <memory>
++#include <set>
++#include <string>
++#include <vector>
++
++#ifdef _WIN32
++namespace {
++bool check(bool condition, const char* label) {
++    std::cout << label << ": " << (condition ? "PASS" : "FAIL") << '\n';
++    return condition;
++}
++
++bool near_byte(std::uint8_t actual, int expected, int tolerance = 3) {
++    return std::abs(static_cast<int>(actual) - expected) <= tolerance;
++}
++
++ps5native::AgcEvidenceRule make_rule(
++    std::string id,
++    std::uint32_t opcode,
++    std::uint32_t dword_count,
++    ps5native::AgcSemanticKind semantic,
++    std::vector<ps5native::AgcFieldRule> fields) {
++    ps5native::AgcEvidenceRule rule{};
++    rule.rule_id = std::move(id);
++    rule.evidence_source = "v14.6-explicit-synthetic-visible-runtime-fixture";
++    rule.scope = ps5native::AgcRuleScope::SyntheticFixture;
++    rule.opcode_mask = 0xffffffffu;
++    rule.opcode_value = opcode;
++    rule.exact_dword_count = dword_count;
++    rule.semantic = semantic;
++    rule.fields = std::move(fields);
++    return rule;
++}
++}
++#endif
++
++int main() {
++#ifndef _WIN32
++    std::cout << "AgcVisibleRuntimeProbe requires Windows/D3D12/DXGI.\n";
++    return 77;
++#else
++    using namespace ps5native;
++    bool ok = true;
++
++    auto backend = std::make_shared<Win32D3D12GraphicsBackend>();
++    ok &= check(
++        backend->available() && backend->draw_dispatch_available() &&
++        backend->presentation_available() && backend->resource_descriptor_available() &&
++        backend->shader_pipeline_available() && backend->renderpass_lifetime_available(),
++        "AGC visible runtime complete D3D12 backend surface availability");
++    if (!ok) return 1;
++
++    GraphicsFoundation foundation(backend);
++    GraphicsDrawDispatchSurface draw_dispatch(backend);
++    GraphicsPresentationSurface presentation(backend);
++    GraphicsResourceDescriptorSurface resources(backend);
++    GraphicsShaderPipelineSurface shaders(backend);
++    GraphicsRenderPassResourceLifetimeSurface renderpass(backend);
++
++    GraphicsError error = GraphicsError::None;
++
++    // Persistent buffer used by neutral AGC barriers.
++    const auto buffer = foundation.create_buffer(
++        {8192u, GraphicsMemoryClass::DeviceLocal, GraphicsResourceState::Common}, &error);
++    ok &= check(buffer && error == GraphicsError::None,
++                "AGC visible runtime persistent barrier buffer create");
++    if (!buffer) return 2;
++
++    // Persistent texture + descriptor set, with real upload/readback before frame execution.
++    GraphicsTextureDesc color_desc{};
++    colo

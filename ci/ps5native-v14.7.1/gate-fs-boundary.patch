@@ -1,0 +1,202 @@
+--- a/platform_win32/src/win64_guest_call_gate.cpp
++++ b/platform_win32/src/win64_guest_call_gate.cpp
+@@ -211,15 +211,58 @@
+ thread_local GuestFaultRegisters
+     g_last_guest_fault_registers{};
+ 
+-LONG CALLBACK guest_context_recovery_handler(
+-    EXCEPTION_POINTERS* info) {
++struct GuestFsRebindState {
++    std::uint64_t expected_base{};
++    std::uint32_t rebind_count{};
++    bool armed{};
++    GuestFsRebindState* previous{};
++};
++
++thread_local GuestFsRebindState*
++    g_active_guest_fs_rebind = nullptr;
++
++bool try_rebind_guest_fs_after_preemption(
++    DWORD code) noexcept {
+ 
+     auto* state =
+-        g_active_context_recovery;
++        g_active_guest_fs_rebind;
+ 
+-    if (!state ||
++    if (code != EXCEPTION_ACCESS_VIOLATION ||
++        !state ||
+         !state->armed ||
+-        !info ||
++        state->expected_base == 0 ||
++        state->rebind_count >= 1024) {
++
++        return false;
++    }
++
++    __try {
++        const auto observed =
++            _readfsbase_u64();
++
++        if (observed == state->expected_base) {
++            return false;
++        }
++
++        _writefsbase_u64(
++            state->expected_base);
++
++        if (_readfsbase_u64() != state->expected_base) {
++            return false;
++        }
++
++        ++state->rebind_count;
++        return true;
++    }
++    __except(EXCEPTION_EXECUTE_HANDLER) {
++        return false;
++    }
++}
++
++LONG CALLBACK guest_context_recovery_handler(
++    EXCEPTION_POINTERS* info) {
++
++    if (!info ||
+         !info->ExceptionRecord ||
+         !info->ContextRecord) {
+ 
+@@ -230,7 +273,22 @@
+         info->ExceptionRecord->
+             ExceptionCode;
+ 
+-    if (!is_contained_guest_fault(code)) {
++    if (try_rebind_guest_fs_after_preemption(code)) {
++        return EXCEPTION_CONTINUE_EXECUTION;
++    }
++
++    auto* state =
++        g_active_context_recovery;
++
++    if (!state ||
++        !state->armed ||
++        !is_contained_guest_fault(code)) {
++
+         return EXCEPTION_CONTINUE_SEARCH;
+     }
+@@ -425,6 +483,10 @@
+     const DWORD code =
+         info->ExceptionRecord->ExceptionCode;
+ 
++    if (try_rebind_guest_fs_after_preemption(code)) {
++        return EXCEPTION_CONTINUE_EXECUTION;
++    }
++
+     if (!is_contained_guest_fault(code)) {
+         return EXCEPTION_CONTINUE_SEARCH;
+     }
+@@ -2023,9 +2085,26 @@
+         return false;
+     }
+ 
++    g_last_guest_fault_registers = {};
++
++    GuestFsRebindState fs_rebind{};
++    fs_rebind.expected_base =
++        static_cast<std::uint64_t>(
++            tls_base);
++    fs_rebind.previous =
++        g_active_guest_fs_rebind;
++    fs_rebind.armed = true;
++    g_active_guest_fs_rebind =
++        &fs_rebind;
++
+     if (!write_fs_base_checked(
+-            static_cast<std::uint64_t>(
+-                tls_base))) {
++            fs_rebind.expected_base)) {
++
++        g_active_guest_fs_rebind =
++            fs_rebind.previous;
+ 
+         error =
+             "failed to bind guest FS base";
+@@ -2055,6 +2134,10 @@
+                   &fault_code,
+                   &exception_address);
+ 
++    fs_rebind.armed = false;
++    g_active_guest_fs_rebind =
++        fs_rebind.previous;
++
+     const bool restored =
+         write_fs_base_checked(
+             original_fs);
+@@ -2082,7 +2165,10 @@
+             << fault_code
+             << " at host address 0x"
+             << reinterpret_cast<std::uintptr_t>(
+-                exception_address);
++                exception_address)
++            << " fs_rebinds="
++            << std::dec
++            << fs_rebind.rebind_count;
+ 
+         error =
+             out.str();
+@@ -2138,9 +2224,26 @@
+         return false;
+     }
+ 
++    g_last_guest_fault_registers = {};
++
++    GuestFsRebindState fs_rebind{};
++    fs_rebind.expected_base =
++        static_cast<std::uint64_t>(
++            tls_base);
++    fs_rebind.previous =
++        g_active_guest_fs_rebind;
++    fs_rebind.armed = true;
++    g_active_guest_fs_rebind =
++        &fs_rebind;
++
+     if (!write_fs_base_checked(
+-            static_cast<std::uint64_t>(
+-                tls_base))) {
++            fs_rebind.expected_base)) {
++
++        g_active_guest_fs_rebind =
++            fs_rebind.previous;
+ 
+         error =
+             "failed to bind guest FS base";
+@@ -2151,8 +2254,6 @@
+     DWORD fault_code{};
+     void* exception_address{};
+ 
+-    g_last_guest_fault_registers = {};
+-
+     const bool ok =
+         context_recovery_enabled_
+             ? invoke_dispatcher_context_recovery(
+@@ -2172,6 +2273,10 @@
+                   &fault_code,
+                   &exception_address);
+ 
++    fs_rebind.armed = false;
++    g_active_guest_fs_rebind =
++        fs_rebind.previous;
++
+     const bool restored =
+         write_fs_base_checked(
+             original_fs);
+@@ -2199,7 +2304,10 @@
+             << fault_code
+             << " at host address 0x"
+             << reinterpret_cast<std::uintptr_t>(
+-                exception_address);
++                exception_address)
++            << " fs_rebinds="
++            << std::dec
++            << fs_rebind.rebind_count;
+ 
+         error =
+             out.str();
