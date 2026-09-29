@@ -1,0 +1,63 @@
+name: PS5Native v16.0.2 Evidence Validator Windows CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  powershell51-evidence-validator:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate v16.0.1 carried-proof shape under Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $work=Join-Path $env:RUNNER_TEMP 'v1602-evidence'
+          New-Item -ItemType Directory -Force -Path $work|Out-Null
+          @'
+          [
+            {"Name":"01-build-windows","Status":"PASS","ExitCode":0,"Log":"01-build-windows.log"},
+            {"Name":"02-carried-real-v16.0-partial-proof","Status":"FAIL","ExitCode":1,"Log":"02-carried-real-v16.0-partial-proof.log"},
+            {"Name":"03-final-integration-core-hotfix","Status":"PASS","ExitCode":0,"Log":"03-final-integration-core-hotfix.log"},
+            {"Name":"04-real-dakar-final-attempt","Status":"PENDING","ExitCode":30,"Log":"04-real-dakar-final-attempt.log"},
+            {"Name":"05-package-cleanliness-final","Status":"FAIL","ExitCode":1,"Log":"05-package-cleanliness-final.log"}
+          ]
+          '@ | Set-Content -LiteralPath (Join-Path $work 'summary.json') -Encoding UTF8
+          @'
+          {"status":"PENDING","blocker":"WAITING_FOR_VALIDATED_EKPFS","exit_code":30}
+          '@ | Set-Content -LiteralPath (Join-Path $work 'final.json') -Encoding UTF8
+          @'
+          {"status":"PENDING","pending_reason":"WAITING_FOR_VALIDATED_EKPFS","module_count":0}
+          '@ | Set-Content -LiteralPath (Join-Path $work 'modules.json') -Encoding UTF8
+
+          $S=@((Get-Content -LiteralPath (Join-Path $work 'summary.json') -Raw|ConvertFrom-Json))
+          $F=Get-Content -LiteralPath (Join-Path $work 'final.json') -Raw|ConvertFrom-Json
+          $M=Get-Content -LiteralPath (Join-Path $work 'modules.json') -Raw|ConvertFrom-Json
+          $By=@{};foreach($x in $S){$By[[string]$x.Name]=$x}
+          $Checks=[ordered]@{}
+          $Checks['summary_count']=($S.Count -eq 5)
+          $Checks['stage01_build_pass']=($By.ContainsKey('01-build-windows') -and [string]$By['01-build-windows'].Status -eq 'PASS' -and [int]$By['01-build-windows'].ExitCode -eq 0)
+          $Checks['stage02_known_validator_fail']=($By.ContainsKey('02-carried-real-v16.0-partial-proof') -and [string]$By['02-carried-real-v16.0-partial-proof'].Status -eq 'FAIL' -and [int]$By['02-carried-real-v16.0-partial-proof'].ExitCode -eq 1)
+          $Checks['stage03_hotfix_pass']=($By.ContainsKey('03-final-integration-core-hotfix') -and [string]$By['03-final-integration-core-hotfix'].Status -eq 'PASS' -and [int]$By['03-final-integration-core-hotfix'].ExitCode -eq 0)
+          $Checks['stage04_retail_pending']=($By.ContainsKey('04-real-dakar-final-attempt') -and [string]$By['04-real-dakar-final-attempt'].Status -eq 'PENDING' -and [int]$By['04-real-dakar-final-attempt'].ExitCode -eq 30)
+          $Checks['stage05_known_validator_fail']=($By.ContainsKey('05-package-cleanliness-final') -and [string]$By['05-package-cleanliness-final'].Status -eq 'FAIL' -and [int]$By['05-package-cleanliness-final'].ExitCode -eq 1)
+          $Checks['final_blocker_ekpfs']=([string]$F.blocker -eq 'WAITING_FOR_VALIDATED_EKPFS' -and [string]$F.status -eq 'PENDING' -and [int]$F.exit_code -eq 30)
+          $Checks['module_set_pending_ekpfs']=([string]$M.status -eq 'PENDING' -and [string]$M.pending_reason -eq 'WAITING_FOR_VALIDATED_EKPFS' -and [int]$M.module_count -eq 0)
+          $Failed=@($Checks.GetEnumerator()|Where-Object{-not [bool]$_.Value})
+          foreach($c in $Checks.GetEnumerator()){Write-Host ('carried_check {0}: {1}' -f $c.Key,$(if([bool]$c.Value){'PASS'}else{'FAIL'}))}
+          if($Failed.Count-ne0){throw ('positive fixture failed: '+(($Failed|ForEach-Object{$_.Key}) -join ','))}
+          Write-Host 'V1602_POWERSHELL51_POSITIVE_SHAPE_OK'
+
+          # Prove the named checker actually localizes a changed field.
+          $Checks['stage03_hotfix_pass']=$false
+          $Failed=@($Checks.GetEnumerator()|Where-Object{-not [bool]$_.Value})
+          if($Failed.Count-ne1 -or $Failed[0].Key-ne'stage03_hotfix_pass'){throw 'named negative localization failed'}
+          Write-Host 'V1602_POWERSHELL51_NEGATIVE_LOCALIZATION_OK'
+      - name: Marker
+        shell: powershell
+        run: |
+          Write-Host 'V1602_WINDOWS_EVIDENCE_VALIDATOR_OK'
+          Write-Host 'CI awards 0 roadmap points.'
