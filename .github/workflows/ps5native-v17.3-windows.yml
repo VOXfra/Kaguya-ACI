@@ -1,0 +1,48 @@
+name: PS5Native v17.3 PC PAK PlayGo Windows CI
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+jobs:
+  pak-playgo:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exact PAK to PlayGo contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $pak="$env:RUNNER_TEMP\v173.pak"
+          $fx=& python ci\ps5native-v17.3\make-fixture.py --out $pak
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $target=($fx|Where-Object{$_ -match '^[0-9A-F]{16}$'}|Select-Object -First 1)
+          if(-not $target){throw 'fixture hash missing'}
+          python ci\ps5native-v17.3\pak-playgo-contract.py --pak $pak --target $target
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          Write-Host 'V173_WINDOWS_EXACT_CORRELATION_CONTRACT_OK'
+      - name: Provenance positive and fail-closed
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $r="$env:RUNNER_TEMP\v173-runtime";New-Item -ItemType Directory -Force -Path $r|Out-Null
+          'int generic_runtime=1;'|Set-Content "$r\ok.cpp" -Encoding UTF8
+          python ci\ps5native-v17.3\provenance-contract.py --root $r
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          'const char* x="Dakar PC Oracle";'|Set-Content "$r\bad.cpp" -Encoding UTF8
+          $prev=$ErrorActionPreference;$ErrorActionPreference='Continue'
+          try{python ci\ps5native-v17.3\provenance-contract.py --root $r;$rc=$LASTEXITCODE}finally{$ErrorActionPreference=$prev}
+          if($rc-eq0){throw 'provenance fail-closed test unexpectedly passed'}
+          $global:LASTEXITCODE=0
+          Write-Host 'V173_WINDOWS_PROVENANCE_FAIL_CLOSED_OK'
+          exit 0
+      - name: Policy markers
+        shell: powershell
+        run: |
+          Write-Host 'V173_PC_EXECUTION_ALLOWED=0'
+          Write-Host 'V173_PC_PAYLOAD_COPY_ALLOWED=0'
+          Write-Host 'V173_PS5_DECRYPTION_ALLOWED=0'
+          Write-Host 'V173_KEY_WORK_ALLOWED=0'
+          Write-Host 'V173_FUZZY_MATCH_ALLOWED=0'
+          Write-Host 'V173_PS5_REHOST_CREDIT=0'
+          Write-Host 'V173_WINDOWS_PAK_PLAYGO_CONTRACT_OK'
