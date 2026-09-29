@@ -1,0 +1,38 @@
+name: PS5Native v17.1 PC Oracle Windows CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  pc-oracle:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build synthetic official-PC layout
+        shell: powershell
+        run: |
+          python ci\ps5native-v17.1\make-pc-oracle-fixture-v17.1.py --out "$env:RUNNER_TEMP\dakar-oracle"
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Validate Win64 UE/EOS/PAK oracle intake
+        shell: powershell
+        run: |
+          python ci\ps5native-v17.1\dakar-pc-oracle-intake-v17.1.py --root "$env:RUNNER_TEMP\dakar-oracle" --provider Fixture --out "$env:RUNNER_TEMP\oracle.json"
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $j=Get-Content "$env:RUNNER_TEMP\oracle.json" -Raw|ConvertFrom-Json
+          if($j.status -ne 'READY'){throw 'oracle not ready'}
+          if(-not $j.shipping_exe.pe.x64){throw 'PE not x64'}
+          if([int]$j.pak_count -ne 2){throw 'pak count mismatch'}
+          if(@($j.shipping_exe.markers|Where-Object{$_ -match 'UE4'}).Count -lt 1){throw 'UE marker missing'}
+          if(@($j.shipping_exe.markers|Where-Object{$_ -match 'EpicOnlineServices'}).Count -lt 1){throw 'EOS marker missing'}
+          if($j.download_attempted -or $j.ownership_bypass_attempted -or $j.files_modified){throw 'oracle policy mismatch'}
+          Write-Host 'V171_WINDOWS_PC_ORACLE_INTAKE_OK'
+      - name: Delivery contract markers
+        shell: powershell
+        run: |
+          Write-Host 'V171_STEAM_APP_ID=1839940'
+          Write-Host 'V171_EXPECTED_SHIPPING_EXE=Dakar2Game/Binaries/Win64/Dakar2Game-Win64-Shipping.exe'
+          Write-Host 'V171_CI_ROADMAP_CREDIT=0'
+          Write-Host 'V171_WINDOWS_PC_ORACLE_CONTRACT_OK'
