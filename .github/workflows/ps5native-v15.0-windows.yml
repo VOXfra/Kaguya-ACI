@@ -114,6 +114,37 @@ jobs:
           Write-Host "V150_FAIL_CLOSED_NEGATIVES_OK"
           exit 0
 
+
+      - name: Verify v15.0 pipeline to handoff compatibility
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $tool=Resolve-Path "ci/ps5native-v15.0/dakar-retail-handoff-v15.0.py"
+          $sha=python -c "import hashlib,pathlib,sys; p=pathlib.Path(sys.argv[1]); b=p.read_text(encoding='utf-8').replace('\\r\\n','\\n').replace('\\r','\\n').encode(); print(hashlib.sha256(b).hexdigest())" "$tool"
+          if($sha-ne"0bff00ee0935d6ed5988cd5a5ccda0f17181f32bf1709196da57865b7b42d569"){throw "v15.0 handoff bridge mismatch: $sha"}
+          $work=Join-Path $env:RUNNER_TEMP "v150-handoff-smoke"
+          $art=Join-Path $work "artifacts"
+          New-Item -ItemType Directory -Force -Path $art|Out-Null
+          $report=Join-Path $work "pipeline.json"
+          @{
+            schema="ps5native.dakar-post-ekpfs-pipeline.v15.0"
+            state="WAITING_FOR_SUPPLIED_EKPFS"
+            ekpfs_supplied=$false
+            ekpfs_validated=$false
+            network_access=$false
+            key_search_performed=$false
+            bruteforce_performed=$false
+            direct_dakar_executable_plaintext_access=$false
+            eboot=@{candidate_extracted=$false;module_parse_ok=$false}
+            startup_gate=@{entry_abi_evidenced=$false}
+          }|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $report -Encoding UTF8
+          $handoff=Join-Path $work "handoff.json"
+          python "$tool" emit --pipeline-report "$report" --artifact-root "$art" --out "$handoff"
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $h=Get-Content -LiteralPath $handoff -Raw|ConvertFrom-Json
+          if($h.status-ne"PENDING" -or $h.pending_reason-ne"WAITING_FOR_VALIDATED_EKPFS"){throw "v15 pipeline handoff compatibility mismatch"}
+          Write-Host "V150_HANDOFF_V15_PIPELINE_COMPAT_OK"
+
       - name: Verify PENDING retail propagation
         shell: powershell
         run: |
