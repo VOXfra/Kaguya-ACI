@@ -35,7 +35,7 @@ jobs:
           import json
           from pathlib import Path
           def parse_module(path,catalog):
-              o=json.loads(Path(path).read_text(encoding="utf-8"))
+              o=json.loads(Path(path).read_text(encoding="utf-8-sig"))
               return {
                   "file_name":Path(path).name,
                   "soname":o["soname"],
