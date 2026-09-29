@@ -21,7 +21,7 @@ jobs:
           $tool=Resolve-Path "ci/ps5native-v15.0/dakar-module-set-v15.0.py"
           $sha=python -c "import hashlib,pathlib,sys; p=pathlib.Path(sys.argv[1]); b=p.read_text(encoding='utf-8').replace('\\r\\n','\\n').replace('\\r','\\n').encode(); print(hashlib.sha256(b).hexdigest())" "$tool"
           if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
-          if($sha-ne"b7e2f5ed7bd11da45d96fccdf989c70e7f25791fc1e2100dd83f24e2710692c8"){throw "v15.0 module-set consumer mismatch: $sha"}
+          if($sha-ne"4dd6ba530dae55ed45e5833a3bc21ab956e3bfdb4c430fd48119c966752e8fcd"){throw "v15.0 module-set consumer mismatch: $sha"}
           Write-Host "V150_EXACT_CONSUMER_OK"
 
       - name: Exercise READY closure and fail-closed gates
