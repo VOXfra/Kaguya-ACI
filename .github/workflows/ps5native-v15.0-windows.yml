@@ -112,6 +112,7 @@ jobs:
           Expect-Reject "duplicate" $bad 33 "duplicate/empty identity"
 
           Write-Host "V150_FAIL_CLOSED_NEGATIVES_OK"
+          exit 0
 
       - name: Verify PENDING retail propagation
         shell: powershell
