@@ -274,7 +274,7 @@ jobs:
         shell: pwsh
         run: |
           $tool=Resolve-Path "ci/ps5native-v14.9/dakar-retail-handoff-v14.9.py"
-          $toolSha=(Get-FileHash -Algorithm SHA256 -LiteralPath $tool).Hash.ToLowerInvariant()
+          $toolSha=python -c "import hashlib,pathlib,sys; p=pathlib.Path(sys.argv[1]); b=p.read_text(encoding='utf-8').replace('\\r\\n','\\n').replace('\\r','\\n').encode(); print(hashlib.sha256(b).hexdigest())" "$tool"
           if($toolSha-ne"9990da1e3c87c663547c3d3874d47bf04195272faa3baf09c7978d56670da8c9"){throw "v14.9 handoff tool mismatch: $toolSha"}
           $work=Join-Path $env:RUNNER_TEMP "v149-handoff"
           $artifacts=Join-Path $work "artifacts"
