@@ -40,6 +40,18 @@ jobs:
           $global:LASTEXITCODE=0
           Write-Host 'V1801_WINDOWS_AUDIT_FAIL_CLOSED_OK'
           exit 0
+      - name: Pending exit semantics
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Continue'
+          $p='ci\\ps5native-v18.0.1\\run-pending-semantics.ps1'
+          [void][scriptblock]::Create((Get-Content $p -Raw))
+          & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $p
+          $rc=$LASTEXITCODE
+          if($rc-ne30){throw ('expected pending exit 30, got '+$rc)}
+          $global:LASTEXITCODE=0
+          Write-Host 'V1801_WINDOWS_PENDING_EXIT30_OK'
+          exit 0
       - name: Policy markers
         shell: powershell
         run: |
