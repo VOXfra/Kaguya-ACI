@@ -15,8 +15,8 @@ jobs:
           $ErrorActionPreference='Stop'
           $s=Get-Content 'ci\ps5native-v18.0.1\selftest-pc-only-unlock-v17.0.ps1' -Raw
           [void][scriptblock]::Create($s)
-          foreach($need in @('[IO.Path]::GetTempPath()','Join-Path $PrivateRoot','V170_PC_ONLY_UNLOCK_SYNTHETIC_KEY_CLEANUP_OK')){if($s -notlike ('*'+$need+'*')){throw ('missing '+$need)}}
-          if($s -like '*$Build ''private\dakar_ekpfs.bin''*'){throw 'synthetic key still rooted in build'}
+          foreach($need in @('[IO.Path]::GetTempPath()','Join-Path $PrivateRoot','V170_PC_ONLY_UNLOCK_SYNTHETIC_KEY_CLEANUP_OK')){if(-not $s.Contains($need)){throw ('missing '+$need)}}
+          if($s.Contains("$Build 'private\dakar_ekpfs.bin'")){throw 'synthetic key still rooted in build'}
           Write-Host 'V1801_WINDOWS_SYNTHETIC_KEY_CLEANUP_CONTRACT_OK'
       - name: Audit clean and fail-closed cases
         shell: powershell
