@@ -1,0 +1,40 @@
+name: PS5Native v18.0 Big Pass Windows CI
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+jobs:
+  big-pass-contract:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Canonical reconciliation and frontier contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          python ci\ps5native-v18.0\contract.py
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+      - name: Windows PowerShell 5.1 syntax and boundary contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($p in @('ci\ps5native-v18.0\real-dakar-big-pass-v18.0.ps1','ci\ps5native-v18.0\run-v18.0-final.ps1')){
+            $src=Get-Content $p -Raw
+            [void][scriptblock]::Create($src)
+          }
+          $real=Get-Content 'ci\ps5native-v18.0\real-dakar-big-pass-v18.0.ps1' -Raw
+          foreach($need in @('dakar-ekpfs-intake-gate-v13.5.py','dakar-pc-loose-playgo-attempt-v17.4.ps1','dakar-final-retail-attempt-v16.0.2.ps1')){
+            if($real -notlike ('*'+$need+'*')){throw ('missing '+$need)}
+          }
+          if($real -match 'legendary\s+launch|Dakar2Game-Win64-Shipping\.exe'){throw 'PC runtime substitution marker present'}
+          Write-Host 'V180_WINDOWS_POWERSHELL51_BOUNDARY_OK'
+      - name: Policy markers
+        shell: powershell
+        run: |
+          Write-Host 'V180_PC_RUNTIME_DEPENDENCY_ALLOWED=0'
+          Write-Host 'V180_PC_ORACLE_ROADMAP_CREDIT=0'
+          Write-Host 'V180_SELFTEST_ROADMAP_CREDIT=0'
+          Write-Host 'V180_BASELINE_PERCENT=86.0'
+          Write-Host 'V180_CANONICAL_UNRESOLVED_COUNT=3'
+          Write-Host 'V180_WINDOWS_BIG_PASS_CONTRACT_OK'
