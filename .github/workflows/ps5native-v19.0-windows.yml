@@ -34,6 +34,16 @@ jobs:
           [void][scriptblock]::Create($s)
           & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ci\ps5native-v19.0\runner-contract.ps1
           if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+      - name: Exact package runner PowerShell 5.1 syntax
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $p='ci\\ps5native-v19.0\\run-ekpfs-v19.0.exact.ps1'
+          [void][scriptblock]::Create((Get-Content $p -Raw))
+          $s=Get-Content $p -Raw
+          foreach($need in @('02-real-wrapped-key-profile','03-entitlement-rif-census','05-real-dual-schedule-ekpfs-gate','07-package-cleanliness-final','DAKAR_EKPFS_PATH')){if(-not $s.Contains($need)){throw ('missing '+$need)}}
+          if($s -match 'Invoke-WebRequest|curl\\s|legendary\\s+launch'){throw 'out-of-scope network/runtime action'}
+          Write-Host 'V190_WINDOWS_EXACT_RUNNER_POWERSHELL51_OK'
       - name: Policy markers
         shell: powershell
         run: |
