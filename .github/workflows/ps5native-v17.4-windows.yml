@@ -1,0 +1,44 @@
+name: PS5Native v17.4 Loose Namespace Windows CI
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+jobs:
+  loose-namespace:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exact loose namespace correlation contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          python ci\ps5native-v17.4\contract.py --root .
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          Write-Host 'V174_WINDOWS_EXACT_CORRELATION_CONTRACT_OK'
+      - name: Provenance positive and fail-closed
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $r="$env:RUNNER_TEMP\v174-runtime";New-Item -ItemType Directory -Force -Path $r|Out-Null
+          'int generic_runtime=1;'|Set-Content "$r\ok.cpp" -Encoding UTF8
+          python ci\ps5native-v17.4\provenance-contract.py --root $r
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          'const char* x="Dakar PC Oracle";'|Set-Content "$r\bad.cpp" -Encoding UTF8
+          $prev=$ErrorActionPreference;$ErrorActionPreference='Continue'
+          try{python ci\ps5native-v17.4\provenance-contract.py --root $r;$rc=$LASTEXITCODE}finally{$ErrorActionPreference=$prev}
+          if($rc-eq0){throw 'provenance fail-closed test unexpectedly passed'}
+          $global:LASTEXITCODE=0
+          Write-Host 'V174_WINDOWS_PROVENANCE_FAIL_CLOSED_OK'
+          exit 0
+      - name: Policy markers
+        shell: powershell
+        run: |
+          Write-Host 'V174_PC_EXECUTION_ALLOWED=0'
+          Write-Host 'V174_PC_PAYLOAD_COPY_ALLOWED=0'
+          Write-Host 'V174_PS5_DECRYPTION_ALLOWED=0'
+          Write-Host 'V174_KEY_WORK_ALLOWED=0'
+          Write-Host 'V174_FUZZY_MATCH_ALLOWED=0'
+          Write-Host 'V174_PS5_REHOST_CREDIT=0'
+          Write-Host 'V174_LATEST_UNRESOLVED_TARGET_COUNT=3'
+          Write-Host 'V174_WINDOWS_LOOSE_NAMESPACE_CONTRACT_OK'
