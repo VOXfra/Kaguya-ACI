@@ -1,0 +1,50 @@
+name: PS5Native v18.0.1 Packaging Hygiene Windows CI
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+jobs:
+  packaging-hygiene:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: PowerShell 5.1 selftest cleanup contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $s=Get-Content 'ci\ps5native-v18.0.1\selftest-pc-only-unlock-v17.0.ps1' -Raw
+          [void][scriptblock]::Create($s)
+          foreach($need in @('[IO.Path]::GetTempPath()','Join-Path $PrivateRoot','V170_PC_ONLY_UNLOCK_SYNTHETIC_KEY_CLEANUP_OK')){if($s -notlike ('*'+$need+'*')){throw ('missing '+$need)}}
+          if($s -like '*$Build ''private\dakar_ekpfs.bin''*'){throw 'synthetic key still rooted in build'}
+          Write-Host 'V1801_WINDOWS_SYNTHETIC_KEY_CLEANUP_CONTRACT_OK'
+      - name: Audit clean and fail-closed cases
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $r="$env:RUNNER_TEMP\v1801"
+          python ci\ps5native-v18.0.1\make-fixture.py --root $r
+          python ci\ps5native-v18.0.1\package-cleanliness-audit-v18.0.1.py --root $r --json-out "$env:RUNNER_TEMP\clean.json" --text-out "$env:RUNNER_TEMP\clean.txt"
+          if($LASTEXITCODE-ne0){throw 'clean fixture failed'}
+          New-Item -ItemType Directory -Force -Path "$r\build\private"|Out-Null
+          [IO.File]::WriteAllBytes("$r\build\private\dakar_ekpfs.bin",[byte[]](1..32))
+          $prev=$ErrorActionPreference;$ErrorActionPreference='Continue'
+          try{python ci\ps5native-v18.0.1\package-cleanliness-audit-v18.0.1.py --root $r --json-out "$env:RUNNER_TEMP\transient.json" --text-out "$env:RUNNER_TEMP\transient.txt";$rc=$LASTEXITCODE}finally{$ErrorActionPreference=$prev}
+          if($rc-eq0){throw 'transient residue unexpectedly passed'}
+          Remove-Item -Recurse -Force "$r\build"
+          New-Item -ItemType Directory -Force -Path "$r\keys"|Out-Null
+          [IO.File]::WriteAllBytes("$r\keys\dakar_ekpfs.bin",[byte[]](1..32))
+          $prev=$ErrorActionPreference;$ErrorActionPreference='Continue'
+          try{python ci\ps5native-v18.0.1\package-cleanliness-audit-v18.0.1.py --root $r --json-out "$env:RUNNER_TEMP\packaged.json" --text-out "$env:RUNNER_TEMP\packaged.txt";$rc=$LASTEXITCODE}finally{$ErrorActionPreference=$prev}
+          if($rc-eq0){throw 'packaged key unexpectedly passed'}
+          $global:LASTEXITCODE=0
+          Write-Host 'V1801_WINDOWS_AUDIT_FAIL_CLOSED_OK'
+          exit 0
+      - name: Policy markers
+        shell: powershell
+        run: |
+          Write-Host 'V1801_REAL_V180_FRONTIER=VALIDATED_EKPFS_REQUIRED'
+          Write-Host 'V1801_BASELINE_PERCENT=86.0'
+          Write-Host 'V1801_PACKAGED_KEY_ALLOWED=0'
+          Write-Host 'V1801_TRANSIENT_KEY_RESIDUE_ALLOWED=0'
+          Write-Host 'V1801_WINDOWS_PACKAGING_HOTFIX_OK'
