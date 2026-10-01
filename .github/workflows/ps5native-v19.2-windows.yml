@@ -1,0 +1,36 @@
+name: PS5Native v19.2 RSA3072 Windows CI
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+jobs:
+  rsa3072-map:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: PS5 RSA-3072 structural contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          python ci\ps5native-v19.2\contract.py
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+      - name: PowerShell 5.1 runner contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $p='ci\ps5native-v19.2\runner.ps1'
+          [void][scriptblock]::Create((Get-Content $p -Raw))
+          & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $p
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+      - name: Policy markers
+        shell: powershell
+        run: |
+          Write-Host 'V192_ENTRY_KEYS_BYTES=2944'
+          Write-Host 'V192_RSA_WRAP_BYTES=384'
+          Write-Host 'V192_IMAGE_KEY_BYTES=2048'
+          Write-Host 'V192_IMAGE_KEY_COMPLETE_WRAPS=5'
+          Write-Host 'V192_IMAGE_KEY_TAIL_BYTES=128'
+          Write-Host 'V192_BRUTEFORCE_ALLOWED=0'
+          Write-Host 'V192_BASELINE_PERCENT=86.0'
+          Write-Host 'V192_WINDOWS_RSA3072_MAP_OK'

@@ -1,0 +1,35 @@
+name: PS5Native v20.0 PC Deep Oracle Windows CI
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+jobs:
+  pc-deep-oracle:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: PAK v11 full-directory-index contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          python ci\ps5native-v20.0\contract.py
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+      - name: PowerShell 5.1 runner contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $p='ci\ps5native-v20.0\runner.ps1'
+          [void][scriptblock]::Create((Get-Content $p -Raw))
+          & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $p
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+      - name: Policy markers
+        shell: powershell
+        run: |
+          Write-Host 'V200_PAK_V11_FULL_DIRECTORY_INDEX=1'
+          Write-Host 'V200_CANONICAL_PLAYGO=188/191'
+          Write-Host 'V200_CANONICAL_UNRESOLVED=3'
+          Write-Host 'V200_PC_RUNTIME_DEPENDENCY_ALLOWED=0'
+          Write-Host 'V200_PAK_PAYLOAD_COPY_ALLOWED=0'
+          Write-Host 'V200_BASELINE_PERCENT=86.0'
+          Write-Host 'V200_WINDOWS_PC_DEEP_ORACLE_OK'
