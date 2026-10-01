@@ -1,0 +1,35 @@
+name: PS5Native v19.1 RIF Bridge Windows CI
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+jobs:
+  rif-bridge:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: RIF structural contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          python ci\ps5native-v19.1\rif-contract.py
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+      - name: Exact runner PowerShell 5.1 syntax
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $p='ci\ps5native-v19.1\runner.ps1'
+          $s=Get-Content $p -Raw
+          [void][scriptblock]::Create($s)
+          foreach($need in @('02-real-rif-entitlement-bridge','03-real-dual-schedule-ekpfs-gate','04-package-cleanliness-final','PYTHONUNBUFFERED')){if(-not $s.Contains($need)){throw ('missing '+$need)}}
+          if($s -match 'Invoke-WebRequest|curl\s|legendary\s+launch'){throw 'out-of-scope action'}
+          Write-Host 'V191_WINDOWS_POWERSHELL51_RUNNER_OK'
+      - name: Policy markers
+        shell: powershell
+        run: |
+          Write-Host 'V191_SCOPE=EKPFS_RIF_BRIDGE_ONLY'
+          Write-Host 'V191_RAW_RIF_BLOB_EXPORT_ALLOWED=0'
+          Write-Host 'V191_BRUTEFORCE_ALLOWED=0'
+          Write-Host 'V191_BASELINE_PERCENT=86.0'
+          Write-Host 'V191_WINDOWS_RIF_BRIDGE_OK'
