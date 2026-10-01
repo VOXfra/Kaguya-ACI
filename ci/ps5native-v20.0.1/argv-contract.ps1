@@ -18,8 +18,9 @@ function Invoke-Probe {
  if($null -eq $Py){$Py=Get-Command python -ErrorAction Stop}
  $Resolved=(Resolve-Path -LiteralPath $ScriptPath).Path
  [string[]]$Forward=@($ScriptArguments)
- & $Py.Source -u -B $Resolved @Forward
- return $LASTEXITCODE
+ & $Py.Source -u -B $Resolved @Forward 2>&1 | ForEach-Object { Write-Host $_ }
+ $code=$LASTEXITCODE
+ return [int]$code
 }
 $rc=Invoke-Probe -ScriptPath $probe -ScriptArguments @($out,'--alpha','hello world','--beta','42')
 if($rc-ne0){throw "probe rc=$rc"}
