@@ -24,7 +24,7 @@ static std::optional<std::size_t> variant2_offset(
     return res;
 }
 
-int main() {
+int main(int argc, char**) {\n    const std::uint64_t runtime_zero = (argc == 1) ? 0U : 1U;
     const auto aoff = variant2_offset(0, 32, 16, 0x2000);
     if (!aoff || *aoff != 32) return 10;
 
@@ -35,12 +35,12 @@ int main() {
     const Module tlsB{2, *boff, 32, 16, 0x3000};
 
     // Requester is module 3, but the referenced STT_TLS symbol is defined by tlsB.
-    const std::uint64_t requester_id = 3;
+    const std::uint64_t requester_id = 3 + runtime_zero;
     const std::uint64_t provider_id = tlsB.id;
     if (requester_id == provider_id) return 12;
 
-    const std::uint64_t symbol_offset = 8;
-    const std::int64_t addend = 4;
+    const std::uint64_t symbol_offset = 8 + runtime_zero;
+    const std::int64_t addend = 4 - static_cast<std::int64_t>(runtime_zero);
 
     const std::uint64_t dtpmod64 = provider_id;
     const std::uint64_t dtpoff64 =
