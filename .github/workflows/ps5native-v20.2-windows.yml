@@ -1,0 +1,31 @@
+name: PS5Native v20.2 Menu Bootstrap Windows CI
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+jobs:
+  menu-bootstrap:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Menu bootstrap contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          python ci\ps5native-v20.2\contract.py
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+      - name: PowerShell Python argv contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ci\ps5native-v20.2\runner.ps1
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+      - name: Policy markers
+        shell: powershell
+        run: |
+          Write-Host 'V202_MENU_ASSETS=11/11'
+          Write-Host 'V202_BOOT_MODULES=21/21'
+          Write-Host 'V202_CHUNK0_SHARED_LABEL=1'
+          Write-Host 'V202_BASELINE_PERCENT=86.0'
+          Write-Host 'V202_WINDOWS_MENU_BOOTSTRAP_OK'

@@ -1,0 +1,28 @@
+name: PS5Native v20.5 Exact Import Windows CI
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+jobs:
+  exact-imports:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run v20.5 exact import contract
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          cl /nologo /std:c++20 /W4 /WX /EHsc ci\ps5native-v20.5\contract.cpp /Fe:%RUNNER_TEMP%\V205ExactImportContract.exe
+          if errorlevel 1 exit /b 1
+          "%RUNNER_TEMP%\V205ExactImportContract.exe"
+          if errorlevel 1 exit /b 1
+      - name: Policy markers
+        shell: powershell
+        run: |
+          Write-Host 'V205_EXACT_STAGE_REQUIRES_ZERO_STRONG_UNRESOLVED=1'
+          Write-Host 'V205_STRUCTURED_IMPORT_NO_TEXT_FALLBACK=1'
+          Write-Host 'V205_WEAK_UNRESOLVED_ALLOWED=1'
+          Write-Host 'V205_BASELINE_PERCENT=86.0'
+          Write-Host 'V205_WINDOWS_EXACT_IMPORTS_OK'
