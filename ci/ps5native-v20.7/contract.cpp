@@ -24,7 +24,8 @@ static std::optional<std::size_t> variant2_offset(
     return res;
 }
 
-int main(int argc, char**) {\n    const std::uint64_t runtime_zero = (argc == 1) ? 0U : 1U;
+int main(int argc, char**) {
+    const std::uint64_t runtime_zero = (argc == 1) ? 0U : 1U;
     const auto aoff = variant2_offset(0, 32, 16, 0x2000);
     if (!aoff || *aoff != 32) return 10;
 
