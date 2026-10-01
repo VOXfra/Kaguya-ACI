@@ -1,0 +1,32 @@
+name: PS5Native v20.1 Runtime Surface Windows CI
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+jobs:
+  runtime-surface:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Runtime surface contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          python ci\ps5native-v20.1\contract.py
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+      - name: PowerShell Python argv contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ci\ps5native-v20.1\runner.ps1
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+      - name: Policy markers
+        shell: powershell
+        run: |
+          Write-Host 'V201_PC_PAK_PATHS=225059'
+          Write-Host 'V201_PC_ONLY_GIB_APPROX=22.2'
+          Write-Host 'V201_PS5_CHUNK9_BYTES=10551296'
+          Write-Host 'V201_PC_TO_PS5_CHUNK_BLIND_MAP_ALLOWED=0'
+          Write-Host 'V201_BASELINE_PERCENT=86.0'
+          Write-Host 'V201_WINDOWS_RUNTIME_SURFACE_OK'
