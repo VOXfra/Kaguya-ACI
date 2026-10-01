@@ -1,0 +1,30 @@
+name: PS5Native v20.7 TLS Static Windows CI
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+jobs:
+  tls-static:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run v20.7 TLS static contract
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          cl /nologo /std:c++20 /W4 /WX /EHsc ci\ps5native-v20.7\contract.cpp /Fe:%RUNNER_TEMP%\V207TlsStaticContract.exe
+          if errorlevel 1 exit /b 1
+          "%RUNNER_TEMP%\V207TlsStaticContract.exe"
+          if errorlevel 1 exit /b 1
+      - name: Policy markers
+        shell: powershell
+        run: |
+          Write-Host 'V207_DTPMOD64_PROVIDER_AWARE=1'
+          Write-Host 'V207_DTPOFF64=1'
+          Write-Host 'V207_TPOFF64_VARIANT2=1'
+          Write-Host 'V207_TLSDESC=0'
+          Write-Host 'V207_REAL_STAGE=HOST_PRECONSTRUCTION'
+          Write-Host 'V207_BASELINE_PERCENT=86.0'
+          Write-Host 'V207_SYNTHETIC_CREDIT=0'

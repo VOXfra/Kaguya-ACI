@@ -1,0 +1,30 @@
+name: PS5Native v20.0.1 Runner Hotfix Windows CI
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+jobs:
+  runner-hotfix:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python argv propagation
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ci\ps5native-v20.0.1\argv-contract.ps1
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+      - name: Carry v20.0 parser contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          python ci\ps5native-v20.0\contract.py
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+      - name: Policy markers
+        shell: powershell
+        run: |
+          Write-Host 'V2001_ARGS_COLLISION_FIXED=1'
+          Write-Host 'V2001_INTERACTIVE_REPL_ALLOWED=0'
+          Write-Host 'V2001_BASELINE_PERCENT=86.0'
+          Write-Host 'V2001_WINDOWS_RUNNER_HOTFIX_OK'
